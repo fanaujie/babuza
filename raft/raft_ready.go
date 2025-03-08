@@ -1,0 +1,154 @@
+package raft
+
+import (
+	"go.etcd.io/etcd/raft/v3"
+	"go.etcd.io/etcd/raft/v3/raftpb"
+	"time"
+)
+
+func (r *Raft) processRaftReady() {
+	isLeader := false
+	ticker := time.NewTicker(time.Duration(r.config.LogicalTickMs) * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			r.raftNode.Tick()
+		case <-r.closer.CloseCh():
+			return
+		case rd := <-r.raftNode.Ready():
+			if rd.SoftState != nil {
+				r.updateLeadership(*rd.SoftState)
+				isLeader = rd.SoftState.RaftState == raft.StateLeader
+			}
+			if len(rd.ReadStates) != 0 {
+				select {
+				case r.readStateCh <- rd.ReadStates[len(rd.ReadStates)-1]:
+				case <-time.After(time.Second):
+					r.logger.Warningf("raft[id=%d] timed out sending read state. timeout=%d", r.config.LocalPeerId, time.Second)
+				case <-r.closer.CloseCh():
+					return
+				}
+			}
+
+			if isLeader {
+				r.sendRaftMessage(rd.Messages)
+			}
+
+			notifyCh := make(chan struct{}, 1)
+			emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
+			if len(rd.CommittedEntries) > 0 || !emptySnapshot {
+				select {
+				case <-r.closer.CloseCh():
+					return
+				case r.applyCh <- applyEntryToStateMachine{
+					entries:  rd.CommittedEntries,
+					snapshot: rd.Snapshot,
+					notifyCh: notifyCh}:
+				}
+			}
+
+			r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
+			if rd.HardState.Term != 0 {
+				r.status.SetHardStateTerm(rd.HardState.Term)
+			}
+			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
+				r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
+			}
+			if !emptySnapshot {
+				if err := r.storage.ApplyAndReleaseSnapshot(rd.Snapshot); err != nil {
+					r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.config.LocalPeerId, err)
+				}
+			}
+			if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
+				r.logger.Panicf("raft[id=%d]: append entries failed: %v", r.config.LocalPeerId, err)
+			}
+			notifyCh <- struct{}{}
+			if !isLeader {
+
+				// Candidate or follower needs to wait for all pending configuration
+				// changes to be applied before sending messages.
+				// Otherwise we might incorrectly count votes (e.g. votes from removed members).
+				// Also slow machine's follower raft-layer could proceed to become the leader
+				// on its own single-node cluster, before apply-layer applies the config change.
+				// We simply wait for ALL pending entries to be applied for now.
+				// We might improve this later on if it causes unnecessary long blocking issues.
+				var lastConfChangIndex uint64
+				for i := range rd.CommittedEntries {
+					e := &rd.CommittedEntries[i]
+					if raftpb.EntryConfChange == e.Type {
+						lastConfChangIndex = e.Index
+					}
+				}
+				if lastConfChangIndex > 0 {
+					select {
+					case <-r.completionReplier.AcquireCompletionChan(lastConfChangIndex):
+					case <-r.closer.CloseCh():
+						return
+					}
+				}
+				r.sendRaftMessage(rd.Messages)
+			}
+			r.raftNode.Advance()
+		}
+	}
+}
+
+func (r *Raft) sendRaftMessage(msgs []raftpb.Message) {
+	appRespIndex := uint64(0)
+	lastAppRespMsgIndex := 0
+	optimiseAppendEntryResp := false //optimise for MsgAppResp
+	for i := 0; i < len(msgs); i++ {
+		m := &msgs[i]
+		switch m.Type {
+		case raftpb.MsgAppResp:
+			if !m.Reject && m.Index > appRespIndex {
+				appRespIndex = m.Index
+				lastAppRespMsgIndex = i
+				optimiseAppendEntryResp = true
+			} else {
+				r.trans.Send(*m)
+			}
+		case raftpb.MsgSnap:
+			m.Snapshot.Metadata.ConfState = r.status.CloneConfState()
+			r.trans.SendSnapshot(*m)
+		default:
+			r.trans.Send(*m)
+		}
+	}
+	if optimiseAppendEntryResp {
+		r.trans.Send(msgs[lastAppRespMsgIndex])
+	}
+}
+
+func (r *Raft) updateCommittedIndex(entries []raftpb.Entry, snap raftpb.Snapshot) {
+	var newCommitIndex uint64
+	if len(entries) != 0 {
+		newCommitIndex = entries[len(entries)-1].Index
+	}
+	if snap.Metadata.Index > newCommitIndex {
+		newCommitIndex = snap.Metadata.Index
+	}
+	if newCommitIndex != 0 && newCommitIndex > r.status.GetCommittedIndex() {
+		r.status.SetCommittedIndex(newCommitIndex)
+	}
+}
+
+func (r *Raft) updateLeadership(currentState raft.SoftState) {
+	preState := r.status.CloneSoftState()
+	newLeader := currentState.Lead != raft.None && preState.Lead != currentState.Lead
+	r.status.SetSoftState(currentState)
+	if currentState.Lead == r.config.LocalPeerId {
+		r.status.SetLeader(true)
+		r.leaderCh <- true
+	} else {
+		if r.status.IsLeader() {
+			r.status.SetLeader(false)
+			r.leaderCh <- false
+		}
+	}
+	if newLeader {
+		r.leaderChangeNotifier.CloseChanAndRenew()
+	}
+
+}

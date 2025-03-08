@@ -1,0 +1,101 @@
+syntax = "proto3";
+package babuza;
+option go_package = "github.com/fanaujie/babuza/ibabuza/babuzapb";
+
+import "go.etcd.io/etcd/raft/raftpb/raft.proto";
+import "gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_enum_prefix_all) = false;
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+
+
+
+message RaftPeerAttribute {
+  uint64    id = 1;
+  string    raftListenAddr = 2;
+  bool      isLearner = 3;
+}
+
+message Peer {
+  RaftPeerAttribute raftPeerAttr = 1 [(gogoproto.nullable) = false];
+  repeated string appServiceAddresses = 2;
+}
+
+enum SnapshotFileCompressionType{
+  SnapshotFileCompression_None = 0;
+  SnapshotFileCompression_Snappy = 1;
+}
+
+enum SnapshotFileType{
+  SnapshotFileType_Cluster = 0;
+  SnapshotFileType_Session = 1;
+  SnapshotFileType_StateMachine = 2;
+  SnapshotFileType_Metadata = 3;
+}
+
+enum SnapshotFolderType{
+  SnapshotFolderType_InstallSnapshot = 0;
+  SnapshotFolderType_TempWrite = 1;
+  SnapshotFolderType_TempReceive = 2;
+}
+
+
+
+message SnapshotFileDesc {
+  SnapshotFileType                    fileType = 1;
+  SnapshotFileCompressionType  compressionType = 2;
+  string                  tag = 3;
+  int64              fileSize = 4;
+  uint64            fileCrc64 = 5;
+  bytes              metadata = 6;
+}
+
+
+
+message SnapshotMetadata {
+  uint64                version = 1;
+  raftpb.Snapshot      snapshot = 2 [(gogoproto.nullable) = false];
+  map<string, SnapshotFileDesc>      files = 3 [(gogoproto.nullable) = false];
+}
+
+
+message RegisterSessionRequest {
+}
+
+message PubAppServiceRequest {
+  uint64            id = 1;
+  repeated string   appServiceAddresses = 2;
+}
+
+
+message RequestContext {
+  uint64    replyId = 1;
+  uint64    sessionID = 2;
+  uint64    sequenceNum = 3;
+  uint64    lowestSeqNumNotYetReplied = 4;
+}
+
+
+message NormalRequest {
+  RequestContext            context = 1 [(gogoproto.nullable) = false];
+  RegisterSessionRequest    register = 2;
+  PubAppServiceRequest      pubAppService = 3;
+  bytes                     stateMachineLog = 4;
+}
+
+message ConfChangeRequest {
+  RequestContext    context = 1 [(gogoproto.nullable) = false];
+  RaftPeerAttribute raftPeerAttr = 2 [(gogoproto.nullable) = false];
+  bool              promoteLearner = 3;
+}
+
+message WalMetadata {
+  uint64  clusterId = 1;
+  uint64  localPeerId = 2;
+}

@@ -1,0 +1,39 @@
+syntax = "proto3";
+package babuza;
+option go_package = "github.com/fanaujie/babuza/pkg/babuzawal/pb";
+
+
+import "gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_enum_prefix_all) = false;
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+
+
+
+
+
+message WalNextEntry {
+  uint64  nextTerm    = 1;
+  uint64  nextIndex   = 2;
+}
+
+
+
+enum LogType {
+  LogTypeNormalEntry       = 0;  // compatible with raftpb.EntryNormal
+  LogTypeConfChangeEntry   = 1;  // compatible with raftpb.EntryConfChange
+  LogTypeConfChangeV2Entry = 2;  // compatible with raftpb.EntryConfChangeV2
+
+  LogTypeCrc               = 26;
+  LogTypeMetadata          = 27;
+  LogTypeHardState         = 28;
+  LogTypeSnapshot          = 29;
+  LogTypeNextEntry         = 30;
+  LogTypeMax               = 31;
+}

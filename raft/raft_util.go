@@ -1,0 +1,80 @@
+package raft
+
+import (
+	"context"
+	"errors"
+	"github.com/fanaujie/babuza/ibabuza"
+	"go.etcd.io/etcd/raft/v3"
+	"go.etcd.io/etcd/raft/v3/raftpb"
+	"time"
+)
+
+func (r *Raft) propose(ctx context.Context, replyId uint64, proposalData []byte) (chan ibabuza.ApplyResult, error) {
+	ch, err := r.resultReplier.AcquireResultChan(replyId)
+	if err != nil {
+		return nil, err
+	}
+	if err = r.raftNode.Propose(ctx, proposalData); err != nil {
+		r.resultReplier.CancelResult(replyId)
+		if errors.Is(err, raft.ErrProposalDropped) {
+			err = ErrNotLeader
+		} else if errors.Is(err, raft.ErrStopped) {
+			err = ErrStopped
+		} else {
+			//TODO: add log warning
+		}
+		return nil, err
+	}
+	return ch, nil
+}
+
+func (r *Raft) proposeConfChange(ctx context.Context, replyId uint64, confChange raftpb.ConfChangeI) ProposedResult {
+	ch, err := r.resultReplier.AcquireResultChan(replyId)
+	if err != nil {
+		return newErrorResult(err)
+	}
+	if err = r.raftNode.ProposeConfChange(ctx, confChange); err != nil {
+		r.resultReplier.CancelResult(replyId)
+		if errors.Is(err, raft.ErrProposalDropped) {
+			err = ErrNotLeader
+		} else if errors.Is(err, raft.ErrStopped) {
+			err = ErrStopped
+		} else {
+			//TODO: add log warning
+		}
+		return newErrorResult(err)
+	}
+	return newProposalResult(ctx, r.closer, ch)
+}
+
+func (r *Raft) learnerReady(learnerId uint64) error {
+	rs := r.raftNode.Status()
+	if rs.Progress == nil {
+		return ErrNotLeader
+	}
+	var learnerMatch uint64
+	found := false
+	leaderID := rs.ID
+	for peerId, progress := range rs.Progress {
+		if learnerId == peerId {
+			learnerMatch = progress.Match
+			found = true
+			break
+		}
+	}
+	if found {
+		leaderMatch := rs.Progress[leaderID].Match
+		if float64(learnerMatch) < float64(leaderMatch)*r.config.LearnerReadyPercent {
+			return ErrLearnerNotReady
+		}
+	}
+	return nil
+}
+
+func (r *Raft) getLeaderId() uint64 {
+	return r.status.CloneSoftState().Lead
+}
+
+func (r *Raft) waitForLeaderElectionTimeout() time.Duration {
+	return time.Duration(r.config.RaftConfig.ElectionTicks*r.config.LogicalTickMs) * time.Millisecond * 3
+}

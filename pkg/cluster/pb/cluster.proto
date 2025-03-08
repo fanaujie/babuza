@@ -1,0 +1,24 @@
+syntax = "proto3";
+package babuza;
+option go_package = "github.com/fanaujie/babuza/pkg/cluster/pb";
+
+
+import "gogoproto/gogo.proto";
+import "babuzapb/babuza.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_enum_prefix_all) = false;
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+
+
+
+message Store {
+  map<uint64,babuza.Peer>      peers = 1[(gogoproto.nullable) = false];
+  map<uint64,bool>        removedIds = 2;
+}
+
