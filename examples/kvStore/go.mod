@@ -2,17 +2,12 @@ module github.com/fanaujie/babuza/examples/kvStore
 
 go 1.23.1
 
-replace (
-	github.com/fanaujie/babuza/ibabuza => ../../ibabuza
-	github.com/fanaujie/babuza/pkg => ../../pkg
-	github.com/fanaujie/babuza/raft => ../../raft
-)
 
 require (
 	github.com/dgraph-io/badger/v3 v3.2103.2
-	github.com/fanaujie/babuza/ibabuza v0.0.0-00010101000000-000000000000
-	github.com/fanaujie/babuza/pkg v0.0.0-00010101000000-000000000000
-	github.com/fanaujie/babuza/raft v0.0.0-00010101000000-000000000000
+	github.com/fanaujie/babuza/ibabuza v0.1.0
+	github.com/fanaujie/babuza/pkg v0.1.0
+	github.com/fanaujie/babuza/raft v0.1.0
 	github.com/spf13/cobra v1.1.3
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/zap v1.26.0
