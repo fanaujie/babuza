@@ -2,12 +2,11 @@ module github.com/fanaujie/babuza/pkg
 
 go 1.23.1
 
-replace github.com/fanaujie/babuza/ibabuza => ../ibabuza
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
-	github.com/fanaujie/babuza/ibabuza v0.0.0-00010101000000-000000000000
+	github.com/fanaujie/babuza/ibabuza v0.1.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/rubyist/circuitbreaker v2.2.1+incompatible
