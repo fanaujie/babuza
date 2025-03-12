@@ -21,7 +21,7 @@ func (d *transportProcessor) ProcessBatchMessage(msg babuzapb.BatchMessage) {
 			d.logger.Warningf("raft[id=%d] received batch message from unknown peer id(%d)", d.cluster.LocalPeerID(), msg.Messages[i].From)
 			continue
 		}
-		if msg.Messages[i].To == d.cluster.LocalPeerID() {
+		if msg.Messages[i].To != d.cluster.LocalPeerID() {
 			d.logger.Warningf("raft[id=%d] received batch message with local peer id(%d)", d.cluster.LocalPeerID(), msg.Messages[i].To)
 			continue
 		}
@@ -147,5 +147,6 @@ func (d *transportProcessor) CreateSnapshotReader(snapshotIndex uint64) (ibabuza
 }
 
 func (d *transportProcessor) isPeerInCluster(peerID uint64) bool {
-	return false
+	//TODO: implement this
+	return true
 }

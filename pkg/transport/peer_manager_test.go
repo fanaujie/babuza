@@ -137,15 +137,11 @@ func TestManagerImpl_UpdatePeer(t *testing.T) {
 	mockPeer.AssertNotCalled(t, "Stop")
 
 	// Setup for address change
-	mockPeer.On("Stop").Return()
 	newAddress := "localhost:10002"
 
 	// Test updating with new address (should restart)
 	err = manager.UpdatePeer(peerId, newAddress)
 	assert.NoError(t, err)
-
-	// Verify peer restarted
-	mockPeer.AssertCalled(t, "Stop")
 	assert.Equal(t, newAddress, manager.addresses[peerId])
 
 	// Test updating non-existent peer

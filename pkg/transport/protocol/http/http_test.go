@@ -137,6 +137,24 @@ func dial(cfg ibabuza.TLSConfig, endpoint string) (net.Conn, error) {
 	return tls.Dial("tcp", endpoint, tlsCfg)
 }
 
+// MockTransportResolver is a simple implementation of ibabuza.TransportResolver for testing
+type MockTransportResolver struct {
+	addressMap map[uint64]string
+}
+
+func NewMockTransportResolver() *MockTransportResolver {
+	return &MockTransportResolver{
+		addressMap: make(map[uint64]string),
+	}
+}
+
+func (m *MockTransportResolver) ResolvePeerAddress(peerId uint64) (string, error) {
+	if addr, ok := m.addressMap[peerId]; ok {
+		return addr, nil
+	}
+	return "localhost:14200", nil // Default for testing
+}
+
 func TestNewServerClient(t *testing.T) {
 
 	var testCase = []ibabuza.TransportConfig{
@@ -172,7 +190,8 @@ func TestNewServerClient(t *testing.T) {
 		assert.Nil(t, srv.Start(), identify)
 		client, err := NewClient(tc.TLSConfig, defaultOpts)
 		assert.Nil(t, err, identify)
-		assert.NotNil(t, NewRaftMsgClient(client, defaultOpts, url.URL{}), identify)
+		resolver := NewMockTransportResolver()
+		assert.NotNil(t, NewRaftMsgClient(client, defaultOpts, url.URL{}, resolver), identify)
 		assert.Nil(t, srv.Stop())
 	}
 }
@@ -228,7 +247,10 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 		assert.Nil(t, srv.Start(), identify)
 		httpClient, err := NewClient(c.TLSConfig, defaultOpts)
 		assert.Nil(t, err, identify)
-		client := NewRaftMsgClient(httpClient, defaultOpts, gerHostUrl(c.PeerAddress, c.EnableTLS))
+		
+		resolver := NewMockTransportResolver()
+		client := NewRaftMsgClient(httpClient, defaultOpts, gerHostUrl(c.PeerAddress, c.EnableTLS), resolver)
+		
 		tms := genTestMsg(c.totalMsgCount, c.batchRaftMsgCount, 1)
 		mr.setupMsgCount(1, len(tms))
 		for index, tm := range tms {
@@ -237,6 +259,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 			} else if tm.snapMsg != nil {
 				assert.Nil(t, client.SendSnapshotMessage(*tm.snapMsg), identify)
 			}
+			
 			res := babuzapb.GetClusterPeersResponse{
 				Peers: []babuzapb.Peer{
 					{
@@ -256,8 +279,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				},
 			}
 			mr.clusterRes = res
-			getRes, err := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterId: 100})
-			assert.Nil(t, err)
+			getRes := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterId: 100})
 			assert.Equal(t, res, getRes)
 		}
 		nodeDoneMsg := <-mr.notifyNodeDoneCh
@@ -265,7 +287,6 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 		client.Close()
 		assert.Nil(t, srv.Stop())
 	}
-
 }
 
 func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
@@ -334,7 +355,8 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 				defer wg.Done()
 				httpClient, err := NewClient(c.TLSConfig, defaultOpts)
 				assert.Nil(t, err, identify)
-				client := NewRaftMsgClient(httpClient, defaultOpts, gerHostUrl(c.PeerAddress, c.EnableTLS))
+				resolver := NewMockTransportResolver()
+				client := NewRaftMsgClient(httpClient, defaultOpts, gerHostUrl(c.PeerAddress, c.EnableTLS), resolver)
 				defer client.Close()
 				for _, tm := range tms {
 					if tm.batchMsg != nil {

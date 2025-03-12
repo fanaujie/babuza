@@ -304,7 +304,7 @@ func (a *appliedFacadeImpl) handleSessionRegister(e raftpb.Entry, req babuzapb.N
 
 func (a *appliedFacadeImpl) handlePubAppService(e raftpb.Entry, req babuzapb.NormalRequest) {
 	result := a.cluster.UpdateAppServiceAddresses(
-		req.PubAppService.Id,
+		req.PubAppService.PubServicePeerId,
 		req.PubAppService.AppServiceAddresses,
 	)
 

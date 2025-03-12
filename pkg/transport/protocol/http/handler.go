@@ -21,7 +21,6 @@ func (h *handler) batchMessageFunc(w http.ResponseWriter, req *http.Request) {
 	}
 	batchMsg := babuzapb.BatchMessage{}
 	if err := decodeExpectedMessage(req.Body, req.ContentLength, &batchMsg); err != nil {
-		fmt.Println(err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -37,7 +36,6 @@ func (h *handler) snapshotMessageFunc(w http.ResponseWriter, req *http.Request) 
 	}
 	snapMsg := babuzapb.SnapshotMessage{}
 	if err := decodeExpectedMessage(req.Body, req.ContentLength, &snapMsg); err != nil {
-		fmt.Println(err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -71,9 +69,20 @@ func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	tId := req.URL.Query().Get("to")
+	if tId == "" {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+	toId, err := strconv.ParseUint(tId, 10, 64)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	res := h.raft.GetClusterPeersRequest(babuzapb.GetClusterPeersRequest{
 		ClusterId: uint64(clusterId),
-		From:      uint64(fromId),
+		FromId:    uint64(fromId),
+		ToId:      uint64(toId),
 	})
 	msgSize := res.Size()
 	byteSlice := allocator.Acquire(msgSize)

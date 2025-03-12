@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"context"
 	"github.com/fanaujie/babuza/ibabuza"
 	raftHttp "github.com/fanaujie/babuza/pkg/transport/protocol/http"
 	"net/http"
@@ -70,12 +69,16 @@ func (h *Http) CreateServer(handler ibabuza.RaftMessageHandler) (ibabuza.Transpo
 	return raftHttp.NewRaftMsgServer(h.config, h.options, handler, h.logger), nil
 }
 
-func (h *Http) Dial(ctx context.Context, host string) (ibabuza.TransportClient, error) {
-	u := url.URL{Host: host}
+func (h *Http) CreateClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
+	u := url.URL{}
 	if h.config.TLSConfig.EnableTLS {
 		u.Scheme = "https"
 	} else {
 		u.Scheme = "http"
 	}
-	return raftHttp.NewRaftMsgClient(h.client, h.options, u), nil
+	return raftHttp.NewRaftMsgClient(h.client, h.options, u, resolver), nil
+}
+
+func (h *Http) Close() error {
+	return nil
 }
