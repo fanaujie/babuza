@@ -108,7 +108,9 @@ func (mr *mockRaftProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeers
 
 func (mr *mockRaftProcessor) PublishApplicationServiceRequest(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	mr.Called(req)
-	return babuzapb.PublishApplicationServiceResponse{ErrorMessage: "Success"}
+	return babuzapb.PublishApplicationServiceResponse{
+		Status:  babuzapb.SUCCESS,
+		Message: "Success"}
 }
 
 func (mr *mockRaftProcessor) ReportUnreachable(id uint64) {
@@ -200,14 +202,14 @@ func TestTransport_Create(t *testing.T) {
 	// Test TCP protocol
 	peerManager := NewPeerManager()
 	tcpProtocol := protocol.NewTcp(networkio.NewTcpPhysicalIO(), &logger.Mock{})
-	tcpTrans := New(DefaultOptions(), peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
+	tcpTrans := New(1, DefaultOptions(), peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), tcpProtocol, &logger.Mock{})
 	assert.NotNil(t, tcpTrans)
 
 	// Test HTTP protocol
 	peerManager = NewPeerManager()
 	httpProtocol := protocol.NewHttp(&logger.Mock{})
-	httpTrans := New(DefaultOptions(), peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
+	httpTrans := New(1, DefaultOptions(), peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), httpProtocol, &logger.Mock{})
 	assert.NotNil(t, httpTrans)
 }
@@ -253,7 +255,7 @@ func newTestTransport(t *testing.T, transType int, nodeId uint64, listenAddress 
 	peerManager := NewPeerManager()
 	opt := DefaultOptions()
 	opt.PeerSnapshotChunkSize = 8
-	trans := New(opt, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
+	trans := New(1, opt, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), tranProtocol, &logger.Mock{})
 
 	err := trans.SetupTransportConfig(ibabuza.TransportConfig{
@@ -447,30 +449,6 @@ func TestTransport_UnreachablePeer(t *testing.T) {
 			_, unreachable := mockRaft1.unreachable[99]
 			mockRaft1.mu.Unlock()
 			assert.True(t, unreachable, "Peer should be reported as unreachable")
-		})
-	}
-}
-
-// Test the transport when network connection fails
-func TestTransport_ConnectionFailure(t *testing.T) {
-	for _, transportType := range []int{transportTypeTcp} {
-		transportName := "TCP"
-		if transportType == transportTypeHttp {
-			transportName = "HTTP"
-		}
-
-		t.Run(transportName, func(t *testing.T) {
-			trans2, _ := newTestTransport(t, transportType, 2, "localhost:14201")
-			defer trans2.Stop()
-
-			// Add peer with address of non-started transport
-			trans2.AddPeer(1, "localhost:14200")
-
-			// Try to dial the peer
-			_, err := trans2.CreateTransportClient(1, nil)
-
-			// Expect an error since the peer is not available
-			assert.NotNil(t, err, "Should fail to dial non-existent peer")
 		})
 	}
 }

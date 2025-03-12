@@ -14,7 +14,7 @@ type peerFactory struct {
 }
 
 func (p *peerFactory) CreatePeer(peerId uint64) peer.Peer {
-	return peer.New(peerId, peer.RaftPeerConfig{
+	return peer.New(p.t.clusterId, peerId, peer.RaftPeerConfig{
 		LimiterMaxBatchMessageSize: p.t.options.PeerLimiterMaxBatchMessageSize,
 		SnapshotChunkSize:          p.t.options.PeerSnapshotChunkSize,
 		RaftMsgQueueSize:           p.t.options.PeerQueueSize,
@@ -23,6 +23,7 @@ func (p *peerFactory) CreatePeer(peerId uint64) peer.Peer {
 }
 
 type Transport struct {
+	clusterId        uint64
 	localPeerId      uint64
 	options          Options
 	raftProcessor    ibabuza.RaftNodeHandler
@@ -37,10 +38,11 @@ type Transport struct {
 	snapMessageCh    chan<- babuzapb.SnapshotMessage
 }
 
-func New(opts Options, peerManager PeerManager, memoryLimiter limiter.ResourceLimiter, chunkRateLimiter limiter.RateLimiter,
+func New(clusterId uint64, opts Options, peerManager PeerManager, memoryLimiter limiter.ResourceLimiter, chunkRateLimiter limiter.RateLimiter,
 	breaker breaker.Breaker, protocol ibabuza.TransportProtocol, logger ibabuza.Logger) *Transport {
 	logger.Infof("transport: creating transport")
 	trans := &Transport{
+		clusterId:        clusterId,
 		options:          opts,
 		protocol:         protocol,
 		peerMgr:          peerManager,
