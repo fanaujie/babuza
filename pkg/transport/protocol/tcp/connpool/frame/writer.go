@@ -7,8 +7,6 @@ import (
 	"io"
 )
 
-type MessageType int32
-
 const (
 	crcOffset      = 4
 	headerSize     = 8

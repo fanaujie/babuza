@@ -276,7 +276,7 @@ func matchRemoteCluster(remoteCtx context.Context, config *BabuzaConfig, remoteC
 
 	req := babuzapb.GetClusterPeersRequest{
 		ClusterId: config.ClusterId,
-		From:      config.LocalPeerId,
+		FromId:    config.LocalPeerId,
 	}
 	for _, raftPeerAttr := range remoteConfiguration.RaftPeersAttribute() {
 		if raftPeerAttr.Id == config.LocalPeerId {
@@ -287,14 +287,15 @@ func matchRemoteCluster(remoteCtx context.Context, config *BabuzaConfig, remoteC
 			return remoteCtx.Err()
 		default:
 		}
-		res, err := func() (babuzapb.GetClusterPeersResponse, error) {
-			client, err := trans.DialPeer(remoteCtx, raftPeerAttr.Id)
+		res, err := func(toId uint64) (babuzapb.GetClusterPeersResponse, error) {
+			client, err := trans.CreateTransportClient()
 			if err != nil {
 				return babuzapb.GetClusterPeersResponse{}, err
 			}
 			defer client.Close()
+			req.ToId = toId
 			return client.GetClusterPeers(req)
-		}()
+		}(raftPeerAttr.Id)
 		if err != nil {
 			return err
 		}

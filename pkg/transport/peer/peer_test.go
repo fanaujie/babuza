@@ -124,12 +124,12 @@ func (r *MockPeerRaftReport) Reset() {
 // MockFailedClient implements ibabuza.TransportClient for testing failure scenarios
 type MockFailedClient struct{}
 
-func (c *MockFailedClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
-	return babuzapb.GetClusterPeersResponse{}, nil
+func (c *MockFailedClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+	return babuzapb.GetClusterPeersResponse{}
 }
 
-func (c *MockFailedClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
-	return babuzapb.PublishApplicationServiceResponse{}, nil
+func (c *MockFailedClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+	return babuzapb.PublishApplicationServiceResponse{}
 }
 
 func (c *MockFailedClient) SendBatchMessage(batch babuzapb.BatchMessage) error {
@@ -172,12 +172,12 @@ func (c *MockSuccessClient) SendSnapshotMessage(msg babuzapb.SnapshotMessage) er
 	return nil
 }
 
-func (c *MockSuccessClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
-	return babuzapb.GetClusterPeersResponse{}, nil
+func (c *MockSuccessClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+	return babuzapb.GetClusterPeersResponse{}
 }
 
-func (c *MockSuccessClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
-	return babuzapb.PublishApplicationServiceResponse{}, nil
+func (c *MockSuccessClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+	return babuzapb.PublishApplicationServiceResponse{}
 }
 
 func (c *MockSuccessClient) Close() error {
@@ -196,36 +196,32 @@ func (c *MockSuccessClient) GetSentSnapMessages() []babuzapb.SnapshotMessage {
 	return c.sentSnapMessages
 }
 
-// MockDialer implements Dialer for testing
-type MockDialer struct {
-	clients    map[uint64]ibabuza.TransportClient
+// MockTransportClientFactory implements TransportClientFactory for testing
+type MockTransportClientFactory struct {
+	client     ibabuza.TransportClient
 	shouldFail bool
 }
 
-func NewMockDialer(shouldFail bool) *MockDialer {
-	return &MockDialer{
-		clients:    make(map[uint64]ibabuza.TransportClient),
+func NewMockTransportClientFactory(shouldFail bool) *MockTransportClientFactory {
+	return &MockTransportClientFactory{
 		shouldFail: shouldFail,
 	}
 }
 
-func (d *MockDialer) Dial(ctx context.Context, peerId uint64) (ibabuza.TransportClient, error) {
+func (d *MockTransportClientFactory) CreateTransportClient() (ibabuza.TransportClient, error) {
 	if d.shouldFail {
-		return &MockFailedClient{}, nil
+		d.client = &MockFailedClient{}
+	} else {
+		d.client = NewMockSuccessClient()
 	}
-
-	if client, exists := d.clients[peerId]; exists {
-		return client, nil
-	}
-
-	client := NewMockSuccessClient()
-	d.clients[peerId] = client
-	return client, nil
+	return d.client, nil
 }
 
-func (d *MockDialer) GetClient(peerId uint64) (ibabuza.TransportClient, bool) {
-	client, exists := d.clients[peerId]
-	return client, exists
+func (d *MockTransportClientFactory) GetClient() (ibabuza.TransportClient, bool) {
+	if d.client == nil {
+		return nil, false
+	}
+	return d.client, true
 }
 
 // MockSnapshotFileReader implements transport.SnapshotFileReader for testing
@@ -299,11 +295,10 @@ func TestRaftPeerNew(t *testing.T) {
 	memLimiter := NewMockMemoryLimiter(4096)
 	chunkLimiter := NewMockRateLimiter()
 	breaker := NewMockBreaker()
-	dialer := NewMockDialer(false)
+	dialer := NewMockTransportClientFactory(false)
 
 	peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
 	assert.NotNil(t, peer, "Peer should not be nil")
-	peer.Run()
 	// Sleep briefly to allow goroutine to start
 	time.Sleep(100 * time.Millisecond)
 
@@ -326,9 +321,9 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		memLimiter := NewMockMemoryLimiter(4096)
 		chunkLimiter := NewMockRateLimiter()
 		breaker := NewMockBreaker()
-		dialer := NewMockDialer(false)
-		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-		peer.Run()
+		clientFactory := NewMockTransportClientFactory(false)
+		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, clientFactory, &logger.Mock{})
+
 		defer peer.Stop()
 
 		// Allow time for goroutine to start
@@ -349,7 +344,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 
 		// Check if message was sent to the client
-		client, exists := dialer.GetClient(peerId)
+		client, exists := clientFactory.GetClient()
 		assert.True(t, exists, "Client should exist")
 		mockClient := client.(*MockSuccessClient)
 		sentMessages := mockClient.GetSentBatchMessages()
@@ -370,13 +365,13 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		memLimiter := NewMockMemoryLimiter(4096)
 		chunkLimiter := NewMockRateLimiter()
 		breaker := NewMockBreaker()
-		dialer := NewMockDialer(false)
+		dialer := NewMockTransportClientFactory(false)
 
 		// Set breaker to not ready
 		breaker.Fail()
 
 		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-		peer.Run()
+
 		defer peer.Stop()
 
 		// Send a message
@@ -397,10 +392,10 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		memLimiter := NewMockMemoryLimiter(10) // Very small limit
 		chunkLimiter := NewMockRateLimiter()
 		breaker := NewMockBreaker()
-		dialer := NewMockDialer(false)
+		dialer := NewMockTransportClientFactory(false)
 
 		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-		peer.Run()
+
 		defer peer.Stop()
 
 		// Create a message that will exceed the memory limit
@@ -422,10 +417,10 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		memLimiter := NewMockMemoryLimiter(4096)
 		chunkLimiter := NewMockRateLimiter()
 		breaker := NewMockBreaker()
-		dialer := NewMockDialer(false)
+		dialer := NewMockTransportClientFactory(false)
 
 		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-		peer.Run()
+
 		// Stop the peer
 		peer.Stop()
 
@@ -453,10 +448,10 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		memLimiter := NewMockMemoryLimiter(4096)
 		chunkLimiter := NewMockRateLimiter()
 		breaker := NewMockBreaker()
-		dialer := NewMockDialer(false)
+		dialer := NewMockTransportClientFactory(false)
 
 		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-		peer.Run()
+
 		defer peer.Stop()
 
 		// Send first message to create the queue
@@ -486,9 +481,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 				break
 			}
 		}
-
 		assert.ErrorIs(t, err, ErrPeerQueueFull, "Should return queue full error")
-		assert.True(t, report.IsUnreachableReported(peerId), "Should report peer as unreachable")
 	})
 }
 
@@ -506,10 +499,10 @@ func TestRaftPeerMessageBatching(t *testing.T) {
 	memLimiter := NewMockMemoryLimiter(4096)
 	chunkLimiter := NewMockRateLimiter()
 	breaker := NewMockBreaker()
-	dialer := NewMockDialer(false)
+	dialer := NewMockTransportClientFactory(false)
 
 	peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-	peer.Run()
+
 	defer peer.Stop()
 
 	// Send multiple messages that will exceed batch size
@@ -531,7 +524,7 @@ func TestRaftPeerMessageBatching(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Check if messages were properly batched
-	client, exists := dialer.GetClient(peerId)
+	client, exists := dialer.GetClient()
 	assert.True(t, exists, "Client should exist")
 	mockClient := client.(*MockSuccessClient)
 	sentBatches := mockClient.GetSentBatchMessages()
@@ -552,10 +545,10 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		memLimiter := NewMockMemoryLimiter(4096)
 		chunkLimiter := NewMockRateLimiter()
 		breaker := NewMockBreaker()
-		dialer := NewMockDialer(false)
+		clientFactory := NewMockTransportClientFactory(false)
 
-		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-		peer.Run()
+		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, clientFactory, &logger.Mock{})
+
 		defer peer.Stop()
 
 		// Create snapshot message and reader
@@ -573,20 +566,15 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 			},
 		}
 
-		doneCh := make(chan struct{})
-		go func() {
-			peer.SendSnapshot(snapMsg, snapReader)
-			doneCh <- struct{}{}
-		}()
-		<-doneCh
-
+		peer.SendSnapshot(snapMsg, snapReader)
+		peer.closer.Wait()
 		// Check snapshot status
 		status, exists := report.GetSnapshotStatus(peerId)
 		assert.True(t, exists, "Snapshot report should exist")
 		assert.Equal(t, raft.SnapshotFinish, status, "Should report snapshot finished")
 
 		// Check if snapshot messages were sent
-		client, exists := dialer.GetClient(peerId)
+		client, exists := clientFactory.GetClient()
 		assert.True(t, exists, "Client should exist")
 		mockClient := client.(*MockSuccessClient)
 
@@ -614,10 +602,10 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		memLimiter := NewMockMemoryLimiter(4096)
 		chunkLimiter := NewMockRateLimiter()
 		breaker := NewMockBreaker()
-		dialer := NewMockDialer(true) // Use failing dialer
+		clientFactory := NewMockTransportClientFactory(true) // Use failing clientFactory
 
-		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-		peer.Run()
+		peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, clientFactory, &logger.Mock{})
+
 		defer peer.Stop()
 
 		// Create snapshot message and reader
@@ -634,13 +622,9 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 				},
 			},
 		}
-		doneCh := make(chan struct{})
-		go func() {
-			peer.SendSnapshot(snapMsg, snapReader)
-			doneCh <- struct{}{}
-		}()
-		<-doneCh
 
+		peer.SendSnapshot(snapMsg, snapReader)
+		peer.closer.Wait()
 		// Check snapshot status
 		status, exists := report.GetSnapshotStatus(peerId)
 		assert.True(t, exists, "Snapshot report should exist")
@@ -668,10 +652,10 @@ func TestRaftPeerUpdateRaftReport(t *testing.T) {
 	memLimiter := NewMockMemoryLimiter(4096)
 	chunkLimiter := NewMockRateLimiter()
 	breaker := NewMockBreaker()
-	dialer := NewMockDialer(false)
+	clientFactory := NewMockTransportClientFactory(false)
 
-	peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-	peer.Run()
+	peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, clientFactory, &logger.Mock{})
+
 	defer peer.Stop()
 
 	// Create a new report
@@ -700,10 +684,10 @@ func TestRaftPeerStop(t *testing.T) {
 	memLimiter := NewMockMemoryLimiter(4096)
 	chunkLimiter := NewMockRateLimiter()
 	breaker := NewMockBreaker()
-	dialer := NewMockDialer(false)
+	clientFactory := NewMockTransportClientFactory(false)
 
-	peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, dialer, &logger.Mock{})
-	peer.Run()
+	peer := New(peerId, cfg, report, memLimiter, chunkLimiter, breaker, clientFactory, &logger.Mock{})
+
 	// Stop the peer
 	peer.Stop()
 

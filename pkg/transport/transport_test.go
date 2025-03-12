@@ -3,7 +3,6 @@ package transport
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"crypto/rand"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
@@ -109,7 +108,7 @@ func (mr *mockRaftProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeers
 
 func (mr *mockRaftProcessor) PublishApplicationServiceRequest(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	mr.Called(req)
-	return babuzapb.PublishApplicationServiceResponse{"Success"}
+	return babuzapb.PublishApplicationServiceResponse{ErrorMessage: "Success"}
 }
 
 func (mr *mockRaftProcessor) ReportUnreachable(id uint64) {
@@ -386,7 +385,7 @@ func TestTransport_PeerManagement(t *testing.T) {
 			trans.AddPeer(3, "localhost:14202")
 
 			// Verify peer was added correctly
-			addr, err := trans.peerMgr.GetPeerAddress(2)
+			addr, err := trans.peerMgr.ResolvePeerAddress(2)
 			assert.Nil(t, err, "Should be able to get peer address")
 			assert.Equal(t, "localhost:14201", addr)
 
@@ -394,7 +393,7 @@ func TestTransport_PeerManagement(t *testing.T) {
 			trans.UpdatePeer(2, "localhost:14203")
 
 			// Verify peer was updated
-			addr, err = trans.peerMgr.GetPeerAddress(2)
+			addr, err = trans.peerMgr.ResolvePeerAddress(2)
 			assert.Nil(t, err)
 			assert.Equal(t, "localhost:14203", addr)
 
@@ -402,14 +401,14 @@ func TestTransport_PeerManagement(t *testing.T) {
 			trans.RemovePeer(3)
 
 			// Verify peer was removed
-			_, err = trans.peerMgr.GetPeerAddress(3)
+			_, err = trans.peerMgr.ResolvePeerAddress(3)
 			assert.NotNil(t, err, "Peer should be removed")
 
 			// Test removing all peers
 			trans.RemovePeers()
 
 			// Verify all peers were removed
-			_, err = trans.peerMgr.GetPeerAddress(2)
+			_, err = trans.peerMgr.ResolvePeerAddress(2)
 			assert.NotNil(t, err, "All peers should be removed")
 		})
 	}
@@ -468,7 +467,7 @@ func TestTransport_ConnectionFailure(t *testing.T) {
 			trans2.AddPeer(1, "localhost:14200")
 
 			// Try to dial the peer
-			_, err := trans2.DialPeer(context.Background(), 1)
+			_, err := trans2.CreateTransportClient(1, nil)
 
 			// Expect an error since the peer is not available
 			assert.NotNil(t, err, "Should fail to dial non-existent peer")

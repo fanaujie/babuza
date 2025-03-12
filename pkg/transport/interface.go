@@ -11,7 +11,7 @@ type PeerManager interface {
 	UpdatePeer(peerId uint64, peerAddress string) error
 	RemovePeer(peerId uint64) error
 	RemoveAllPeers()
-	GetPeerAddress(id uint64) (string, error)
+	ResolvePeerAddress(id uint64) (string, error)
 	UpdatePeerRaftReport(raft ibabuza.RaftStatusReporter)
 }
 

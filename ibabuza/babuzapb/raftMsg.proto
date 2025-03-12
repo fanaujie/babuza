@@ -39,22 +39,33 @@ message SnapshotMessage {
   raftpb.Message          finishMessage = 7;
 }
 
+enum RpcStatus {
+  SUCCESS = 0;
+  FAILED = 1;
+}
+
 
 message GetClusterPeersRequest {
   uint64  clusterId = 1;
-  uint64  from      = 2;
+  uint64  fromId      = 2;
+  uint64  toId        = 3;
 }
 
 message GetClusterPeersResponse {
-  repeated babuza.Peer  Peers = 1[(gogoproto.nullable) = false];
+  RpcStatus status = 1;
+  string   message = 2;
+  repeated babuza.Peer  Peers = 3[(gogoproto.nullable) = false];
 }
 
 message PublishApplicationServiceRequest {
-  uint64   replyId                = 1;
-  uint64   peerId                 = 2;
-  repeated string appServiceAddresses  = 3;
+  uint64  clusterId        = 1;
+  uint64  fromId           = 2;
+  uint64  toId             = 3;
+  uint64  proposalReplyId  = 4;
+  repeated string appServiceAddresses  = 5;
 }
 
 message PublishApplicationServiceResponse {
-  string  errorMessage = 1;
+  RpcStatus status = 1;
+  string   message = 2;
 }

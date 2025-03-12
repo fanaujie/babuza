@@ -5,9 +5,11 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/frame"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool/frame"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
+	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"math/rand"
@@ -18,10 +20,13 @@ import (
 )
 
 var (
-	defaultOpts = Options{
-		WriteDeadline: time.Second * 2,
-		ReadDeadline:  time.Second * 2,
-		MaxBufferSize: 4 * 1024 * 1024,
+	defaultOpts = connpool.Options{
+		WriteDeadline:         time.Second * 2,
+		ReadDeadline:          time.Second * 2,
+		MaxBufferSize:         4 * 1024 * 1024,
+		MaxConnectionsPerHost: 5,
+		DialTimeout:           30 * time.Second,
+		IdleTimeout:           5 * time.Minute,
 	}
 )
 
@@ -75,6 +80,13 @@ func (m *byteSliceEncode) MarshalTo(dAtA []byte) (int, error) {
 
 func (m *byteSliceEncode) Size() int {
 	return len(m.data)
+}
+
+// 實現 ibabuza.TransportResolver 接口的類型
+type peerAddressResolver string
+
+func (r peerAddressResolver) ResolvePeerAddress(peerId uint64) (string, error) {
+	return string(r), nil
 }
 
 type mockTransportRaft struct {
@@ -190,9 +202,11 @@ func TestNewServerClient(t *testing.T) {
 		identify := fmt.Sprintf("case(%d)", i)
 		srv := NewRaftMsgServer(c.TransportConfig, defaultOpts, c.NetworkIO, nil, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
-		conn, err := c.NetworkIO.Dial(c.TLSConfig, 0, c.PeerAddress)
+		pool := connpool.NewConnectionPool(c.NetworkIO, c.TLSConfig, defaultOpts)
+		client := NewRaftMsgClient(pool, peerAddressResolver(c.PeerAddress))
+		_, err := client.getConnection(0)
 		assert.Nil(t, err, identify)
-		assert.NotNil(t, NewRaftMsgClient(conn, defaultOpts), identify)
+		pool.Close()
 		srv.Stop()
 	}
 }
@@ -226,23 +240,29 @@ func TestServer_ServingReceiveMessage(t *testing.T) {
 	defer rConn.Close()
 	clientWriter := frame.NewWriter(wConn)
 	raft := newMockTransportRaft(1)
+	closer := syncutil.NewCloser()
+	defer closer.Close()
 	s := &session{
 		options: defaultOpts,
 		conn:    rConn,
 		reader:  frame.NewReader(rConn, defaultOpts.MaxBufferSize),
+		writer:  frame.NewWriter(rConn),
 		raft:    raft,
+		closeCh: closer.CloseCh(),
 	}
 	raft.setupMsgCount(1, 2)
 	batchMsg := babuzapb.BatchMessage{
 		Messages: []raftpb.Message{
 			{
 				From:  1,
+				To:    1,
 				Index: 1,
 			},
 		},
 	}
 	snapshotMsg := babuzapb.SnapshotMessage{
 		From:  1,
+		To:    1,
 		Index: 1,
 	}
 	fakeMsg := byteSliceEncode{data: []byte{1, 2, 3, 4}}
@@ -252,6 +272,9 @@ func TestServer_ServingReceiveMessage(t *testing.T) {
 		assert.Nil(t, clientWriter.Encode(byteSlice.Buffer, frame.BatchMsgType, &batchMsg))
 		assert.Nil(t, clientWriter.Encode(byteSlice.Buffer, frame.SnapshotMsgType, &snapshotMsg))
 		assert.Nil(t, clientWriter.Encode(byteSlice.Buffer, 3, &fakeMsg))
+		// Close the closer to terminate the session's start method gracefully
+		time.Sleep(500 * time.Millisecond)
+		closer.Close()
 	}()
 	assert.Error(t, s.start())
 	nodeDoneMsg := <-raft.notifyNodeDoneCh
@@ -323,9 +346,8 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 		mockTransport := newMockTransportRaft(1)
 		srv := NewRaftMsgServer(c.TransportConfig, defaultOpts, c.NetworkIO, mockTransport, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
-		conn, err := c.NetworkIO.Dial(c.TLSConfig, 0, c.PeerAddress)
-		assert.Nil(t, err, identify)
-		client := NewRaftMsgClient(conn, defaultOpts)
+		pool := connpool.NewConnectionPool(c.NetworkIO, c.TLSConfig, defaultOpts)
+		client := NewRaftMsgClient(pool, peerAddressResolver(c.PeerAddress))
 		tms := genTestMsg(c.totalMsgCount, c.batchRaftMsgCount, 1)
 		mockTransport.setupMsgCount(1, len(tms))
 		for index, tm := range tms {
@@ -335,6 +357,8 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				assert.Nil(t, client.SendSnapshotMessage(*tm.snapMsg), identify)
 			}
 			res := babuzapb.GetClusterPeersResponse{
+				Status:  babuzapb.SUCCESS,
+				Message: "success",
 				Peers: []babuzapb.Peer{
 					{
 						RaftPeerAttr: babuzapb.RaftPeerAttribute{
@@ -353,8 +377,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				},
 			}
 			mockTransport.clusterRes = res
-			getRes, err := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterId: 100})
-			assert.Nil(t, err)
+			getRes := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterId: 100, ToId: 1})
 			assert.Equal(t, res, getRes)
 		}
 		nodeDoneMsg := <-mockTransport.notifyNodeDoneCh
@@ -443,9 +466,8 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 			wg.Add(1)
 			go func(tms []*testMsg) {
 				defer wg.Done()
-				conn, err := c.NetworkIO.Dial(c.TLSConfig, 0, c.PeerAddress)
-				assert.Nil(t, err, identify)
-				client := NewRaftMsgClient(conn, defaultOpts)
+				pool := connpool.NewConnectionPool(c.NetworkIO, c.TLSConfig, defaultOpts)
+				client := NewRaftMsgClient(pool, peerAddressResolver(c.PeerAddress))
 				defer client.Close()
 				for _, tm := range tms {
 					if tm.batchMsg != nil {
@@ -484,6 +506,7 @@ func genTestMsg(totalMsgs, maxRaftMsgs int, fromNode uint64) []*testMsg {
 			r[i] = &testMsg{
 				snapMsg: &babuzapb.SnapshotMessage{
 					From:  fromNode,
+					To:    1, // 假設目標節點 ID 為 1
 					Index: startIndex,
 				},
 			}
@@ -496,6 +519,7 @@ func genRaftMsg(maxMsgs int, startIndex, fromNode uint64) []raftpb.Message {
 	for i := 0; i < maxMsgs; i++ {
 		r[i] = raftpb.Message{
 			From:  fromNode,
+			To:    1, // 假設目標節點 ID 為 1
 			Index: startIndex + uint64(i),
 		}
 	}

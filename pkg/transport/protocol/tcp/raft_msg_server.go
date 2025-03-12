@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/frame"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool/frame"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"net"
@@ -14,7 +15,7 @@ import (
 
 type RaftMsgServer struct {
 	cfg         ibabuza.TransportConfig
-	options     Options
+	options     connpool.Options
 	tcpListener Listener
 	raft        ibabuza.RaftMessageHandler
 	logger      ibabuza.Logger
@@ -22,7 +23,7 @@ type RaftMsgServer struct {
 	listener    net.Listener
 }
 
-func NewRaftMsgServer(cfg ibabuza.TransportConfig, options Options, listener Listener, raft ibabuza.RaftMessageHandler,
+func NewRaftMsgServer(cfg ibabuza.TransportConfig, options connpool.Options, listener Listener, raft ibabuza.RaftMessageHandler,
 	logger ibabuza.Logger) *RaftMsgServer {
 
 	return &RaftMsgServer{
@@ -103,7 +104,7 @@ func (r *RaftMsgServer) newSession(conn net.Conn) *session {
 }
 
 type session struct {
-	options            Options
+	options            connpool.Options
 	conn               net.Conn
 	reader             *frame.Reader
 	writer             *frame.Writer

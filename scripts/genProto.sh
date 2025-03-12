@@ -26,8 +26,8 @@ export GOPATH=${BUILD_PATH}
 export GOBIN=${BUILD_PATH}/bin
 export PATH="${GOBIN}:${PATH}"
 
-GEN_IBABUZA_RPOTO_PATH="./iBabuza/babuzapb"
-GEN_PKG_PROTO_PATH="./pkg/babuzaWal/pb ./pkg/cluster/pb"
+GEN_IBABUZA_RPOTO_PATH="${PWD}/ibabuza/babuzapb"
+GEN_PKG_PROTO_PATH="${PWD}/pkg/wal/babuzawal/pb ./pkg/cluster/pb"
 
 mkdir -p "${BUILD_PATH}/bin"
 
@@ -38,7 +38,6 @@ ETCD_SHA=d42e8589e1305d893eeec9e7db746f6f4a76c250 #v3.5.1
 ETCD_ROOT="${GOPATH}/src/go.etcd.io/etcd"
 
 if [ "$1" == "install" ]; then
-  go get -u google.golang.org/protobuf
   git clone https://github.com/gogo/protobuf.git "${GOGOPROTO_ROOT}"
   pushd "${GOGOPROTO_ROOT}"
     git reset --hard "${GOGO_PROTO_SHA}"
@@ -58,6 +57,6 @@ popd
 
 for dir in ${GEN_PKG_PROTO_PATH}; do
   pushd "${dir}"
-    protoc --gogofast_out=. --gogofast_opt=paths=source_relative -I=".:${GOGOPROTO_ROOT}:${GOPATH}/src:../../../iBabuza" ./*.proto
+    protoc --gogofast_out=. --gogofast_opt=paths=source_relative -I=".:${GOGOPROTO_ROOT}:${GOPATH}/src:${GEN_IBABUZA_RPOTO_PATH}" ./*.proto
   popd
 done

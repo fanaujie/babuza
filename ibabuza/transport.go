@@ -1,7 +1,6 @@
 package ibabuza
 
 import (
-	"context"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -29,6 +28,10 @@ type RaftNodeHandler interface {
 	SnapshotStorage
 }
 
+type TransportResolver interface {
+	ResolvePeerAddress(peerId uint64) (string, error)
+}
+
 type Transport interface {
 	SetupTransportConfig(cfg TransportConfig) error
 	SetupTransportRaft(RaftNodeHandler) error
@@ -36,7 +39,7 @@ type Transport interface {
 	Stop() error
 	Send(raftpb.Message)
 	SendSnapshot(raftpb.Message)
-	DialPeer(context.Context, uint64) (TransportClient, error)
+	CreateTransportClient() (TransportClient, error)
 	AddPeer(uint64, string)
 	UpdatePeer(uint64, string)
 	RemovePeer(uint64)
@@ -51,8 +54,8 @@ type TransportServer interface {
 type TransportClient interface {
 	SendBatchMessage(babuzapb.BatchMessage) error
 	SendSnapshotMessage(babuzapb.SnapshotMessage) error
-	GetClusterPeers(babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error)
-	PublishApplicationService(babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error)
+	GetClusterPeers(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse
+	PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse
 	Close() error
 }
 
@@ -73,5 +76,6 @@ type TransportConfig struct {
 type TransportProtocol interface {
 	Setup(TransportConfig) error
 	CreateServer(RaftMessageHandler) (TransportServer, error)
-	Dial(context.Context, string) (TransportClient, error)
+	CreateClient(TransportResolver) (TransportClient, error)
+	Close() error
 }

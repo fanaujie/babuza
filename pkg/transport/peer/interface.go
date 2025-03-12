@@ -1,15 +1,14 @@
 package peer
 
 import (
-	"context"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"io"
 )
 
-type Dialer interface {
-	Dial(ctx context.Context, peerId uint64) (ibabuza.TransportClient, error)
+type TransportClientFactory interface {
+	CreateTransportClient() (ibabuza.TransportClient, error)
 }
 
 type SnapshotFileReader interface {
@@ -19,8 +18,8 @@ type SnapshotFileReader interface {
 
 type Peer interface {
 	SendRaftMessage(msg *raftpb.Message) error
-	SendSnapshot(msg *raftpb.Message, snapReader SnapshotFileReader)
+	SendSnapshot(snapMsg *raftpb.Message, snapReader SnapshotFileReader)
 	UpdateRaftReport(report ibabuza.RaftStatusReporter)
 	Stop()
-	Run()
+	UpdatePeer()
 }

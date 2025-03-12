@@ -209,7 +209,7 @@ func (m *mockTransport) Send(msg raftpb.Message) { m.send = append(m.send, msg) 
 func (m *mockTransport) SendSnapshot(snap raftpb.Message) {
 	m.snap = append(m.snap, snap)
 }
-func (m *mockTransport) DialPeer(ctx context.Context, u uint64) (ibabuza.TransportClient, error) {
+func (m *mockTransport) CreateTransportClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
 	return m.mockClient, nil
 }
 func (m *mockTransport) AddPeer(uint64, string)    {}
@@ -452,18 +452,20 @@ func (m *mockIdGenerator) Next() uint64 {
 }
 
 type mockPubTransClient struct {
+	status babuzapb.RpcStatus
 	errMsg string
 }
 
 func (c *mockPubTransClient) SendBatchMessage(babuzapb.BatchMessage) error       { return nil }
 func (c *mockPubTransClient) SendSnapshotMessage(babuzapb.SnapshotMessage) error { return nil }
-func (c *mockPubTransClient) GetClusterPeers(babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
-	return babuzapb.GetClusterPeersResponse{}, nil
+func (c *mockPubTransClient) GetClusterPeers(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+	return babuzapb.GetClusterPeersResponse{}
 }
-func (c *mockPubTransClient) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
+func (c *mockPubTransClient) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	return babuzapb.PublishApplicationServiceResponse{
-		ErrorMessage: c.errMsg,
-	}, nil
+		Status:  c.status,
+		Message: c.errMsg,
+	}
 }
 func (c *mockPubTransClient) Close() error { return nil }
 

@@ -31,7 +31,10 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 }
 
 func (d *transportProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	return babuzapb.GetClusterPeersResponse{Peers: d.cluster.Peers()}
+	return babuzapb.GetClusterPeersResponse{
+		Status:  babuzapb.SUCCESS,
+		Message: "success",
+		Peers:   d.cluster.Peers()}
 }
 
 func (d *transportProcessor) PublishApplicationServiceRequest(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
@@ -39,23 +42,27 @@ func (d *transportProcessor) PublishApplicationServiceRequest(req babuzapb.Publi
 
 	normalRequest := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: req.ReplyId,
+			ReplyId: req.ProposalReplyId,
 		},
 		PubAppService: &babuzapb.PubAppServiceRequest{
-			Id:                  req.PeerId,
+			PubServicePeerId:    req.FromId,
 			AppServiceAddresses: req.AppServiceAddresses,
 		},
 	}
 
 	data, err := normalRequest.Marshal()
 	if err != nil {
-		res.ErrorMessage = err.Error()
+		res.Status = babuzapb.FAILED
+		res.Message = err.Error()
 		return res
 	}
 
 	if err = d.raftNode.Propose(context.Background(), data); err != nil {
-		res.ErrorMessage = err.Error()
+		res.Status = babuzapb.FAILED
+		res.Message = err.Error()
 	}
+	res.Status = babuzapb.SUCCESS
+	res.Message = "success"
 	return res
 }
 
