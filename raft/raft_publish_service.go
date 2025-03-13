@@ -79,7 +79,7 @@ func (r *Raft) proposalPubAppService(ctx context.Context, replyId uint64, appSer
 func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderId, replyId uint64,
 	appServiceAddresses []string) error {
 
-	c, err := r.trans.DialPeer(ctx, leaderId)
+	c, err := r.trans.CreateTransportClient()
 	if err != nil {
 		return err
 	}
@@ -89,15 +89,17 @@ func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderId, reply
 		return err
 	}
 	defer r.resultReplier.CancelResult(replyId)
-	res, err := c.PublishApplicationService(babuzapb.PublishApplicationServiceRequest{
-		ReplyId:             replyId,
-		PeerId:              r.config.LocalPeerId,
+	res := c.PublishApplicationService(babuzapb.PublishApplicationServiceRequest{
+		ClusterId:           r.config.ClusterId,
+		FromId:              r.config.LocalPeerId,
+		ToId:                leaderId,
+		ProposalReplyId:     replyId,
 		AppServiceAddresses: appServiceAddresses,
 	})
 	if err != nil {
 		return err
 	}
-	if len(res.ErrorMessage) == 0 {
+	if res.Status == babuzapb.SUCCESS {
 		select {
 		case <-r.closer.CloseCh():
 			return ErrStopped
@@ -110,5 +112,5 @@ func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderId, reply
 			return nil
 		}
 	}
-	return errors.New(res.ErrorMessage)
+	return errors.New(res.Message)
 }

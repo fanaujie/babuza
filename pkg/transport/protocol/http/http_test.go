@@ -11,7 +11,6 @@ import (
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"math/rand"
 	"net"
-	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -21,7 +20,6 @@ var (
 	defaultOpts = Options{
 		WriteDeadline:   time.Second * 2,
 		ReadDeadline:    time.Second * 2,
-		MaxBufferSize:   4 * 1024 * 1024,
 		ShutdownTimeout: time.Second * 2,
 	}
 )
@@ -137,44 +135,22 @@ func dial(cfg ibabuza.TLSConfig, endpoint string) (net.Conn, error) {
 	return tls.Dial("tcp", endpoint, tlsCfg)
 }
 
-func TestNewServerClient(t *testing.T) {
+// MockTransportResolver is a simple implementation of ibabuza.TransportResolver for testing
+type MockTransportResolver struct {
+	addressMap map[uint64]string
+}
 
-	var testCase = []ibabuza.TransportConfig{
-		{
-			PeerAddress: "localhost:14200",
-			TLSConfig:   ibabuza.TLSConfig{},
-		},
-		{
-			PeerAddress: "localhost:14200",
-			TLSConfig: ibabuza.TLSConfig{
-				EnableTLS: true,
-				MutualTLS: false,
-				TLSCert:   "../../../../test/fixtures/babuza.pem",
-				TLSKey:    "../../../../test/fixtures/babuza-key.pem",
-				TLSRootCA: "../../../../test/fixtures/ca.pem",
-			},
-		},
-		{
-			PeerAddress: "localhost:14200",
-			TLSConfig: ibabuza.TLSConfig{
-				EnableTLS: true,
-				MutualTLS: true,
-				TLSCert:   "../../../../test/fixtures/babuza.pem",
-				TLSKey:    "../../../../test/fixtures/babuza-key.pem",
-				TLSRootCA: "../../../../test/fixtures/ca.pem",
-			},
-		},
+func NewMockTransportResolver() *MockTransportResolver {
+	return &MockTransportResolver{
+		addressMap: make(map[uint64]string),
 	}
+}
 
-	for i, tc := range testCase {
-		identify := fmt.Sprintf("case(%d)", i)
-		srv := NewRaftMsgServer(tc, defaultOpts, nil, &logger.Mock{})
-		assert.Nil(t, srv.Start(), identify)
-		client, err := NewClient(tc.TLSConfig, defaultOpts)
-		assert.Nil(t, err, identify)
-		assert.NotNil(t, NewRaftMsgClient(client, defaultOpts, url.URL{}), identify)
-		assert.Nil(t, srv.Stop())
+func (m *MockTransportResolver) ResolvePeerAddress(peerId uint64) (string, error) {
+	if addr, ok := m.addressMap[peerId]; ok {
+		return addr, nil
 	}
+	return "localhost:14200", nil // Default for testing
 }
 
 func TestSingleServerClient_SendAndReceive(t *testing.T) {
@@ -228,7 +204,10 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 		assert.Nil(t, srv.Start(), identify)
 		httpClient, err := NewClient(c.TLSConfig, defaultOpts)
 		assert.Nil(t, err, identify)
-		client := NewRaftMsgClient(httpClient, defaultOpts, gerHostUrl(c.PeerAddress, c.EnableTLS))
+
+		resolver := NewMockTransportResolver()
+		client := NewRaftMsgClient(httpClient, defaultOpts, resolver, c.EnableTLS)
+
 		tms := genTestMsg(c.totalMsgCount, c.batchRaftMsgCount, 1)
 		mr.setupMsgCount(1, len(tms))
 		for index, tm := range tms {
@@ -237,6 +216,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 			} else if tm.snapMsg != nil {
 				assert.Nil(t, client.SendSnapshotMessage(*tm.snapMsg), identify)
 			}
+
 			res := babuzapb.GetClusterPeersResponse{
 				Peers: []babuzapb.Peer{
 					{
@@ -256,8 +236,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				},
 			}
 			mr.clusterRes = res
-			getRes, err := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterId: 100})
-			assert.Nil(t, err)
+			getRes := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterId: 100})
 			assert.Equal(t, res, getRes)
 		}
 		nodeDoneMsg := <-mr.notifyNodeDoneCh
@@ -265,7 +244,6 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 		client.Close()
 		assert.Nil(t, srv.Stop())
 	}
-
 }
 
 func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
@@ -334,7 +312,8 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 				defer wg.Done()
 				httpClient, err := NewClient(c.TLSConfig, defaultOpts)
 				assert.Nil(t, err, identify)
-				client := NewRaftMsgClient(httpClient, defaultOpts, gerHostUrl(c.PeerAddress, c.EnableTLS))
+				resolver := NewMockTransportResolver()
+				client := NewRaftMsgClient(httpClient, defaultOpts, resolver, c.EnableTLS)
 				defer client.Close()
 				for _, tm := range tms {
 					if tm.batchMsg != nil {
@@ -389,14 +368,4 @@ func genRaftMsg(maxMsgs int, startIndex, fromNode uint64) []raftpb.Message {
 		}
 	}
 	return r
-}
-
-func gerHostUrl(host string, enableTLS bool) url.URL {
-	u := url.URL{Host: host}
-	if enableTLS {
-		u.Scheme = "https"
-	} else {
-		u.Scheme = "http"
-	}
-	return u
 }

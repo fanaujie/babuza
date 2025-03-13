@@ -25,7 +25,7 @@ func encodePubAppServiceAddressesRequest(replyId, peerId uint64, addresses []str
 			ReplyId: replyId,
 		},
 		PubAppService: &babuzapb.PubAppServiceRequest{
-			Id:                  peerId,
+			PubServicePeerId:    peerId,
 			AppServiceAddresses: addresses,
 		},
 	}

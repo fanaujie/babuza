@@ -132,7 +132,7 @@ func (b *BootstrapBuilder) Build() (*BootstrapRaftCluster, error) {
 		b.walManager = babuzawal.NewWalManager(filepath.Join(b.defaultStorageDir, "wal"), b.logger)
 	}
 	if b.transport == nil {
-		b.transport = transport.New(transport.DefaultOptions(),
+		b.transport = transport.New(b.config.ClusterId, transport.DefaultOptions(),
 			transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
 			limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(),
 			protocol.NewTcp(networkio.NewTcpPhysicalIO(), b.logger), b.logger)

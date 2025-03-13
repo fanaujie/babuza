@@ -7,12 +7,12 @@ import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
+	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"hash/crc32"
 	"io"
 	"sync"
-	"time"
 )
 
 var (
@@ -24,40 +24,39 @@ var (
 )
 
 type RaftPeer struct {
-	id                         uint64
+	clusterId                  uint64
+	peerId                     uint64
 	limiterMaxBatchMessageSize int64
 	snapshotChunkSize          int64
 	raftQueueSize              int64
-	dialTimeout                time.Duration
 	raftReport                 ibabuza.RaftStatusReporter
 	memoryLimiter              limiter.ResourceLimiter
 	chunkRateLimiter           limiter.RateLimiter
 	breaker                    breaker.Breaker
-	dialer                     Dialer
+	clientFactory              TransportClientFactory
 	logger                     ibabuza.Logger
 	msgQueue                   chan *raftpb.Message
-	startRaftMsgCh             chan chan *raftpb.Message
-	stopCh                     chan struct{}
+	closer                     *syncutil.Closer
 	mu                         sync.RWMutex
 }
 
-func New(peerId uint64, cfg RaftPeerConfig, raftReport ibabuza.RaftStatusReporter,
-	memoryLimiter limiter.ResourceLimiter, chunkRateLimiter limiter.RateLimiter, breaker breaker.Breaker, dialer Dialer,
-	logger ibabuza.Logger) *RaftPeer {
+func New(clusterId, peerId uint64, cfg RaftPeerConfig, raftReport ibabuza.RaftStatusReporter,
+	memoryLimiter limiter.ResourceLimiter, chunkRateLimiter limiter.RateLimiter, breaker breaker.Breaker,
+	clientFactory TransportClientFactory, logger ibabuza.Logger) *RaftPeer {
 
 	return &RaftPeer{
-		id:                         peerId,
+		clusterId:                  clusterId,
+		peerId:                     peerId,
 		limiterMaxBatchMessageSize: cfg.LimiterMaxBatchMessageSize,
 		snapshotChunkSize:          cfg.SnapshotChunkSize,
 		raftQueueSize:              cfg.RaftMsgQueueSize,
-		dialTimeout:                cfg.DialTimeout,
 		raftReport:                 raftReport,
 		memoryLimiter:              memoryLimiter,
 		chunkRateLimiter:           chunkRateLimiter,
 		breaker:                    breaker,
-		dialer:                     dialer,
+		clientFactory:              clientFactory,
 		logger:                     logger,
-		startRaftMsgCh:             make(chan chan *raftpb.Message),
+		closer:                     syncutil.NewCloser(),
 	}
 }
 
@@ -72,106 +71,103 @@ func (p *RaftPeer) SendRaftMessage(msg *raftpb.Message) error {
 		p.raftReport.ReportUnreachable(msg.To)
 		return ErrPeerReachMaxTotalSendMsgSize
 	}
-
 	select {
-	case <-p.stopCh:
+	case <-p.closer.CloseCh():
 		p.raftReport.ReportUnreachable(msg.To)
 		return ErrPeerStopped
 	default:
-		p.mu.RLock()
-		msgCh := p.msgQueue
-		p.mu.RUnlock()
-
-		if msgCh == nil {
-			p.memoryLimiter.Reset()
-			msgCh = make(chan *raftpb.Message, p.raftQueueSize)
-			p.startRaftMsgCh <- msgCh
-			p.logger.Infof("RaftPeer[Id=%d] start new message queue", p.id)
-		}
-
-		select {
-		case msgCh <- msg:
-			p.memoryLimiter.Acquire(acquiredSize)
-			return nil
-		default:
-			p.raftReport.ReportUnreachable(msg.To)
-			return ErrPeerQueueFull
-		}
 	}
+	msgCh := p.getQueue()
+	select {
+	case msgCh <- msg:
+		p.memoryLimiter.Acquire(acquiredSize)
+		return nil
+	default:
+		return ErrPeerQueueFull
+	}
+
 }
 
 func (p *RaftPeer) SendSnapshot(snapMsg *raftpb.Message, snapReader SnapshotFileReader) {
-
-	if err := p.sendSnapshotMessageLoop(snapMsg, snapReader); err != nil {
-		if !errors.Is(err, ErrPeerStopped) {
+	p.closer.Run(func() {
+		client, err := p.clientFactory.CreateTransportClient()
+		if err != nil {
+			p.logger.Errorf("RaftPeer[Id=%d] create transport client error: %v", p.peerId, err)
 			p.breaker.Fail()
-			p.raftReport.ReportUnreachable(p.id)
-			p.raftReport.ReportSnapshot(p.id, raft.SnapshotFailure)
+			return
 		}
-		return
-	}
-	p.raftReport.ReportSnapshot(p.id, raft.SnapshotFinish)
-	return
+		defer client.Close()
+		if err = p.sendSnapshotMessageLoop(client, snapMsg, snapReader); err != nil {
+			if !errors.Is(err, ErrPeerStopped) {
+				p.breaker.Fail()
+				p.raftReport.ReportUnreachable(p.peerId)
+				p.raftReport.ReportSnapshot(p.peerId, raft.SnapshotFailure)
+			}
+			return
+		}
+		p.raftReport.ReportSnapshot(p.peerId, raft.SnapshotFinish)
+	})
 }
 
 func (p *RaftPeer) UpdateRaftReport(report ibabuza.RaftStatusReporter) {
 	p.raftReport = report
 }
 
-func (p *RaftPeer) Run() {
-	p.stopCh = make(chan struct{})
-	go func() {
-		p.processRaftMsg()
-	}()
-}
-
 func (p *RaftPeer) Stop() {
-	close(p.stopCh)
+	p.closer.Close()
 }
 
-func (p *RaftPeer) processRaftMsg() {
-	for {
-		select {
-		case <-p.stopCh:
-			return
-		case msgCh := <-p.startRaftMsgCh:
-			p.mu.Lock()
-			p.msgQueue = msgCh
-			p.mu.Unlock()
-			if err := p.sendRaftMessageLoop(); err != nil {
-				p.logger.Infof("RaftPeer[Id=%d] failed to send raft message err(%s)", p.id, err.Error())
+func (p *RaftPeer) UpdatePeer() {
+	p.Stop()
+	//restart
+}
+
+func (p *RaftPeer) getQueue() chan *raftpb.Message {
+	p.mu.RLock()
+	msgCh := p.msgQueue
+	p.mu.RUnlock()
+	if msgCh == nil {
+		p.memoryLimiter.Reset()
+		p.mu.Lock()
+		p.msgQueue = make(chan *raftpb.Message, p.raftQueueSize)
+		msgCh = p.msgQueue
+		p.mu.Unlock()
+		p.closer.Run(func() {
+			client, err := p.clientFactory.CreateTransportClient()
+			if err != nil {
+				p.logger.Errorf("RaftPeer[Id=%d] create transport client error: %v", p.peerId, err)
+				p.breaker.Fail()
+				return
+			}
+			defer client.Close()
+			if err = p.sendRaftMessageLoop(client, msgCh); err != nil {
 				if !errors.Is(err, ErrPeerStopped) {
 					p.breaker.Fail()
-					p.raftReport.ReportUnreachable(p.id)
+					p.raftReport.ReportUnreachable(p.peerId)
 				}
-				p.mu.Lock()
-				p.msgQueue = nil
-				p.mu.Unlock()
 			}
-		}
+			p.drainMsgQueue()
+			p.logger.Infof("RaftPeer[Id=%d] sendRaftMessageLoop goroutine exit", p.peerId)
+		})
+		p.logger.Infof("RaftPeer[Id=%d] start new message queue", p.peerId)
 	}
+	return msgCh
 }
 
-func (p *RaftPeer) sendRaftMessageLoop() error {
+func (p *RaftPeer) sendRaftMessageLoop(client ibabuza.TransportClient, msgCh chan *raftpb.Message) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), p.dialTimeout)
-	client, err := p.dialer.Dial(ctx, p.id)
-	cancel()
-	if err != nil {
-		return err
+	var batchMsg = babuzapb.BatchMessage{
+		ClusterId: p.clusterId,
 	}
-	defer client.Close()
-
-	var batchMsg babuzapb.BatchMessage
 	var nextBatch bool
 	var maxBatchSize int64
-	msgBuf := make([]raftpb.Message, 0, cap(p.msgQueue))
+	msgBuf := make([]raftpb.Message, 0, cap(msgCh))
+
 	for {
 		select {
-		//TODO: reqQ add context
-		case <-p.stopCh:
+		case <-p.closer.CloseCh():
 			return ErrPeerStopped
-		case msg := <-p.msgQueue:
+		case msg := <-msgCh:
 			msgBuf = append(msgBuf, *msg)
 			mSize := int64(msg.Size())
 			maxBatchSize += mSize
@@ -195,13 +191,13 @@ func (p *RaftPeer) sendRaftMessageLoop() error {
 			batchMsg.Messages = msgBuf
 			if nextBatch {
 				batchMsg.Messages = msgBuf[:len(msgBuf)-1]
-				if err = client.SendBatchMessage(batchMsg); err != nil {
+				if err := client.SendBatchMessage(batchMsg); err != nil {
 					return err
 				}
 				p.breaker.Success()
 				batchMsg.Messages = msgBuf[len(msgBuf)-1:]
 			}
-			if err = client.SendBatchMessage(batchMsg); err != nil {
+			if err := client.SendBatchMessage(batchMsg); err != nil {
 				return err
 			}
 
@@ -217,23 +213,12 @@ func (p *RaftPeer) sendRaftMessageLoop() error {
 	}
 }
 
-func (p *RaftPeer) sendSnapshotMessageLoop(snapMsg *raftpb.Message,
+func (p *RaftPeer) sendSnapshotMessageLoop(client ibabuza.TransportClient, snapMsg *raftpb.Message,
 	snapFileReader SnapshotFileReader) error {
-
-	if !p.breaker.Ready() {
-		return ErrPeerBreakerNotReady
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), p.dialTimeout)
-	client, err := p.dialer.Dial(ctx, p.id)
-	cancel()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
 
 	sendSnapshotMsg := func(msg babuzapb.SnapshotMessage) error {
 		select {
-		case <-p.stopCh:
+		case <-p.closer.CloseCh():
 			return ErrPeerStopped
 		default:
 			if sErr := client.SendSnapshotMessage(msg); sErr != nil {
@@ -261,7 +246,7 @@ func (p *RaftPeer) sendSnapshotMessageLoop(snapMsg *raftpb.Message,
 	//send chunk message
 	m.Metadata = nil
 	chunkBuf := make([]byte, p.snapshotChunkSize)
-	if err = snapFileReader.ForEachFile(func(reader io.Reader, metadata babuzapb.SnapshotFileDesc) error {
+	if err := snapFileReader.ForEachFile(func(reader io.Reader, metadata babuzapb.SnapshotFileDesc) error {
 		m.ChunkMessage = &babuzapb.SnapshotChunkMessage{}
 		m.ChunkMessage.FileTag = metadata.Tag
 		m.ChunkMessage.FileType = metadata.FileType
@@ -273,7 +258,7 @@ func (p *RaftPeer) sendSnapshotMessageLoop(snapMsg *raftpb.Message,
 	//send finish message
 	m.ChunkMessage = nil
 	m.FinishMessage = snapMsg
-	if err = sendSnapshotMsg(m); err != nil {
+	if err := sendSnapshotMsg(m); err != nil {
 		return err
 	}
 	p.breaker.Success()
@@ -302,7 +287,7 @@ func (p *RaftPeer) sendSnapshotMsgWithChunk(reader io.Reader, fileSize int64, cl
 			msg.ChunkMessage.ContinueCrc32 = crc32.Update(msg.ChunkMessage.ContinueCrc32, crcTable, msg.ChunkMessage.Data)
 			written += int64(nr)
 			select {
-			case <-p.stopCh:
+			case <-p.closer.CloseCh():
 				return ErrPeerStopped
 			default:
 				if err = p.chunkRateLimiter.Wait(context.Background()); err != nil {
@@ -313,6 +298,20 @@ func (p *RaftPeer) sendSnapshotMsgWithChunk(reader io.Reader, fileSize int64, cl
 				}
 				p.breaker.Success()
 			}
+		}
+	}
+}
+
+func (p *RaftPeer) drainMsgQueue() {
+	p.mu.Lock()
+	tmpCh := p.msgQueue
+	p.msgQueue = nil
+	p.mu.Unlock()
+	for {
+		select {
+		case <-tmpCh:
+		default:
+			return
 		}
 	}
 }

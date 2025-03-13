@@ -34,11 +34,13 @@ func NewBootstrapRaftCluster(cfg *BabuzaConfig, configuration *VotingPeersConfig
 	if err = sessions.SetResponseSerializer(storage.GetApplyResultSerializer()); err != nil {
 		return nil, err
 	}
-	trans.SetupTransportConfig(ibabuza.TransportConfig{
+	if err = trans.SetupTransportConfig(ibabuza.TransportConfig{
 		PeerId:      cfg.LocalPeerId,
 		PeerAddress: cfg.RaftListenAddress,
 		TLSConfig:   cfg.TLSConfig,
-	})
+	}); err != nil {
+		return nil, err
+	}
 	cluster.SetClusterId(cfg.ClusterId)
 	cluster.SetLocalPeerId(cfg.LocalPeerId)
 	raftStatus := status.New()
@@ -276,8 +278,14 @@ func matchRemoteCluster(remoteCtx context.Context, config *BabuzaConfig, remoteC
 
 	req := babuzapb.GetClusterPeersRequest{
 		ClusterId: config.ClusterId,
-		From:      config.LocalPeerId,
+		FromId:    config.LocalPeerId,
 	}
+	client, err := trans.CreateTransportClient()
+	if err != nil {
+		return errors.New("bootstrap: create transport client error")
+	}
+	defer client.Close()
+
 	for _, raftPeerAttr := range remoteConfiguration.RaftPeersAttribute() {
 		if raftPeerAttr.Id == config.LocalPeerId {
 			continue
@@ -287,18 +295,14 @@ func matchRemoteCluster(remoteCtx context.Context, config *BabuzaConfig, remoteC
 			return remoteCtx.Err()
 		default:
 		}
-		res, err := func() (babuzapb.GetClusterPeersResponse, error) {
-			client, err := trans.DialPeer(remoteCtx, raftPeerAttr.Id)
-			if err != nil {
-				return babuzapb.GetClusterPeersResponse{}, err
-			}
-			defer client.Close()
+		res := func(toId uint64) babuzapb.GetClusterPeersResponse {
+			req.ToId = toId
 			return client.GetClusterPeers(req)
-		}()
-		if err != nil {
-			return err
+		}(raftPeerAttr.Id)
+		if res.Status == babuzapb.FAILED {
+			continue
 		}
-		if err = remoteConfiguration.MatchRemoteCluster(res.Peers); err != nil {
+		if err := remoteConfiguration.MatchRemoteCluster(res.Peers); err != nil {
 			continue
 		}
 		return nil

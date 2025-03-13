@@ -2,105 +2,113 @@ package tcp
 
 import (
 	"fmt"
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/frame"
-	"github.com/fanaujie/babuza/pkg/utility/allocator"
-	"net"
-	"time"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool/frame"
 )
 
-type Options struct {
-	WriteDeadline time.Duration
-	ReadDeadline  time.Duration
-	MaxBufferSize int
-}
-
 type RaftMsgClient struct {
-	conn    net.Conn
-	reader  *frame.Reader
-	writer  *frame.Writer
-	options Options
+	resolver ibabuza.TransportResolver
+	connPool *connpool.ConnectionPool
 }
 
-func NewRaftMsgClient(conn net.Conn, options Options) *RaftMsgClient {
-	//TODO: connection pool?
+func NewRaftMsgClient(pool *connpool.ConnectionPool, resolver ibabuza.TransportResolver) *RaftMsgClient {
 	return &RaftMsgClient{
-		conn:    conn,
-		reader:  frame.NewReader(conn, options.MaxBufferSize),
-		writer:  frame.NewWriter(conn),
-		options: options,
+		resolver: resolver,
+		connPool: pool,
 	}
+}
 
+func (r *RaftMsgClient) getConnection(peerId uint64) (*connpool.Connection, error) {
+	addr, err := r.resolver.ResolvePeerAddress(peerId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve peer address: %w", err)
+	}
+	conn, err := r.connPool.GetConnection(addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get connection from pool: %w", err)
+	}
+	return conn, nil
 }
 
 func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
-	//TODO: retry if failed?
-	if err := r.conn.SetWriteDeadline(time.Now().Add(r.options.WriteDeadline)); err != nil {
+	if batchMsg.Messages == nil || len(batchMsg.Messages) == 0 {
+		return fmt.Errorf("batch message is empty")
+	}
+	conn, err := r.getConnection(batchMsg.Messages[0].To)
+	if err != nil {
 		return err
 	}
-	byteSlice := allocator.Acquire(r.options.MaxBufferSize)
-	defer allocator.Release(byteSlice)
-	return r.writer.Encode(byteSlice.Buffer, frame.BatchMsgType, &batchMsg)
+	return conn.SendFrame(frame.BatchMsgType, &batchMsg)
 }
 
 func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) error {
-	//TODO: retry if failed?
-
-	if err := r.conn.SetWriteDeadline(time.Now().Add(r.options.WriteDeadline)); err != nil {
+	conn, err := r.getConnection(snapMsg.To)
+	if err != nil {
 		return err
 	}
-	byteSlice := allocator.Acquire(r.options.MaxBufferSize)
-	defer allocator.Release(byteSlice)
-	return r.writer.Encode(byteSlice.Buffer, frame.SnapshotMsgType, &snapMsg)
+	return conn.SendFrame(frame.SnapshotMsgType, &snapMsg)
 }
-func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
+
+func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
 	var res babuzapb.GetClusterPeersResponse
-	if err := r.conn.SetWriteDeadline(time.Now().Add(r.options.WriteDeadline)); err != nil {
-		return res, err
+
+	conn, err := r.getConnection(request.ToId)
+	if err != nil {
+		res.Status = babuzapb.FAILED
+		res.Message = err.Error()
+		return res
 	}
-	byteSlice := allocator.Acquire(r.options.MaxBufferSize)
-	defer allocator.Release(byteSlice)
-	if err := r.writer.Encode(byteSlice.Buffer, frame.ClusterPeersReqType, &request); err != nil {
-		return res, err
+	err = conn.SendFrame(frame.ClusterPeersReqType, &request)
+	if err != nil {
+		res.Status = babuzapb.FAILED
+		res.Message = err.Error()
+		return res
 	}
-	if err := r.conn.SetReadDeadline(time.Now().Add(r.options.ReadDeadline)); err != nil {
-		return res, err
-	}
-	if err := r.reader.ReadFrame(func(msgType frame.MessageType, msgBuf []byte) error {
+
+	err = conn.ReadFrame(func(msgType frame.MessageType, msgBuf []byte) error {
 		if msgType != frame.ClusterPeersResType {
 			return fmt.Errorf("unexpected message type: %v", msgType)
 		}
 		return res.Unmarshal(msgBuf)
-	}); err != nil {
-		return res, err
+	})
+	if err != nil {
+		res.Status = babuzapb.FAILED
+		res.Message = err.Error()
+		return res
 	}
-	return res, nil
+	return res
 }
-func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (
-	babuzapb.PublishApplicationServiceResponse, error) {
 
+func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	var res babuzapb.PublishApplicationServiceResponse
-	if err := r.conn.SetWriteDeadline(time.Now().Add(r.options.WriteDeadline)); err != nil {
-		return res, err
+	conn, err := r.getConnection(request.ToId)
+	if err != nil {
+		res.Status = babuzapb.FAILED
+		res.Message = err.Error()
+		return res
 	}
-	byteSlice := allocator.Acquire(r.options.MaxBufferSize)
-	defer allocator.Release(byteSlice)
-	if err := r.writer.Encode(byteSlice.Buffer, frame.PubAppServiceReqType, &request); err != nil {
-		return res, err
+	err = conn.SendFrame(frame.PubAppServiceReqType, &request)
+	if err != nil {
+		res.Status = babuzapb.FAILED
+		res.Message = err.Error()
+		return res
 	}
-	if err := r.conn.SetReadDeadline(time.Now().Add(r.options.ReadDeadline)); err != nil {
-		return res, err
-	}
-	if err := r.reader.ReadFrame(func(msgType frame.MessageType, msgBuf []byte) error {
+	err = conn.ReadFrame(func(msgType frame.MessageType, msgBuf []byte) error {
 		if msgType != frame.PubAppServiceResType {
 			return fmt.Errorf("unexpected message type: %v", msgType)
 		}
 		return res.Unmarshal(msgBuf)
-	}); err != nil {
-		return res, err
+	})
+	if err != nil {
+		res.Status = babuzapb.FAILED
+		res.Message = err.Error()
+		return res
 	}
-	return res, nil
+	return res
 }
+
 func (r *RaftMsgClient) Close() error {
-	return r.conn.Close()
+	return nil
 }

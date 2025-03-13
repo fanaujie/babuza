@@ -4,7 +4,7 @@ option go_package = "github.com/fanaujie/babuza/pkg/cluster/pb";
 
 
 import "gogoproto/gogo.proto";
-import "babuzapb/babuza.proto";
+import "babuza.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.sizer_all) = true;

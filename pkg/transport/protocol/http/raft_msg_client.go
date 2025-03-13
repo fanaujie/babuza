@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"net/http"
@@ -21,55 +22,55 @@ const (
 type Options struct {
 	WriteDeadline   time.Duration
 	ReadDeadline    time.Duration
-	MaxBufferSize   int
 	ShutdownTimeout time.Duration
 }
 
 type RaftMsgClient struct {
-	byteSlice           *allocator.ByteSlice
-	raftBatchMsgUrl     string
-	raftSnapshotMsgUrl  string
-	raftClusterPeersUrl string
-	raftAppServiceUrls  string
-	client              *http.Client
+	client   *http.Client
+	resolver ibabuza.TransportResolver
+	urlPool  *UrlPool
 }
 
-func NewRaftMsgClient(client *http.Client, options Options, u url.URL) *RaftMsgClient {
-	u.Path = raftBatchMsgPrefix
-	raftBatchMsgUrl := u.String()
-	u.Path = raftSnapshotMsgPrefix
-	raftSnapshotMsgUrl := u.String()
-	u.Path = raftClusterPeersPrefix
-	raftClusterPeersUrl := u.String()
-	u.Path = raftAppServiceUrlsPrefix
-	raftAppServiceUrls := u.String()
+func NewRaftMsgClient(client *http.Client, options Options, resolver ibabuza.TransportResolver, enableTls bool) *RaftMsgClient {
 	return &RaftMsgClient{
-		byteSlice:           allocator.Acquire(options.MaxBufferSize),
-		raftBatchMsgUrl:     raftBatchMsgUrl,
-		raftSnapshotMsgUrl:  raftSnapshotMsgUrl,
-		raftClusterPeersUrl: raftClusterPeersUrl,
-		raftAppServiceUrls:  raftAppServiceUrls,
-		client:              client,
+		client:   client,
+		resolver: resolver,
+		urlPool:  NewUrlPool(enableTls),
 	}
+}
+
+func (r *RaftMsgClient) getUrl(peerId uint64, path string) (*url.URL, error) {
+	addr, err := r.resolver.ResolvePeerAddress(peerId)
+	if err != nil {
+		return nil, err
+	}
+	u := r.urlPool.Acquire()
+	u.Host = addr
+	u.Path = path
+	return u, nil
 }
 
 func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	//TODO: retry if failed?
-	msgSize := batchMsg.Size()
-	var buf []byte
-	if msgSize > len(r.byteSlice.Buffer) {
-		bufSlice := allocator.Acquire(msgSize)
-		defer allocator.Release(bufSlice)
-		buf = bufSlice.Buffer[:msgSize]
-	} else {
-		buf = r.byteSlice.Buffer[:msgSize]
+	if batchMsg.Messages == nil || len(batchMsg.Messages) == 0 {
+		return fmt.Errorf("batch message is empty")
 	}
+	u, err := r.getUrl(batchMsg.Messages[0].To, raftBatchMsgPrefix)
+	if err != nil {
+		return err
+	}
+	defer r.urlPool.Release(u)
+	msgSize := batchMsg.Size()
+
+	bufSlice := allocator.Acquire(msgSize)
+	defer allocator.Release(bufSlice)
+	buf := bufSlice.Buffer[:msgSize]
+
 	n, err := batchMsg.MarshalTo(buf)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, r.raftBatchMsgUrl,
-		bytes.NewReader(r.byteSlice.Buffer[:n]))
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(buf[:n]))
 	if err != nil {
 		return err
 	}
@@ -80,25 +81,26 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return errors.New("")
+		return errors.New("unexpected status code")
 	}
 	return nil
 }
 
 func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) error {
 	//TODO: retry if failed?
-	msgSize := snapMsg.Size()
-	var buf []byte
-	if msgSize > len(r.byteSlice.Buffer) {
-		bufSlice := allocator.Acquire(msgSize)
-		defer allocator.Release(bufSlice)
-		buf = bufSlice.Buffer[:msgSize]
-	} else {
-		buf = r.byteSlice.Buffer[:msgSize]
+	u, err := r.getUrl(snapMsg.To, raftSnapshotMsgPrefix)
+	if err != nil {
+		return err
 	}
+	defer r.urlPool.Release(u)
+	msgSize := snapMsg.Size()
+
+	bufSlice := allocator.Acquire(msgSize)
+	defer allocator.Release(bufSlice)
+	buf := bufSlice.Buffer[:msgSize]
+
 	n, err := snapMsg.MarshalTo(buf)
-	req, err := http.NewRequest(http.MethodPost, r.raftSnapshotMsgUrl,
-		bytes.NewReader(r.byteSlice.Buffer[:n]))
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(buf[:n]))
 	if err != nil {
 		return err
 	}
@@ -109,69 +111,104 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return errors.New("")
+		return errors.New("unexpected status code")
 	}
 	return nil
 }
-func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
-	req, err := http.NewRequest(http.MethodGet, r.raftClusterPeersUrl, nil)
+func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+	u, err := r.getUrl(request.ToId, raftClusterPeersPrefix)
 	if err != nil {
-		return babuzapb.GetClusterPeersResponse{}, err
+		return babuzapb.GetClusterPeersResponse{
+			Status:  babuzapb.FAILED,
+			Message: err.Error(),
+		}
+	}
+	defer r.urlPool.Release(u)
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return babuzapb.GetClusterPeersResponse{
+			Status:  babuzapb.FAILED,
+			Message: err.Error(),
+		}
 	}
 	q := req.URL.Query()
 	q.Add("clusterId", fmt.Sprintf("%d", request.ClusterId))
-	q.Add("from", fmt.Sprintf("%d", request.From))
+	q.Add("from", fmt.Sprintf("%d", request.FromId))
+	q.Add("to", fmt.Sprintf("%d", request.ToId))
 	req.URL.RawQuery = q.Encode()
 	res, err := r.client.Do(req)
 	if err != nil {
-		return babuzapb.GetClusterPeersResponse{}, err
+		return babuzapb.GetClusterPeersResponse{
+			Status:  babuzapb.FAILED,
+			Message: err.Error(),
+		}
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return babuzapb.GetClusterPeersResponse{}, errors.New("")
+		return babuzapb.GetClusterPeersResponse{
+			Status:  babuzapb.FAILED,
+			Message: fmt.Sprintf("unexpected status code: %d", res.StatusCode),
+		}
 	}
 	clusterPeersRes := babuzapb.GetClusterPeersResponse{}
 	if err = decodeExpectedMessage(res.Body, res.ContentLength, &clusterPeersRes); err != nil {
-		return babuzapb.GetClusterPeersResponse{}, err
+		return babuzapb.GetClusterPeersResponse{
+			Status:  babuzapb.FAILED,
+			Message: err.Error(),
+		}
 	}
-	return clusterPeersRes, nil
+	return clusterPeersRes
 }
 
-func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (
-	babuzapb.PublishApplicationServiceResponse, error) {
+func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 
-	msgSize := request.Size()
-	var buf []byte
-	if msgSize > len(r.byteSlice.Buffer) {
-		bufSlice := allocator.Acquire(msgSize)
-		defer allocator.Release(bufSlice)
-		buf = bufSlice.Buffer[:msgSize]
-	} else {
-		buf = r.byteSlice.Buffer[:msgSize]
-	}
-	n, err := request.MarshalTo(buf)
-	req, err := http.NewRequest(http.MethodPost, r.raftAppServiceUrls,
-		bytes.NewReader(r.byteSlice.Buffer[:n]))
+	u, err := r.getUrl(request.ToId, raftClusterPeersPrefix)
 	if err != nil {
-		return babuzapb.PublishApplicationServiceResponse{}, err
+		return babuzapb.PublishApplicationServiceResponse{
+			Status:  babuzapb.FAILED,
+			Message: err.Error(),
+		}
+	}
+	defer r.urlPool.Release(u)
+	msgSize := request.Size()
+	bufSlice := allocator.Acquire(msgSize)
+	defer allocator.Release(bufSlice)
+	buf := bufSlice.Buffer[:msgSize]
+
+	n, err := request.MarshalTo(buf)
+	req, err := http.NewRequest(http.MethodPost, u.String(),
+		bytes.NewReader(buf[:n]))
+	if err != nil {
+		return babuzapb.PublishApplicationServiceResponse{
+			Status:  babuzapb.FAILED,
+			Message: err.Error(),
+		}
 	}
 	req.ContentLength = int64(n)
 	res, err := r.client.Do(req)
 	if err != nil {
-		return babuzapb.PublishApplicationServiceResponse{}, err
+		return babuzapb.PublishApplicationServiceResponse{
+			Status:  babuzapb.FAILED,
+			Message: err.Error(),
+		}
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return babuzapb.PublishApplicationServiceResponse{}, errors.New("")
+		return babuzapb.PublishApplicationServiceResponse{
+			Status:  babuzapb.FAILED,
+			Message: fmt.Sprintf("unexpected status code: %d", res.StatusCode),
+		}
 	}
 	var pubAppServiceUrlsRes babuzapb.PublishApplicationServiceResponse
 	if err = decodeExpectedMessage(res.Body, res.ContentLength, &pubAppServiceUrlsRes); err != nil {
-		return babuzapb.PublishApplicationServiceResponse{}, err
+		return babuzapb.PublishApplicationServiceResponse{
+			Status:  babuzapb.FAILED,
+			Message: err.Error(),
+		}
 	}
-	return pubAppServiceUrlsRes, nil
+	return pubAppServiceUrlsRes
 }
 
 func (r *RaftMsgClient) Close() error {
-	allocator.Release(r.byteSlice)
 	return nil
 }

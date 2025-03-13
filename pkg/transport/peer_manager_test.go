@@ -15,6 +15,11 @@ type MockPeer struct {
 	id uint64
 }
 
+func (m *MockPeer) UpdatePeer() {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m *MockPeer) SendRaftMessage(msg *raftpb.Message) error {
 	args := m.Called(msg)
 	return args.Error(0)
@@ -76,7 +81,6 @@ func TestManagerImpl_AddPeer(t *testing.T) {
 	// Verify the peer was added
 	assert.Equal(t, mockPeer, manager.peers[peerId])
 	assert.Equal(t, peerAddress, manager.addresses[peerId])
-	mockPeer.AssertCalled(t, "Run")
 	factory.AssertCalled(t, "CreatePeer", peerId)
 
 	// Test adding duplicate peer
@@ -116,7 +120,6 @@ func TestManagerImpl_UpdatePeer(t *testing.T) {
 
 	// Setup
 	mockPeer := new(MockPeer)
-	mockPeer.On("Run").Return()
 
 	peerId := uint64(1)
 	peerAddress := "localhost:10001"
@@ -131,20 +134,14 @@ func TestManagerImpl_UpdatePeer(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify peer not restarted
-	mockPeer.AssertNumberOfCalls(t, "Run", 1)
 	mockPeer.AssertNotCalled(t, "Stop")
 
 	// Setup for address change
-	mockPeer.On("Stop").Return()
 	newAddress := "localhost:10002"
 
 	// Test updating with new address (should restart)
 	err = manager.UpdatePeer(peerId, newAddress)
 	assert.NoError(t, err)
-
-	// Verify peer restarted
-	mockPeer.AssertCalled(t, "Stop")
-	mockPeer.AssertNumberOfCalls(t, "Run", 2)
 	assert.Equal(t, newAddress, manager.addresses[peerId])
 
 	// Test updating non-existent peer
@@ -242,12 +239,12 @@ func TestManagerImpl_GetPeerAddress(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test getting address of existing peer
-	address, err := manager.GetPeerAddress(peerId)
+	address, err := manager.ResolvePeerAddress(peerId)
 	assert.NoError(t, err)
 	assert.Equal(t, peerAddress, address)
 
 	// Test getting address of non-existent peer
-	_, err = manager.GetPeerAddress(999)
+	_, err = manager.ResolvePeerAddress(999)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }

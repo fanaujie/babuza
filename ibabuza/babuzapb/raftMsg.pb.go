@@ -23,8 +23,34 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 
+type RpcStatus int32
+
+const (
+	SUCCESS RpcStatus = 0
+	FAILED  RpcStatus = 1
+)
+
+var RpcStatus_name = map[int32]string{
+	0: "SUCCESS",
+	1: "FAILED",
+}
+
+var RpcStatus_value = map[string]int32{
+	"SUCCESS": 0,
+	"FAILED":  1,
+}
+
+func (x RpcStatus) String() string {
+	return proto.EnumName(RpcStatus_name, int32(x))
+}
+
+func (RpcStatus) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor_ff5d9944c887f44b, []int{0}
+}
+
 type BatchMessage struct {
-	Messages []raftpb.Message `protobuf:"bytes,1,rep,name=messages,proto3" json:"messages"`
+	ClusterId uint64           `protobuf:"varint,1,opt,name=clusterId,proto3" json:"clusterId,omitempty"`
+	Messages  []raftpb.Message `protobuf:"bytes,2,rep,name=messages,proto3" json:"messages"`
 }
 
 func (m *BatchMessage) Reset()         { *m = BatchMessage{} }
@@ -103,13 +129,14 @@ func (m *SnapshotChunkMessage) XXX_DiscardUnknown() {
 var xxx_messageInfo_SnapshotChunkMessage proto.InternalMessageInfo
 
 type SnapshotMessage struct {
-	From          uint64                `protobuf:"varint,1,opt,name=from,proto3" json:"from,omitempty"`
-	To            uint64                `protobuf:"varint,2,opt,name=to,proto3" json:"to,omitempty"`
-	Term          uint64                `protobuf:"varint,3,opt,name=term,proto3" json:"term,omitempty"`
-	Index         uint64                `protobuf:"varint,4,opt,name=index,proto3" json:"index,omitempty"`
-	Metadata      *SnapshotMetadata     `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	ChunkMessage  *SnapshotChunkMessage `protobuf:"bytes,6,opt,name=chunkMessage,proto3" json:"chunkMessage,omitempty"`
-	FinishMessage *raftpb.Message       `protobuf:"bytes,7,opt,name=finishMessage,proto3" json:"finishMessage,omitempty"`
+	ClusterId     uint64                `protobuf:"varint,1,opt,name=clusterId,proto3" json:"clusterId,omitempty"`
+	From          uint64                `protobuf:"varint,2,opt,name=from,proto3" json:"from,omitempty"`
+	To            uint64                `protobuf:"varint,3,opt,name=to,proto3" json:"to,omitempty"`
+	Term          uint64                `protobuf:"varint,4,opt,name=term,proto3" json:"term,omitempty"`
+	Index         uint64                `protobuf:"varint,5,opt,name=index,proto3" json:"index,omitempty"`
+	Metadata      *SnapshotMetadata     `protobuf:"bytes,6,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	ChunkMessage  *SnapshotChunkMessage `protobuf:"bytes,7,opt,name=chunkMessage,proto3" json:"chunkMessage,omitempty"`
+	FinishMessage *raftpb.Message       `protobuf:"bytes,8,opt,name=finishMessage,proto3" json:"finishMessage,omitempty"`
 }
 
 func (m *SnapshotMessage) Reset()         { *m = SnapshotMessage{} }
@@ -147,7 +174,8 @@ var xxx_messageInfo_SnapshotMessage proto.InternalMessageInfo
 
 type GetClusterPeersRequest struct {
 	ClusterId uint64 `protobuf:"varint,1,opt,name=clusterId,proto3" json:"clusterId,omitempty"`
-	From      uint64 `protobuf:"varint,2,opt,name=from,proto3" json:"from,omitempty"`
+	FromId    uint64 `protobuf:"varint,2,opt,name=fromId,proto3" json:"fromId,omitempty"`
+	ToId      uint64 `protobuf:"varint,3,opt,name=toId,proto3" json:"toId,omitempty"`
 }
 
 func (m *GetClusterPeersRequest) Reset()         { *m = GetClusterPeersRequest{} }
@@ -184,7 +212,9 @@ func (m *GetClusterPeersRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_GetClusterPeersRequest proto.InternalMessageInfo
 
 type GetClusterPeersResponse struct {
-	Peers []Peer `protobuf:"bytes,1,rep,name=Peers,proto3" json:"Peers"`
+	Status  RpcStatus `protobuf:"varint,1,opt,name=status,proto3,enum=raft.RpcStatus" json:"status,omitempty"`
+	Message string    `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Peers   []Peer    `protobuf:"bytes,3,rep,name=Peers,proto3" json:"Peers"`
 }
 
 func (m *GetClusterPeersResponse) Reset()         { *m = GetClusterPeersResponse{} }
@@ -221,9 +251,11 @@ func (m *GetClusterPeersResponse) XXX_DiscardUnknown() {
 var xxx_messageInfo_GetClusterPeersResponse proto.InternalMessageInfo
 
 type PublishApplicationServiceRequest struct {
-	ReplyId             uint64   `protobuf:"varint,1,opt,name=replyId,proto3" json:"replyId,omitempty"`
-	PeerId              uint64   `protobuf:"varint,2,opt,name=peerId,proto3" json:"peerId,omitempty"`
-	AppServiceAddresses []string `protobuf:"bytes,3,rep,name=appServiceAddresses,proto3" json:"appServiceAddresses,omitempty"`
+	ClusterId           uint64   `protobuf:"varint,1,opt,name=clusterId,proto3" json:"clusterId,omitempty"`
+	FromId              uint64   `protobuf:"varint,2,opt,name=fromId,proto3" json:"fromId,omitempty"`
+	ToId                uint64   `protobuf:"varint,3,opt,name=toId,proto3" json:"toId,omitempty"`
+	ProposalReplyId     uint64   `protobuf:"varint,4,opt,name=proposalReplyId,proto3" json:"proposalReplyId,omitempty"`
+	AppServiceAddresses []string `protobuf:"bytes,5,rep,name=appServiceAddresses,proto3" json:"appServiceAddresses,omitempty"`
 }
 
 func (m *PublishApplicationServiceRequest) Reset()         { *m = PublishApplicationServiceRequest{} }
@@ -260,7 +292,8 @@ func (m *PublishApplicationServiceRequest) XXX_DiscardUnknown() {
 var xxx_messageInfo_PublishApplicationServiceRequest proto.InternalMessageInfo
 
 type PublishApplicationServiceResponse struct {
-	ErrorMessage string `protobuf:"bytes,1,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
+	Status  RpcStatus `protobuf:"varint,1,opt,name=status,proto3,enum=raft.RpcStatus" json:"status,omitempty"`
+	Message string    `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 }
 
 func (m *PublishApplicationServiceResponse) Reset()         { *m = PublishApplicationServiceResponse{} }
@@ -297,6 +330,7 @@ func (m *PublishApplicationServiceResponse) XXX_DiscardUnknown() {
 var xxx_messageInfo_PublishApplicationServiceResponse proto.InternalMessageInfo
 
 func init() {
+	proto.RegisterEnum("raft.RpcStatus", RpcStatus_name, RpcStatus_value)
 	proto.RegisterType((*BatchMessage)(nil), "raft.BatchMessage")
 	proto.RegisterType((*SnapshotChunkMessage)(nil), "raft.SnapshotChunkMessage")
 	proto.RegisterType((*SnapshotMessage)(nil), "raft.SnapshotMessage")
@@ -309,45 +343,49 @@ func init() {
 func init() { proto.RegisterFile("raftMsg.proto", fileDescriptor_ff5d9944c887f44b) }
 
 var fileDescriptor_ff5d9944c887f44b = []byte{
-	// 601 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x53, 0x4f, 0x6f, 0xd3, 0x4e,
-	0x10, 0xcd, 0x26, 0xee, 0xbf, 0x6d, 0xd2, 0x4a, 0xfb, 0xab, 0xfa, 0xb3, 0x2a, 0x64, 0x8c, 0x85,
-	0x90, 0x25, 0x24, 0x07, 0x52, 0xb8, 0x22, 0xb5, 0x91, 0xa8, 0x40, 0x8a, 0x54, 0x6d, 0x39, 0x71,
-	0x5b, 0xdb, 0x13, 0x67, 0xc1, 0xf1, 0x9a, 0xdd, 0x35, 0xa2, 0x7c, 0x00, 0x4e, 0x1c, 0xf8, 0x58,
-	0x3d, 0xa1, 0x1e, 0x39, 0x21, 0xda, 0x7e, 0x11, 0xe4, 0xf5, 0x3a, 0x21, 0xb4, 0xe2, 0x92, 0x99,
-	0x79, 0xf3, 0x34, 0x79, 0xfb, 0x66, 0x8c, 0x07, 0x92, 0x4d, 0xf5, 0x44, 0x65, 0x51, 0x29, 0x85,
-	0x16, 0xc4, 0xa9, 0xcb, 0x83, 0xbd, 0x4c, 0x64, 0xc2, 0x00, 0xc3, 0x3a, 0x6b, 0x7a, 0x07, 0x8f,
-	0x32, 0x11, 0x81, 0x4e, 0xd2, 0x88, 0x8b, 0x61, 0x1d, 0x87, 0x35, 0xd7, 0xfc, 0x94, 0xb1, 0x09,
-	0x96, 0xd7, 0x8f, 0x59, 0x5c, 0x7d, 0x66, 0x4d, 0x15, 0x1c, 0xe1, 0xfe, 0x31, 0xd3, 0xc9, 0x6c,
-	0x02, 0x4a, 0xb1, 0x0c, 0xc8, 0x53, 0xbc, 0x39, 0x6f, 0x52, 0xe5, 0x22, 0xbf, 0x17, 0x6e, 0x8f,
-	0x76, 0xa3, 0x66, 0x46, 0x64, 0x29, 0xc7, 0xce, 0xc5, 0xcf, 0xfb, 0x1d, 0xba, 0xa0, 0x05, 0xdf,
-	0x11, 0xde, 0x3b, 0x2b, 0x58, 0xa9, 0x66, 0x42, 0x8f, 0x67, 0x55, 0xf1, 0xbe, 0x9d, 0xf5, 0x0c,
-	0x6f, 0x4e, 0x79, 0x0e, 0x6f, 0xce, 0x4b, 0x70, 0x91, 0x8f, 0xc2, 0x9d, 0x91, 0x1b, 0xd9, 0x3f,
-	0x6f, 0xf9, 0x2f, 0x6d, 0x9f, 0x2e, 0x98, 0xc4, 0xc5, 0x1b, 0x26, 0x67, 0x99, 0xdb, 0xf5, 0x51,
-	0xb8, 0x45, 0xdb, 0x92, 0xec, 0xe0, 0x2e, 0x4f, 0xdd, 0x9e, 0x8f, 0xc2, 0x1e, 0xed, 0xf2, 0x94,
-	0x10, 0xec, 0xa4, 0x4c, 0x33, 0xd7, 0xf1, 0x51, 0xd8, 0xa7, 0x26, 0x27, 0x0f, 0xf1, 0x20, 0x11,
-	0x85, 0xe6, 0x45, 0x05, 0x63, 0x99, 0x1c, 0x8e, 0xdc, 0x35, 0x1f, 0x85, 0x03, 0xba, 0x0a, 0x92,
-	0x7b, 0x78, 0x2b, 0x67, 0xaa, 0x51, 0xeb, 0xae, 0xfb, 0x28, 0xdc, 0xa4, 0x4b, 0x20, 0xf8, 0xda,
-	0xc5, 0xbb, 0xad, 0xc0, 0xf6, 0x2d, 0x04, 0x3b, 0x53, 0x29, 0xe6, 0xe6, 0x1d, 0x0e, 0x35, 0x79,
-	0xad, 0x47, 0x0b, 0x23, 0xd2, 0xa1, 0x5d, 0x2d, 0x6a, 0x8e, 0x06, 0x39, 0x37, 0x0a, 0x1d, 0x6a,
-	0x72, 0xb2, 0x87, 0xd7, 0x78, 0x91, 0xc2, 0x27, 0x23, 0xd2, 0xa1, 0x4d, 0x51, 0x3b, 0x33, 0x07,
-	0xcd, 0x8c, 0xfa, 0x5a, 0xe0, 0xf6, 0x6d, 0x67, 0x26, 0xb6, 0x4f, 0x17, 0x4c, 0xf2, 0x02, 0xf7,
-	0x93, 0x3f, 0xfc, 0x35, 0xc2, 0xb7, 0x47, 0x07, 0x66, 0x3f, 0xd1, 0x5d, 0x1b, 0xa0, 0x2b, 0x7c,
-	0xf2, 0x1c, 0x0f, 0xa6, 0xbc, 0xe0, 0xaa, 0x5d, 0xb6, 0xbb, 0x61, 0x06, 0xfc, 0xbd, 0x60, 0xba,
-	0xca, 0x0a, 0x5e, 0xe3, 0xfd, 0x13, 0xd0, 0xe3, 0xbc, 0x52, 0x1a, 0xe4, 0x29, 0x80, 0x54, 0x14,
-	0x3e, 0x54, 0xa0, 0x74, 0x6d, 0x63, 0xd2, 0xc0, 0xaf, 0x52, 0xeb, 0xcc, 0x12, 0x58, 0x58, 0xd6,
-	0x5d, 0x5a, 0x16, 0x8c, 0xf1, 0xff, 0xb7, 0x66, 0xa9, 0x52, 0x14, 0x0a, 0x48, 0x88, 0xd7, 0x0c,
-	0x60, 0xcf, 0xae, 0xdf, 0x1a, 0x52, 0x83, 0xf6, 0xe6, 0x1a, 0x42, 0xf0, 0x05, 0x61, 0xff, 0xb4,
-	0x8a, 0x73, 0xae, 0x66, 0x47, 0x65, 0x99, 0xf3, 0x84, 0x69, 0x2e, 0x8a, 0x33, 0x90, 0x1f, 0x79,
-	0x02, 0xad, 0x36, 0x17, 0x6f, 0x48, 0x28, 0xf3, 0xf3, 0x85, 0xb2, 0xb6, 0x24, 0xfb, 0x78, 0xbd,
-	0x04, 0x23, 0xb9, 0x51, 0x66, 0x2b, 0xf2, 0x04, 0xff, 0xc7, 0xca, 0xd2, 0x8e, 0x39, 0x4a, 0x53,
-	0x09, 0x4a, 0x81, 0x72, 0x7b, 0x7e, 0x2f, 0xdc, 0xa2, 0x77, 0xb5, 0x82, 0x13, 0xfc, 0xe0, 0x1f,
-	0x3a, 0xec, 0xbb, 0x02, 0xdc, 0x07, 0x29, 0x85, 0x6c, 0x4d, 0x47, 0xe6, 0xa8, 0x57, 0xb0, 0xe3,
-	0xc9, 0xc5, 0x95, 0xd7, 0xb9, 0xbc, 0xf2, 0x3a, 0x17, 0xd7, 0x1e, 0xba, 0xbc, 0xf6, 0xd0, 0xaf,
-	0x6b, 0x0f, 0x7d, 0xbb, 0xf1, 0x3a, 0x97, 0x37, 0x5e, 0xe7, 0xc7, 0x8d, 0xd7, 0x79, 0xfb, 0x38,
-	0xe3, 0x7a, 0x56, 0xc5, 0x51, 0x22, 0xe6, 0xc3, 0x29, 0x2b, 0x58, 0xf5, 0x8e, 0xc3, 0xb0, 0x71,
-	0x68, 0xc8, 0x6d, 0x6c, 0x42, 0x19, 0xc7, 0xeb, 0xe6, 0xdb, 0x3e, 0xfc, 0x1d, 0x00, 0x00, 0xff,
-	0xff, 0xd1, 0x99, 0x64, 0xe0, 0x3e, 0x04, 0x00, 0x00,
+	// 670 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x54, 0xcd, 0x6e, 0xd3, 0x4c,
+	0x14, 0x8d, 0x13, 0x27, 0x4d, 0x6e, 0x93, 0xb6, 0x9a, 0xaf, 0xea, 0x67, 0x55, 0xc8, 0x98, 0xa8,
+	0x02, 0x0b, 0x24, 0x07, 0x5a, 0xd8, 0x22, 0xb5, 0xa1, 0x45, 0x91, 0x88, 0x54, 0x4d, 0x60, 0xc3,
+	0x06, 0x8d, 0xed, 0x49, 0x32, 0x90, 0x78, 0x06, 0xcf, 0x18, 0x51, 0x1e, 0x80, 0x35, 0xcf, 0xc1,
+	0x93, 0x64, 0x85, 0xba, 0x64, 0x85, 0x68, 0xfb, 0x22, 0xc8, 0xe3, 0x49, 0x4a, 0x7f, 0x04, 0x2c,
+	0xba, 0xc9, 0xdc, 0x9f, 0x93, 0xb9, 0x67, 0xce, 0x3d, 0x32, 0xb4, 0x52, 0x32, 0x54, 0x7d, 0x39,
+	0x0a, 0x44, 0xca, 0x15, 0x47, 0x76, 0x9e, 0x6e, 0xae, 0x8f, 0xf8, 0x88, 0xeb, 0x42, 0x27, 0x8f,
+	0x8a, 0xde, 0xe6, 0xdd, 0x11, 0x0f, 0xa8, 0x8a, 0xe2, 0x80, 0xf1, 0x4e, 0x7e, 0x76, 0x72, 0xac,
+	0xfe, 0x11, 0xa1, 0x3e, 0x0c, 0xae, 0x19, 0x92, 0x30, 0xfb, 0x44, 0x8a, 0xac, 0xfd, 0x06, 0x9a,
+	0x7b, 0x44, 0x45, 0xe3, 0x3e, 0x95, 0x92, 0x8c, 0x28, 0xba, 0x05, 0x8d, 0x68, 0x92, 0x49, 0x45,
+	0xd3, 0x5e, 0xec, 0x58, 0x9e, 0xe5, 0xdb, 0xf8, 0xbc, 0x80, 0x1e, 0x41, 0x7d, 0x5a, 0x00, 0xa5,
+	0x53, 0xf6, 0x2a, 0xfe, 0xf2, 0xf6, 0x6a, 0x50, 0x4c, 0x08, 0xcc, 0x05, 0x7b, 0xf6, 0xec, 0xc7,
+	0xed, 0x12, 0x5e, 0xc0, 0xda, 0xdf, 0x2c, 0x58, 0x1f, 0x24, 0x44, 0xc8, 0x31, 0x57, 0xdd, 0x71,
+	0x96, 0xbc, 0x9b, 0x4f, 0x7a, 0x0c, 0xf5, 0x21, 0x9b, 0xd0, 0x97, 0x47, 0x82, 0xea, 0x41, 0x2b,
+	0xdb, 0x4e, 0x60, 0xa8, 0xcd, 0xf1, 0x07, 0xa6, 0x8f, 0x17, 0x48, 0xe4, 0xc0, 0x92, 0x8e, 0xc9,
+	0xc8, 0x29, 0x7b, 0x96, 0xdf, 0xc0, 0xf3, 0x14, 0xad, 0x40, 0x99, 0xc5, 0x4e, 0xc5, 0xb3, 0xfc,
+	0x0a, 0x2e, 0xb3, 0x18, 0x21, 0xb0, 0x63, 0xa2, 0x88, 0x63, 0x7b, 0x96, 0xdf, 0xc4, 0x3a, 0x46,
+	0x5b, 0xd0, 0x8a, 0x78, 0xa2, 0x58, 0x92, 0xd1, 0x6e, 0x1a, 0xed, 0x6c, 0x3b, 0x55, 0xcf, 0xf2,
+	0x5b, 0xf8, 0x62, 0x31, 0xd7, 0x60, 0x42, 0x64, 0xc1, 0xd6, 0xa9, 0x79, 0x96, 0x5f, 0xc7, 0xe7,
+	0x85, 0xf6, 0xd7, 0x32, 0xac, 0xce, 0x09, 0xfe, 0x9b, 0x6a, 0x08, 0xec, 0x61, 0xca, 0xa7, 0x9a,
+	0xb0, 0x8d, 0x75, 0x9c, 0xb3, 0x55, 0x5c, 0xb3, 0xb5, 0x71, 0x59, 0xf1, 0x1c, 0xa3, 0x68, 0x3a,
+	0xd5, 0x6c, 0x6d, 0xac, 0x63, 0xb4, 0x0e, 0x55, 0x96, 0xc4, 0xf4, 0xa3, 0x66, 0x69, 0xe3, 0x22,
+	0xc9, 0x75, 0x9b, 0x52, 0x45, 0xf4, 0xdb, 0x72, 0x72, 0xcb, 0x57, 0x75, 0xeb, 0x9b, 0x3e, 0x5e,
+	0x20, 0xd1, 0x53, 0x68, 0x46, 0xbf, 0xa9, 0xef, 0x2c, 0xe9, 0x7f, 0x6e, 0xea, 0xed, 0x05, 0xd7,
+	0xed, 0x07, 0x5f, 0xc0, 0xa3, 0x27, 0xd0, 0x1a, 0xb2, 0x84, 0xc9, 0xb9, 0x51, 0x9c, 0xba, 0xbe,
+	0xe0, 0xf2, 0xfa, 0xf1, 0x45, 0x54, 0x3b, 0x84, 0x8d, 0xe7, 0x54, 0x75, 0x0b, 0x29, 0x0e, 0x29,
+	0x4d, 0x25, 0xa6, 0xef, 0x33, 0x2a, 0xd5, 0x5f, 0x24, 0xdb, 0x80, 0x5a, 0x2e, 0x53, 0x2f, 0x36,
+	0xa2, 0x99, 0x4c, 0xcb, 0xc4, 0x7b, 0xb1, 0x11, 0x4e, 0xc7, 0xed, 0xcf, 0x16, 0xfc, 0x7f, 0x65,
+	0x88, 0x14, 0x3c, 0x91, 0x14, 0xdd, 0x83, 0x9a, 0x54, 0x44, 0x65, 0xd2, 0x58, 0xac, 0xe0, 0x1b,
+	0x60, 0x11, 0x0d, 0x74, 0x19, 0x9b, 0x76, 0xee, 0x2b, 0x63, 0xd9, 0xb9, 0xaf, 0x4c, 0x8a, 0x7c,
+	0xa8, 0xea, 0x3b, 0x9d, 0x8a, 0x36, 0x7c, 0x73, 0x2e, 0x76, 0x5e, 0x34, 0x6e, 0x2f, 0x00, 0xed,
+	0x99, 0x05, 0xde, 0x61, 0x16, 0x4e, 0x98, 0x1c, 0xef, 0x0a, 0x31, 0x61, 0x11, 0x51, 0x8c, 0x27,
+	0x03, 0x9a, 0x7e, 0x60, 0x11, 0xbd, 0xf1, 0x77, 0x23, 0x1f, 0x56, 0x45, 0xca, 0x05, 0x97, 0x64,
+	0x82, 0xa9, 0x98, 0x1c, 0xf5, 0x62, 0xe3, 0x9e, 0xcb, 0x65, 0xf4, 0x10, 0xfe, 0x23, 0x42, 0x18,
+	0x22, 0xbb, 0x71, 0x9c, 0x52, 0x29, 0xa9, 0x74, 0xaa, 0x5e, 0xc5, 0x6f, 0xe0, 0xeb, 0x5a, 0xed,
+	0x21, 0xdc, 0xf9, 0xc3, 0x4b, 0x6e, 0x4c, 0xdc, 0xfb, 0x5b, 0xd0, 0x58, 0xc0, 0xd1, 0x32, 0x2c,
+	0x0d, 0x5e, 0x75, 0xbb, 0xfb, 0x83, 0xc1, 0x5a, 0x09, 0x01, 0xd4, 0x0e, 0x76, 0x7b, 0x2f, 0xf6,
+	0x9f, 0xad, 0x59, 0x7b, 0xfd, 0xd9, 0x89, 0x5b, 0x3a, 0x3e, 0x71, 0x4b, 0xb3, 0x53, 0xd7, 0x3a,
+	0x3e, 0x75, 0xad, 0x9f, 0xa7, 0xae, 0xf5, 0xe5, 0xcc, 0x2d, 0x1d, 0x9f, 0xb9, 0xa5, 0xef, 0x67,
+	0x6e, 0xe9, 0xf5, 0x83, 0x11, 0x53, 0xe3, 0x2c, 0x0c, 0x22, 0x3e, 0xed, 0x0c, 0x49, 0x42, 0xb2,
+	0xb7, 0x8c, 0x76, 0x8a, 0x45, 0x75, 0x98, 0x39, 0x8b, 0x43, 0x84, 0x61, 0x4d, 0x7f, 0xfa, 0x76,
+	0x7e, 0x05, 0x00, 0x00, 0xff, 0xff, 0x5b, 0xd5, 0x2c, 0x2c, 0x5d, 0x05, 0x00, 0x00,
 }
 
 func (m *BatchMessage) Marshal() (dAtA []byte, err error) {
@@ -365,9 +403,14 @@ func (m *BatchMessage) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.ClusterId != 0 {
+		dAtA[i] = 0x8
+		i++
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.ClusterId))
+	}
 	if len(m.Messages) > 0 {
 		for _, msg := range m.Messages {
-			dAtA[i] = 0xa
+			dAtA[i] = 0x12
 			i++
 			i = encodeVarintRaftMsg(dAtA, i, uint64(msg.Size()))
 			n, err := msg.MarshalTo(dAtA[i:])
@@ -450,28 +493,33 @@ func (m *SnapshotMessage) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.From != 0 {
+	if m.ClusterId != 0 {
 		dAtA[i] = 0x8
+		i++
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.ClusterId))
+	}
+	if m.From != 0 {
+		dAtA[i] = 0x10
 		i++
 		i = encodeVarintRaftMsg(dAtA, i, uint64(m.From))
 	}
 	if m.To != 0 {
-		dAtA[i] = 0x10
+		dAtA[i] = 0x18
 		i++
 		i = encodeVarintRaftMsg(dAtA, i, uint64(m.To))
 	}
 	if m.Term != 0 {
-		dAtA[i] = 0x18
+		dAtA[i] = 0x20
 		i++
 		i = encodeVarintRaftMsg(dAtA, i, uint64(m.Term))
 	}
 	if m.Index != 0 {
-		dAtA[i] = 0x20
+		dAtA[i] = 0x28
 		i++
 		i = encodeVarintRaftMsg(dAtA, i, uint64(m.Index))
 	}
 	if m.Metadata != nil {
-		dAtA[i] = 0x2a
+		dAtA[i] = 0x32
 		i++
 		i = encodeVarintRaftMsg(dAtA, i, uint64(m.Metadata.Size()))
 		n1, err := m.Metadata.MarshalTo(dAtA[i:])
@@ -481,7 +529,7 @@ func (m *SnapshotMessage) MarshalTo(dAtA []byte) (int, error) {
 		i += n1
 	}
 	if m.ChunkMessage != nil {
-		dAtA[i] = 0x32
+		dAtA[i] = 0x3a
 		i++
 		i = encodeVarintRaftMsg(dAtA, i, uint64(m.ChunkMessage.Size()))
 		n2, err := m.ChunkMessage.MarshalTo(dAtA[i:])
@@ -491,7 +539,7 @@ func (m *SnapshotMessage) MarshalTo(dAtA []byte) (int, error) {
 		i += n2
 	}
 	if m.FinishMessage != nil {
-		dAtA[i] = 0x3a
+		dAtA[i] = 0x42
 		i++
 		i = encodeVarintRaftMsg(dAtA, i, uint64(m.FinishMessage.Size()))
 		n3, err := m.FinishMessage.MarshalTo(dAtA[i:])
@@ -523,10 +571,15 @@ func (m *GetClusterPeersRequest) MarshalTo(dAtA []byte) (int, error) {
 		i++
 		i = encodeVarintRaftMsg(dAtA, i, uint64(m.ClusterId))
 	}
-	if m.From != 0 {
+	if m.FromId != 0 {
 		dAtA[i] = 0x10
 		i++
-		i = encodeVarintRaftMsg(dAtA, i, uint64(m.From))
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.FromId))
+	}
+	if m.ToId != 0 {
+		dAtA[i] = 0x18
+		i++
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.ToId))
 	}
 	return i, nil
 }
@@ -546,9 +599,20 @@ func (m *GetClusterPeersResponse) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.Status != 0 {
+		dAtA[i] = 0x8
+		i++
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.Status))
+	}
+	if len(m.Message) > 0 {
+		dAtA[i] = 0x12
+		i++
+		i = encodeVarintRaftMsg(dAtA, i, uint64(len(m.Message)))
+		i += copy(dAtA[i:], m.Message)
+	}
 	if len(m.Peers) > 0 {
 		for _, msg := range m.Peers {
-			dAtA[i] = 0xa
+			dAtA[i] = 0x1a
 			i++
 			i = encodeVarintRaftMsg(dAtA, i, uint64(msg.Size()))
 			n, err := msg.MarshalTo(dAtA[i:])
@@ -576,19 +640,29 @@ func (m *PublishApplicationServiceRequest) MarshalTo(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.ReplyId != 0 {
+	if m.ClusterId != 0 {
 		dAtA[i] = 0x8
 		i++
-		i = encodeVarintRaftMsg(dAtA, i, uint64(m.ReplyId))
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.ClusterId))
 	}
-	if m.PeerId != 0 {
+	if m.FromId != 0 {
 		dAtA[i] = 0x10
 		i++
-		i = encodeVarintRaftMsg(dAtA, i, uint64(m.PeerId))
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.FromId))
+	}
+	if m.ToId != 0 {
+		dAtA[i] = 0x18
+		i++
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.ToId))
+	}
+	if m.ProposalReplyId != 0 {
+		dAtA[i] = 0x20
+		i++
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.ProposalReplyId))
 	}
 	if len(m.AppServiceAddresses) > 0 {
 		for _, s := range m.AppServiceAddresses {
-			dAtA[i] = 0x1a
+			dAtA[i] = 0x2a
 			i++
 			l = len(s)
 			for l >= 1<<7 {
@@ -619,11 +693,16 @@ func (m *PublishApplicationServiceResponse) MarshalTo(dAtA []byte) (int, error) 
 	_ = i
 	var l int
 	_ = l
-	if len(m.ErrorMessage) > 0 {
-		dAtA[i] = 0xa
+	if m.Status != 0 {
+		dAtA[i] = 0x8
 		i++
-		i = encodeVarintRaftMsg(dAtA, i, uint64(len(m.ErrorMessage)))
-		i += copy(dAtA[i:], m.ErrorMessage)
+		i = encodeVarintRaftMsg(dAtA, i, uint64(m.Status))
+	}
+	if len(m.Message) > 0 {
+		dAtA[i] = 0x12
+		i++
+		i = encodeVarintRaftMsg(dAtA, i, uint64(len(m.Message)))
+		i += copy(dAtA[i:], m.Message)
 	}
 	return i, nil
 }
@@ -643,6 +722,9 @@ func (m *BatchMessage) Size() (n int) {
 	}
 	var l int
 	_ = l
+	if m.ClusterId != 0 {
+		n += 1 + sovRaftMsg(uint64(m.ClusterId))
+	}
 	if len(m.Messages) > 0 {
 		for _, e := range m.Messages {
 			l = e.Size()
@@ -687,6 +769,9 @@ func (m *SnapshotMessage) Size() (n int) {
 	}
 	var l int
 	_ = l
+	if m.ClusterId != 0 {
+		n += 1 + sovRaftMsg(uint64(m.ClusterId))
+	}
 	if m.From != 0 {
 		n += 1 + sovRaftMsg(uint64(m.From))
 	}
@@ -723,8 +808,11 @@ func (m *GetClusterPeersRequest) Size() (n int) {
 	if m.ClusterId != 0 {
 		n += 1 + sovRaftMsg(uint64(m.ClusterId))
 	}
-	if m.From != 0 {
-		n += 1 + sovRaftMsg(uint64(m.From))
+	if m.FromId != 0 {
+		n += 1 + sovRaftMsg(uint64(m.FromId))
+	}
+	if m.ToId != 0 {
+		n += 1 + sovRaftMsg(uint64(m.ToId))
 	}
 	return n
 }
@@ -735,6 +823,13 @@ func (m *GetClusterPeersResponse) Size() (n int) {
 	}
 	var l int
 	_ = l
+	if m.Status != 0 {
+		n += 1 + sovRaftMsg(uint64(m.Status))
+	}
+	l = len(m.Message)
+	if l > 0 {
+		n += 1 + l + sovRaftMsg(uint64(l))
+	}
 	if len(m.Peers) > 0 {
 		for _, e := range m.Peers {
 			l = e.Size()
@@ -750,11 +845,17 @@ func (m *PublishApplicationServiceRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
-	if m.ReplyId != 0 {
-		n += 1 + sovRaftMsg(uint64(m.ReplyId))
+	if m.ClusterId != 0 {
+		n += 1 + sovRaftMsg(uint64(m.ClusterId))
 	}
-	if m.PeerId != 0 {
-		n += 1 + sovRaftMsg(uint64(m.PeerId))
+	if m.FromId != 0 {
+		n += 1 + sovRaftMsg(uint64(m.FromId))
+	}
+	if m.ToId != 0 {
+		n += 1 + sovRaftMsg(uint64(m.ToId))
+	}
+	if m.ProposalReplyId != 0 {
+		n += 1 + sovRaftMsg(uint64(m.ProposalReplyId))
 	}
 	if len(m.AppServiceAddresses) > 0 {
 		for _, s := range m.AppServiceAddresses {
@@ -771,7 +872,10 @@ func (m *PublishApplicationServiceResponse) Size() (n int) {
 	}
 	var l int
 	_ = l
-	l = len(m.ErrorMessage)
+	if m.Status != 0 {
+		n += 1 + sovRaftMsg(uint64(m.Status))
+	}
+	l = len(m.Message)
 	if l > 0 {
 		n += 1 + l + sovRaftMsg(uint64(l))
 	}
@@ -821,6 +925,25 @@ func (m *BatchMessage) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClusterId", wireType)
+			}
+			m.ClusterId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRaftMsg
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ClusterId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Messages", wireType)
 			}
@@ -1105,6 +1228,25 @@ func (m *SnapshotMessage) Unmarshal(dAtA []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ClusterId", wireType)
+			}
+			m.ClusterId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRaftMsg
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ClusterId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field From", wireType)
 			}
 			m.From = 0
@@ -1122,7 +1264,7 @@ func (m *SnapshotMessage) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-		case 2:
+		case 3:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field To", wireType)
 			}
@@ -1141,7 +1283,7 @@ func (m *SnapshotMessage) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-		case 3:
+		case 4:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Term", wireType)
 			}
@@ -1160,7 +1302,7 @@ func (m *SnapshotMessage) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-		case 4:
+		case 5:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Index", wireType)
 			}
@@ -1179,7 +1321,7 @@ func (m *SnapshotMessage) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
-		case 5:
+		case 6:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
 			}
@@ -1215,7 +1357,7 @@ func (m *SnapshotMessage) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 6:
+		case 7:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ChunkMessage", wireType)
 			}
@@ -1251,7 +1393,7 @@ func (m *SnapshotMessage) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 7:
+		case 8:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field FinishMessage", wireType)
 			}
@@ -1361,9 +1503,9 @@ func (m *GetClusterPeersRequest) Unmarshal(dAtA []byte) error {
 			}
 		case 2:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field From", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field FromId", wireType)
 			}
-			m.From = 0
+			m.FromId = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowRaftMsg
@@ -1373,7 +1515,26 @@ func (m *GetClusterPeersRequest) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.From |= uint64(b&0x7F) << shift
+				m.FromId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ToId", wireType)
+			}
+			m.ToId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRaftMsg
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ToId |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1432,6 +1593,57 @@ func (m *GetClusterPeersResponse) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
+			}
+			m.Status = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRaftMsg
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Status |= RpcStatus(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRaftMsg
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRaftMsg
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRaftMsg
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Message = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Peers", wireType)
 			}
@@ -1520,9 +1732,9 @@ func (m *PublishApplicationServiceRequest) Unmarshal(dAtA []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ReplyId", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field ClusterId", wireType)
 			}
-			m.ReplyId = 0
+			m.ClusterId = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowRaftMsg
@@ -1532,16 +1744,16 @@ func (m *PublishApplicationServiceRequest) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.ReplyId |= uint64(b&0x7F) << shift
+				m.ClusterId |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
 		case 2:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field PeerId", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field FromId", wireType)
 			}
-			m.PeerId = 0
+			m.FromId = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowRaftMsg
@@ -1551,12 +1763,50 @@ func (m *PublishApplicationServiceRequest) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.PeerId |= uint64(b&0x7F) << shift
+				m.FromId |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
 		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ToId", wireType)
+			}
+			m.ToId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRaftMsg
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ToId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProposalReplyId", wireType)
+			}
+			m.ProposalReplyId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRaftMsg
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ProposalReplyId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field AppServiceAddresses", wireType)
 			}
@@ -1642,8 +1892,27 @@ func (m *PublishApplicationServiceResponse) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
+			}
+			m.Status = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRaftMsg
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Status |= RpcStatus(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ErrorMessage", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -1671,7 +1940,7 @@ func (m *PublishApplicationServiceResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ErrorMessage = string(dAtA[iNdEx:postIndex])
+			m.Message = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

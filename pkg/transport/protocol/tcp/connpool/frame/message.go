@@ -4,6 +4,8 @@ import (
 	"hash/crc32"
 )
 
+type MessageType int32
+
 var (
 	Crc32Table = crc32.MakeTable(crc32.Castagnoli)
 )

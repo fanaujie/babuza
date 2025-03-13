@@ -39,7 +39,6 @@ func (m *ManagerImpl) AddPeer(peerId uint64, peerAddress string, factory PeerFac
 		return fmt.Errorf("peer with id %d already exists", peerId)
 	}
 	p := factory.CreatePeer(peerId)
-	p.Run()
 	m.peers[peerId] = p
 	m.addresses[peerId] = peerAddress
 
@@ -49,17 +48,12 @@ func (m *ManagerImpl) AddPeer(peerId uint64, peerAddress string, factory PeerFac
 func (m *ManagerImpl) UpdatePeer(peerId uint64, peerAddress string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	p, ok := m.peers[peerId]
-	if !ok {
-		return fmt.Errorf("peer with id %d not found", peerId)
-	}
-	// Only restart the peer if the address changed
-	if currentAddr, _ := m.addresses[peerId]; currentAddr != peerAddress {
+	_, ok := m.addresses[peerId]
+	if ok {
 		m.addresses[peerId] = peerAddress
-		p.Stop()
-		p.Run()
+		return nil
 	}
-	return nil
+	return fmt.Errorf("peer with id %d not found", peerId)
 }
 
 func (m *ManagerImpl) RemovePeer(peerId uint64) error {
@@ -89,7 +83,7 @@ func (m *ManagerImpl) RemoveAllPeers() {
 	}
 }
 
-func (m *ManagerImpl) GetPeerAddress(id uint64) (string, error) {
+func (m *ManagerImpl) ResolvePeerAddress(id uint64) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	addr, ok := m.addresses[id]

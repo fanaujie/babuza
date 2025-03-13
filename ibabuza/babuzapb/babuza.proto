@@ -69,8 +69,8 @@ message RegisterSessionRequest {
 }
 
 message PubAppServiceRequest {
-  uint64            id = 1;
-  repeated string   appServiceAddresses = 2;
+  uint64            pubServicePeerId = 1;
+  repeated string   appServiceAddresses = 3;
 }
 
 

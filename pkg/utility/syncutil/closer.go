@@ -25,11 +25,14 @@ func (c *Closer) CloseCh() <-chan struct{} {
 
 func (c *Closer) Cancel() {
 	c.cancelFunc()
-	c.wg.Wait()
 }
 
 func (c *Closer) Close() {
 	c.cancelFunc()
+	c.wg.Wait()
+}
+
+func (c *Closer) Wait() {
 	c.wg.Wait()
 }
 

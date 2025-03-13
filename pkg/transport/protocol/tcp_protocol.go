@@ -1,44 +1,69 @@
 package protocol
 
 import (
-	"context"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool"
+	"sync"
 	"time"
 )
 
 type Tcp struct {
 	network tcp.NetworkIO
 	config  ibabuza.TransportConfig
-	options tcp.Options
+	options connpool.Options
 	logger  ibabuza.Logger
+	pool    *connpool.ConnectionPool
+	poolMu  sync.Mutex // Protects clientFactory modification
 }
 
-func defaultTcpOptions() tcp.Options {
-	return tcp.Options{
+func defaultTcpOptions() connpool.Options {
+	return connpool.Options{
+		// Basic options
 		WriteDeadline: time.Second * 5,
 		ReadDeadline:  time.Second * 5,
-		MaxBufferSize: 4 * 1024 * 1024,
+		// Connection pool options
+		MaxConnectionsPerHost: 5,               // Default: 5 connections per host
+		DialTimeout:           3 * time.Second, // Default: 3 second connection timeout
+		IdleTimeout:           5 * time.Minute, // Default: 5 minute idle timeout
 	}
 }
 
-type SetTcpOptions func(opt *tcp.Options)
+type SetTcpOptions func(opt *connpool.Options)
 
 func SetTcpOptsWithWriteDeadline(d time.Duration) SetTcpOptions {
-	return func(opt *tcp.Options) {
+	return func(opt *connpool.Options) {
 		opt.WriteDeadline = d
 	}
 }
 
 func SetTcpOptsWithReadDeadline(d time.Duration) SetTcpOptions {
-	return func(opt *tcp.Options) {
+	return func(opt *connpool.Options) {
 		opt.ReadDeadline = d
 	}
 }
 
-func SetTcpOptsWithMaxBufferSize(d int) SetTcpOptions {
-	return func(opt *tcp.Options) {
-		opt.MaxBufferSize = d
+func SetTcpOptsWithMaxConnectionsPerHost(max int) SetTcpOptions {
+	return func(opt *connpool.Options) {
+		if max > 0 {
+			opt.MaxConnectionsPerHost = max
+		}
+	}
+}
+
+func SetTcpOptsWithDialTimeout(timeout time.Duration) SetTcpOptions {
+	return func(opt *connpool.Options) {
+		if timeout > 0 {
+			opt.DialTimeout = timeout
+		}
+	}
+}
+
+func SetTcpOptsWithIdleTimeout(timeout time.Duration) SetTcpOptions {
+	return func(opt *connpool.Options) {
+		if timeout > 0 {
+			opt.IdleTimeout = timeout
+		}
 	}
 }
 
@@ -57,6 +82,7 @@ func NewTcp(network tcp.NetworkIO, logger ibabuza.Logger, setOpts ...SetTcpOptio
 
 func (t *Tcp) Setup(cfg ibabuza.TransportConfig) error {
 	t.config = cfg
+	t.pool = connpool.NewConnectionPool(t.network, cfg.TLSConfig, t.options)
 	return nil
 }
 
@@ -64,11 +90,10 @@ func (t *Tcp) CreateServer(handler ibabuza.RaftMessageHandler) (ibabuza.Transpor
 	return tcp.NewRaftMsgServer(t.config, t.options, t.network, handler, t.logger), nil
 }
 
-func (t *Tcp) Dial(ctx context.Context, endpoint string) (ibabuza.TransportClient, error) {
-	//TODO: add dial timeout
-	conn, err := t.network.Dial(t.config.TLSConfig, t.config.PeerId, endpoint)
-	if err != nil {
-		return nil, err
-	}
-	return tcp.NewRaftMsgClient(conn, t.options), nil
+func (t *Tcp) CreateClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
+	return tcp.NewRaftMsgClient(t.pool, resolver), nil
+}
+
+func (t *Tcp) Close() error {
+	return t.pool.Close()
 }

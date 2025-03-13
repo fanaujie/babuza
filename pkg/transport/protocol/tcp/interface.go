@@ -3,10 +3,12 @@ package tcp
 import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"net"
+	"time"
 )
 
 type Dialer interface {
-	Dial(ibabuza.TLSConfig, uint64, string) (net.Conn, error)
+	Dial(config ibabuza.TLSConfig, fromPeerId uint64, toEndPoint string) (net.Conn, error)
+	DialWithTimeout(config ibabuza.TLSConfig, fromPeerId uint64, toEndPoint string, timeout time.Duration) (net.Conn, error)
 }
 
 type Listener interface {

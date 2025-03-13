@@ -66,8 +66,8 @@ func TestWriterAndReader(t *testing.T) {
 		{
 			name:     "message size exceeds max message size",
 			msgType:  PubAppServiceReqType,
-			msgData:  bytes.Repeat([]byte("a"), maxMessageSize+1),
-			bufSize:  maxMessageSize + headerSize + 10,
+			msgData:  bytes.Repeat([]byte("a"), MaxMessageSize+1),
+			bufSize:  MaxMessageSize + HeaderSize + 10,
 			wantErr:  true,
 			errorMsg: "message size",
 		},
@@ -131,7 +131,7 @@ func TestCorruptedMessage(t *testing.T) {
 
 	// Corrupt the data by modifying the buffer
 	bufData := buf.Bytes()
-	bufData[headerSize] = bufData[headerSize] ^ 0xFF // Flip bits in first byte of message
+	bufData[HeaderSize] = bufData[HeaderSize] ^ 0xFF // Flip bits in first byte of message
 
 	// Create reader with corrupted buffer
 	reader := NewReader(bytes.NewBuffer(bufData), 100)
