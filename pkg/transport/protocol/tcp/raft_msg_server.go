@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool/frame"
-	"github.com/fanaujie/babuza/pkg/utility/allocator"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"net"
 	"time"
@@ -61,7 +61,7 @@ func (r *RaftMsgServer) Start() error {
 			//	continue
 			//}
 
-			conn, lErr := r.listener.Accept()
+			c, lErr := r.listener.Accept()
 			if lErr != nil {
 				select {
 				case <-r.closer.CloseCh():
@@ -69,8 +69,8 @@ func (r *RaftMsgServer) Start() error {
 				default:
 				}
 			} else {
-				r.logger.Infof("tcp[raft server] peerId(%d) accept conn from %s", r.cfg.PeerId, conn.RemoteAddr().String())
-				s := r.newSession(conn)
+				r.logger.Infof("tcp[raft server] peerId(%d) accept conn from %s", r.cfg.PeerId, c.RemoteAddr().String())
+				s := r.newSession(c)
 				r.closer.Run(func() {
 					if sErr := s.start(); sErr != nil {
 						r.logger.Warningf("tcp[raft server]: failed to decode session. peerId(%d) endpoint(%s) err(%s)",
@@ -92,22 +92,20 @@ func (r *RaftMsgServer) Stop() error {
 	return nil
 }
 
-func (r *RaftMsgServer) newSession(conn net.Conn) *session {
+func (r *RaftMsgServer) newSession(c net.Conn) *session {
 	return &session{
-		options: r.options,
-		conn:    conn,
-		reader:  frame.NewReader(conn),
-		writer:  frame.NewWriter(conn),
-		raft:    r.raft,
-		closeCh: r.closer.CloseCh(),
+		options:   r.options,
+		conn:      c,
+		frameConn: conn.NewConnection(c, r.options),
+		raft:      r.raft,
+		closeCh:   r.closer.CloseCh(),
 	}
 }
 
 type session struct {
 	options            connpool.Options
 	conn               net.Conn
-	reader             *frame.Reader
-	writer             *frame.Writer
+	frameConn          *conn.FrameConnection
 	batchMsg           babuzapb.BatchMessage
 	snapshotMsg        babuzapb.SnapshotMessage
 	getClusterPeersReq babuzapb.GetClusterPeersRequest
@@ -141,9 +139,7 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 		if err := s.conn.SetWriteDeadline(time.Now().Add(s.options.WriteDeadline)); err != nil {
 			return err
 		}
-		byteSlice := allocator.Acquire(frame.EncodeSize(res.Size()))
-		defer allocator.Release(byteSlice)
-		return s.writer.Encode(byteSlice.Buffer, frame.ClusterPeersResType, &res)
+		return s.frameConn.SendFrame(frame.ClusterPeersResType, &res)
 	case frame.PubAppServiceReqType:
 		if err := s.pubAppServiceReq.Unmarshal(msgBuf); err != nil {
 			return err
@@ -152,9 +148,7 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 		if err := s.conn.SetWriteDeadline(time.Now().Add(s.options.WriteDeadline)); err != nil {
 			return err
 		}
-		byteSlice := allocator.Acquire(frame.EncodeSize(res.Size()))
-		defer allocator.Release(byteSlice)
-		return s.writer.Encode(byteSlice.Buffer, frame.PubAppServiceResType, &res)
+		return s.frameConn.SendFrame(frame.PubAppServiceResType, &res)
 	default:
 		return fmt.Errorf("tcp[raft server]: unsupported message type %d", msgType)
 	}
@@ -171,7 +165,7 @@ func (s *session) start() error {
 			if err := s.conn.SetReadDeadline(time.Now().Add(s.options.ReadDeadline)); err != nil {
 				return err
 			}
-			if err := s.reader.ReadFrame(s.messageHandler); err != nil {
+			if err := s.frameConn.ReadFrame(s.messageHandler); err != nil {
 				return err
 			}
 		}

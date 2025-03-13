@@ -5,8 +5,9 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool/frame"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
@@ -149,6 +150,28 @@ func (m *mockTransportRaft) PublishApplicationServiceRequest(babuzapb.PublishApp
 	return m.publishRes
 }
 
+type ConnectionCreator struct {
+	dialer    Dialer
+	tlsConfig ibabuza.TLSConfig
+	options   connpool.Options
+}
+
+func NewConnectionCreator(dialer Dialer, tlsConfig ibabuza.TLSConfig, options connpool.Options) *ConnectionCreator {
+	return &ConnectionCreator{
+		dialer:    dialer,
+		tlsConfig: tlsConfig,
+		options:   options,
+	}
+}
+
+func (c *ConnectionCreator) Create(address string) (connpool.Connection, error) {
+	netConn, err := c.dialer.DialWithTimeout(c.tlsConfig, 0, address, c.options.DialTimeout)
+	if err != nil {
+		return nil, err
+	}
+	return conn.NewConnection(netConn, c.options), nil
+}
+
 func TestNewServerClient(t *testing.T) {
 	type testCase struct {
 		NetworkIO
@@ -201,7 +224,9 @@ func TestNewServerClient(t *testing.T) {
 		identify := fmt.Sprintf("case(%d)", i)
 		srv := NewRaftMsgServer(c.TransportConfig, defaultOpts, c.NetworkIO, nil, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
-		pool := connpool.NewConnectionPool(c.NetworkIO, c.TLSConfig, defaultOpts)
+
+		creator := NewConnectionCreator(c.NetworkIO, c.TLSConfig, defaultOpts)
+		pool := connpool.NewConnectionPool(creator, defaultOpts)
 		client := NewRaftMsgClient(pool, peerAddressResolver(c.PeerAddress))
 		_, err := client.getConnection(0)
 		assert.Nil(t, err, identify)
@@ -241,14 +266,16 @@ func TestServer_ServingReceiveMessage(t *testing.T) {
 	raft := newMockTransportRaft(1)
 	closer := syncutil.NewCloser()
 	defer closer.Close()
+
+	frameConn := conn.NewConnection(rConn, defaultOpts)
 	s := &session{
-		options: defaultOpts,
-		conn:    rConn,
-		reader:  frame.NewReader(rConn),
-		writer:  frame.NewWriter(rConn),
-		raft:    raft,
-		closeCh: closer.CloseCh(),
+		options:   defaultOpts,
+		conn:      rConn,
+		frameConn: frameConn,
+		raft:      raft,
+		closeCh:   closer.CloseCh(),
 	}
+
 	raft.setupMsgCount(1, 2)
 	batchMsg := babuzapb.BatchMessage{
 		Messages: []raftpb.Message{
@@ -345,7 +372,9 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 		mockTransport := newMockTransportRaft(1)
 		srv := NewRaftMsgServer(c.TransportConfig, defaultOpts, c.NetworkIO, mockTransport, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
-		pool := connpool.NewConnectionPool(c.NetworkIO, c.TLSConfig, defaultOpts)
+
+		creator := NewConnectionCreator(c.NetworkIO, c.TLSConfig, defaultOpts)
+		pool := connpool.NewConnectionPool(creator, defaultOpts)
 		client := NewRaftMsgClient(pool, peerAddressResolver(c.PeerAddress))
 		tms := genTestMsg(c.totalMsgCount, c.batchRaftMsgCount, 1)
 		mockTransport.setupMsgCount(1, len(tms))
@@ -463,9 +492,10 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 
 		for n := 1; n <= c.clients; n++ {
 			wg.Add(1)
-			go func(tms []*testMsg) {
+			go func(n int, tms []*testMsg) {
 				defer wg.Done()
-				pool := connpool.NewConnectionPool(c.NetworkIO, c.TLSConfig, defaultOpts)
+				creator := NewConnectionCreator(c.NetworkIO, c.TLSConfig, defaultOpts)
+				pool := connpool.NewConnectionPool(creator, defaultOpts)
 				client := NewRaftMsgClient(pool, peerAddressResolver(c.PeerAddress))
 				defer client.Close()
 				for _, tm := range tms {
@@ -475,7 +505,7 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 						assert.Nil(t, client.SendSnapshotMessage(*tm.snapMsg), identify)
 					}
 				}
-			}(allTms[n])
+			}(n, allTms[n])
 		}
 		wg.Wait()
 		for n := 1; n <= c.clients; n++ {

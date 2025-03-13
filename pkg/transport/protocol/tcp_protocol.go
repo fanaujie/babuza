@@ -2,9 +2,9 @@ package protocol
 
 import (
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool"
-	"sync"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
 	"time"
 )
 
@@ -13,8 +13,7 @@ type Tcp struct {
 	config  ibabuza.TransportConfig
 	options connpool.Options
 	logger  ibabuza.Logger
-	pool    *connpool.ConnectionPool
-	poolMu  sync.Mutex // Protects clientFactory modification
+	pool    connpool.Pool
 }
 
 func defaultTcpOptions() connpool.Options {
@@ -82,7 +81,7 @@ func NewTcp(network tcp.NetworkIO, logger ibabuza.Logger, setOpts ...SetTcpOptio
 
 func (t *Tcp) Setup(cfg ibabuza.TransportConfig) error {
 	t.config = cfg
-	t.pool = connpool.NewConnectionPool(t.network, cfg.TLSConfig, t.options)
+	t.pool = connpool.NewConnectionPool(t, t.options)
 	return nil
 }
 
@@ -91,9 +90,18 @@ func (t *Tcp) CreateServer(handler ibabuza.RaftMessageHandler) (ibabuza.Transpor
 }
 
 func (t *Tcp) CreateClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
+
 	return tcp.NewRaftMsgClient(t.pool, resolver), nil
 }
 
 func (t *Tcp) Close() error {
 	return t.pool.Close()
+}
+
+func (t *Tcp) Create(address string) (connpool.Connection, error) {
+	netConn, err := t.network.DialWithTimeout(t.config.TLSConfig, 0, address, t.options.DialTimeout)
+	if err != nil {
+		return nil, err
+	}
+	return conn.NewConnection(netConn, t.options), nil
 }

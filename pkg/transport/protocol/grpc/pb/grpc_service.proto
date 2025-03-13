@@ -1,0 +1,23 @@
+syntax = "proto3";
+package grpcpb;
+option go_package = "github.com/fanaujie/babuza/pkg/transport/protocol/grpc/pb";
+
+
+import "raftMsg.proto";
+import "google/protobuf/empty.proto";
+
+
+// RaftTransport service defines the gRPC operations for Raft communication
+service RaftTransport {
+  // SendBatchMessage sends a batch of Raft messages
+  rpc SendBatchMessage(raft.BatchMessage) returns (google.protobuf.Empty);
+  
+  // SendSnapshotMessage sends a snapshot message
+  rpc SendSnapshotMessage(raft.SnapshotMessage) returns (google.protobuf.Empty);
+  
+  // GetClusterPeers gets information about peers in the cluster
+  rpc GetClusterPeers(raft.GetClusterPeersRequest) returns (raft.GetClusterPeersResponse);
+  
+  // PublishApplicationService publishes application service addresses
+  rpc PublishApplicationService(raft.PublishApplicationServiceRequest) returns (raft.PublishApplicationServiceResponse);
+}
