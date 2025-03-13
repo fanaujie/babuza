@@ -31,7 +31,7 @@ func (c *Connection) SendFrame(msgType frame.MessageType, msg frame.Message) (er
 	if err = c.conn.SetWriteDeadline(time.Now().Add(c.cfg.WriteDeadline)); err != nil {
 		return err
 	}
-	byteSlice := allocator.Acquire(c.cfg.MaxBufferSize)
+	byteSlice := allocator.Acquire(frame.EncodeSize(msg.Size()))
 	defer allocator.Release(byteSlice)
 	err = c.writer.Encode(byteSlice.Buffer, msgType, msg)
 	return err

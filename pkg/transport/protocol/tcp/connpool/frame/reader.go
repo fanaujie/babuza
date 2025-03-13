@@ -9,33 +9,33 @@ import (
 )
 
 type Reader struct {
-	conn       io.Reader
-	maxBufSize int
+	conn io.Reader
 }
 
-func NewReader(conn io.Reader, maxBufSize int) *Reader {
+func NewReader(conn io.Reader) *Reader {
 	return &Reader{
-		conn:       conn,
-		maxBufSize: maxBufSize,
+		conn: conn,
 	}
 }
 
 func (r *Reader) ReadFrame(msgHandler func(msgType MessageType, msgBuf []byte) error) error {
-	sliceBuf := allocator.Acquire(r.maxBufSize)
-	defer allocator.Release(sliceBuf)
+	headerSliceBuf := allocator.Acquire(HeaderSize)
+	defer allocator.Release(headerSliceBuf)
 
-	headerBuf := sliceBuf.Buffer[:headerSize]
+	headerBuf := headerSliceBuf.Buffer[:HeaderSize]
 	if _, err := io.ReadFull(r.conn, headerBuf); err != nil {
 		if err == io.EOF {
 			return io.ErrUnexpectedEOF
 		}
 		return err
 	}
-	h := binary.LittleEndian.Uint32(headerBuf[0:crcOffset])
-	msgSize := int((h & msgSizeMask) >> msgSizeShift)
-	crc := binary.LittleEndian.Uint32(headerBuf[crcOffset:headerSize])
+	h := binary.LittleEndian.Uint32(headerBuf[0:CrcOffset])
+	msgSize := int((h & MsgSizeMask) >> MsgSizeShift)
+	msgSliceBuf := allocator.Acquire(msgSize)
+	defer allocator.Release(msgSliceBuf)
+	crc := binary.LittleEndian.Uint32(headerBuf[CrcOffset:HeaderSize])
 
-	messageBuf := sliceBuf.Buffer[headerSize : headerSize+msgSize]
+	messageBuf := msgSliceBuf.Buffer[:msgSize]
 	if _, err := io.ReadFull(r.conn, messageBuf); err != nil {
 		if err == io.EOF {
 			return io.ErrUnexpectedEOF
@@ -46,5 +46,5 @@ func (r *Reader) ReadFrame(msgHandler func(msgType MessageType, msgBuf []byte) e
 	if readCrc != crc {
 		return fmt.Errorf("crc does not match.(expected=%d) (real=%d)", crc, readCrc)
 	}
-	return msgHandler(MessageType(h&msgTypeMask), messageBuf)
+	return msgHandler(MessageType(h&MsgTypeMask), messageBuf)
 }

@@ -23,7 +23,6 @@ var (
 	defaultOpts = connpool.Options{
 		WriteDeadline:         time.Second * 2,
 		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
 		MaxConnectionsPerHost: 5,
 		DialTimeout:           30 * time.Second,
 		IdleTimeout:           5 * time.Minute,
@@ -245,7 +244,7 @@ func TestServer_ServingReceiveMessage(t *testing.T) {
 	s := &session{
 		options: defaultOpts,
 		conn:    rConn,
-		reader:  frame.NewReader(rConn, defaultOpts.MaxBufferSize),
+		reader:  frame.NewReader(rConn),
 		writer:  frame.NewWriter(rConn),
 		raft:    raft,
 		closeCh: closer.CloseCh(),
@@ -267,7 +266,7 @@ func TestServer_ServingReceiveMessage(t *testing.T) {
 	}
 	fakeMsg := byteSliceEncode{data: []byte{1, 2, 3, 4}}
 	go func() {
-		byteSlice := allocator.Acquire(defaultOpts.MaxBufferSize)
+		byteSlice := allocator.Acquire(batchMsg.Size() + snapshotMsg.Size() + fakeMsg.Size())
 		defer allocator.Release(byteSlice)
 		assert.Nil(t, clientWriter.Encode(byteSlice.Buffer, frame.BatchMsgType, &batchMsg))
 		assert.Nil(t, clientWriter.Encode(byteSlice.Buffer, frame.SnapshotMsgType, &snapshotMsg))

@@ -7,15 +7,6 @@ import (
 	"io"
 )
 
-const (
-	crcOffset      = 4
-	headerSize     = 8
-	msgSizeShift   = 8
-	msgSizeMask    = ^uint32(msgSizeShift)
-	msgTypeMask    = 0xff
-	maxMessageSize = 0xffffff
-)
-
 type Writer struct {
 	conn io.Writer
 }
@@ -30,20 +21,20 @@ func NewWriter(conn io.Writer) *Writer {
 func (w *Writer) Encode(buf []byte, msgType MessageType, msg Message) error {
 	//TODO: need padding? check performance
 	msgSize := msg.Size()
-	if msgSize > maxMessageSize {
-		return fmt.Errorf("message size %d exceeds max message size %d", msgSize, maxMessageSize)
+	if msgSize > MaxMessageSize {
+		return fmt.Errorf("message size %d exceeds max message size %d", msgSize, MaxMessageSize)
 	}
-	frameSize := headerSize + msgSize
+	frameSize := HeaderSize + msgSize
 	if frameSize > len(buf) {
 		return fmt.Errorf("buffer size %d is not enough for frame size %d", len(buf), frameSize)
 	}
-	msgBuf := buf[headerSize:frameSize]
+	msgBuf := buf[HeaderSize:frameSize]
 	if _, err := msg.MarshalTo(msgBuf); err != nil {
 		return err
 	}
 	msgCrc := crc32.Checksum(msgBuf, Crc32Table)
-	binary.LittleEndian.PutUint32(buf[0:crcOffset], uint32((msgSize<<msgSizeShift)|(int(msgType&msgTypeMask))))
-	binary.LittleEndian.PutUint32(buf[crcOffset:headerSize], msgCrc)
+	binary.LittleEndian.PutUint32(buf[0:CrcOffset], uint32((msgSize<<MsgSizeShift)|(int(msgType&MsgTypeMask))))
+	binary.LittleEndian.PutUint32(buf[CrcOffset:HeaderSize], msgCrc)
 	_, err := w.conn.Write(buf[:frameSize])
 	return err
 }

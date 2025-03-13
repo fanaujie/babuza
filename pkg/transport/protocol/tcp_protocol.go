@@ -22,8 +22,6 @@ func defaultTcpOptions() connpool.Options {
 		// Basic options
 		WriteDeadline: time.Second * 5,
 		ReadDeadline:  time.Second * 5,
-		MaxBufferSize: 4 * 1024 * 1024,
-
 		// Connection pool options
 		MaxConnectionsPerHost: 5,                // Default: 5 connections per host
 		DialTimeout:           30 * time.Second, // Default: 30 second connection timeout
@@ -42,12 +40,6 @@ func SetTcpOptsWithWriteDeadline(d time.Duration) SetTcpOptions {
 func SetTcpOptsWithReadDeadline(d time.Duration) SetTcpOptions {
 	return func(opt *connpool.Options) {
 		opt.ReadDeadline = d
-	}
-}
-
-func SetTcpOptsWithMaxBufferSize(d int) SetTcpOptions {
-	return func(opt *connpool.Options) {
-		opt.MaxBufferSize = d
 	}
 }
 

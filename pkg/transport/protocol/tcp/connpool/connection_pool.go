@@ -109,7 +109,7 @@ func (p *ConnectionPool) GetConnection(addr string) (*Connection, error) {
 
 	conn := &Connection{
 		conn:     netConn,
-		reader:   frame.NewReader(netConn, p.options.MaxBufferSize),
+		reader:   frame.NewReader(netConn),
 		writer:   frame.NewWriter(netConn),
 		addr:     addr,
 		inUse:    true,

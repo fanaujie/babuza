@@ -4,7 +4,6 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	raftHttp "github.com/fanaujie/babuza/pkg/transport/protocol/http"
 	"net/http"
-	"net/url"
 	"time"
 )
 
@@ -17,9 +16,9 @@ type Http struct {
 
 func DefaultHttpOptions() raftHttp.Options {
 	return raftHttp.Options{
-		WriteDeadline: time.Second * 5,
-		ReadDeadline:  time.Second * 5,
-		MaxBufferSize: 4 * 1024 * 1024,
+		WriteDeadline:   time.Second * 5,
+		ReadDeadline:    time.Second * 5,
+		ShutdownTimeout: time.Second * 5,
 	}
 }
 
@@ -37,9 +36,9 @@ func SetHttpOptsWithReadDeadline(d time.Duration) SetHttpOptions {
 	}
 }
 
-func SetHttpOptsWithMaxBufferSize(d int) SetHttpOptions {
+func SetHttpOptsWithShutdownTimeout(d time.Duration) SetHttpOptions {
 	return func(opt *raftHttp.Options) {
-		opt.MaxBufferSize = d
+		opt.ShutdownTimeout = d
 	}
 }
 
@@ -70,13 +69,7 @@ func (h *Http) CreateServer(handler ibabuza.RaftMessageHandler) (ibabuza.Transpo
 }
 
 func (h *Http) CreateClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
-	u := url.URL{}
-	if h.config.TLSConfig.EnableTLS {
-		u.Scheme = "https"
-	} else {
-		u.Scheme = "http"
-	}
-	return raftHttp.NewRaftMsgClient(h.client, h.options, u, resolver), nil
+	return raftHttp.NewRaftMsgClient(h.client, h.options, resolver, h.config.TLSConfig.EnableTLS), nil
 }
 
 func (h *Http) Close() error {

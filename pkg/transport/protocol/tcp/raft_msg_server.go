@@ -96,7 +96,7 @@ func (r *RaftMsgServer) newSession(conn net.Conn) *session {
 	return &session{
 		options: r.options,
 		conn:    conn,
-		reader:  frame.NewReader(conn, r.options.MaxBufferSize),
+		reader:  frame.NewReader(conn),
 		writer:  frame.NewWriter(conn),
 		raft:    r.raft,
 		closeCh: r.closer.CloseCh(),
@@ -141,7 +141,7 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 		if err := s.conn.SetWriteDeadline(time.Now().Add(s.options.WriteDeadline)); err != nil {
 			return err
 		}
-		byteSlice := allocator.Acquire(s.options.MaxBufferSize)
+		byteSlice := allocator.Acquire(frame.EncodeSize(res.Size()))
 		defer allocator.Release(byteSlice)
 		return s.writer.Encode(byteSlice.Buffer, frame.ClusterPeersResType, &res)
 	case frame.PubAppServiceReqType:
@@ -152,7 +152,7 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 		if err := s.conn.SetWriteDeadline(time.Now().Add(s.options.WriteDeadline)); err != nil {
 			return err
 		}
-		byteSlice := allocator.Acquire(s.options.MaxBufferSize)
+		byteSlice := allocator.Acquire(frame.EncodeSize(res.Size()))
 		defer allocator.Release(byteSlice)
 		return s.writer.Encode(byteSlice.Buffer, frame.PubAppServiceResType, &res)
 	default:

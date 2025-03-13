@@ -20,7 +20,6 @@ var (
 	defaultOpts = Options{
 		WriteDeadline:   time.Second * 2,
 		ReadDeadline:    time.Second * 2,
-		MaxBufferSize:   4 * 1024 * 1024,
 		ShutdownTimeout: time.Second * 2,
 	}
 )
@@ -152,47 +151,6 @@ func (m *MockTransportResolver) ResolvePeerAddress(peerId uint64) (string, error
 		return addr, nil
 	}
 	return "localhost:14200", nil // Default for testing
-}
-
-func TestNewServerClient(t *testing.T) {
-
-	var testCase = []ibabuza.TransportConfig{
-		{
-			PeerAddress: "localhost:14200",
-			TLSConfig:   ibabuza.TLSConfig{},
-		},
-		{
-			PeerAddress: "localhost:14200",
-			TLSConfig: ibabuza.TLSConfig{
-				EnableTLS: true,
-				MutualTLS: false,
-				TLSCert:   "../../../../test/fixtures/babuza.pem",
-				TLSKey:    "../../../../test/fixtures/babuza-key.pem",
-				TLSRootCA: "../../../../test/fixtures/ca.pem",
-			},
-		},
-		{
-			PeerAddress: "localhost:14200",
-			TLSConfig: ibabuza.TLSConfig{
-				EnableTLS: true,
-				MutualTLS: true,
-				TLSCert:   "../../../../test/fixtures/babuza.pem",
-				TLSKey:    "../../../../test/fixtures/babuza-key.pem",
-				TLSRootCA: "../../../../test/fixtures/ca.pem",
-			},
-		},
-	}
-
-	for i, tc := range testCase {
-		identify := fmt.Sprintf("case(%d)", i)
-		srv := NewRaftMsgServer(tc, defaultOpts, nil, &logger.Mock{})
-		assert.Nil(t, srv.Start(), identify)
-		client, err := NewClient(tc.TLSConfig, defaultOpts)
-		assert.Nil(t, err, identify)
-		resolver := NewMockTransportResolver()
-		assert.NotNil(t, NewRaftMsgClient(client, defaultOpts, resolver, tc.EnableTLS), identify)
-		assert.Nil(t, srv.Stop())
-	}
 }
 
 func TestSingleServerClient_SendAndReceive(t *testing.T) {

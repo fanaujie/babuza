@@ -22,23 +22,20 @@ const (
 type Options struct {
 	WriteDeadline   time.Duration
 	ReadDeadline    time.Duration
-	MaxBufferSize   int
 	ShutdownTimeout time.Duration
 }
 
 type RaftMsgClient struct {
-	byteSlice *allocator.ByteSlice
-	client    *http.Client
-	resolver  ibabuza.TransportResolver
-	urlPool   *UrlPool
+	client   *http.Client
+	resolver ibabuza.TransportResolver
+	urlPool  *UrlPool
 }
 
 func NewRaftMsgClient(client *http.Client, options Options, resolver ibabuza.TransportResolver, enableTls bool) *RaftMsgClient {
 	return &RaftMsgClient{
-		byteSlice: allocator.Acquire(options.MaxBufferSize),
-		client:    client,
-		resolver:  resolver,
-		urlPool:   NewUrlPool(enableTls),
+		client:   client,
+		resolver: resolver,
+		urlPool:  NewUrlPool(enableTls),
 	}
 }
 
@@ -64,20 +61,16 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	}
 	defer r.urlPool.Release(u)
 	msgSize := batchMsg.Size()
-	var buf []byte
-	if msgSize > len(r.byteSlice.Buffer) {
-		bufSlice := allocator.Acquire(msgSize)
-		defer allocator.Release(bufSlice)
-		buf = bufSlice.Buffer[:msgSize]
-	} else {
-		buf = r.byteSlice.Buffer[:msgSize]
-	}
+
+	bufSlice := allocator.Acquire(msgSize)
+	defer allocator.Release(bufSlice)
+	buf := bufSlice.Buffer[:msgSize]
+
 	n, err := batchMsg.MarshalTo(buf)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, u.String(),
-		bytes.NewReader(r.byteSlice.Buffer[:n]))
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(buf[:n]))
 	if err != nil {
 		return err
 	}
@@ -88,7 +81,7 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return errors.New("")
+		return errors.New("unexpected status code")
 	}
 	return nil
 }
@@ -101,17 +94,13 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 	}
 	defer r.urlPool.Release(u)
 	msgSize := snapMsg.Size()
-	var buf []byte
-	if msgSize > len(r.byteSlice.Buffer) {
-		bufSlice := allocator.Acquire(msgSize)
-		defer allocator.Release(bufSlice)
-		buf = bufSlice.Buffer[:msgSize]
-	} else {
-		buf = r.byteSlice.Buffer[:msgSize]
-	}
+
+	bufSlice := allocator.Acquire(msgSize)
+	defer allocator.Release(bufSlice)
+	buf := bufSlice.Buffer[:msgSize]
+
 	n, err := snapMsg.MarshalTo(buf)
-	req, err := http.NewRequest(http.MethodPost, u.String(),
-		bytes.NewReader(r.byteSlice.Buffer[:n]))
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(buf[:n]))
 	if err != nil {
 		return err
 	}
@@ -122,7 +111,7 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return errors.New("")
+		return errors.New("unexpected status code")
 	}
 	return nil
 }
@@ -182,17 +171,13 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 	}
 	defer r.urlPool.Release(u)
 	msgSize := request.Size()
-	var buf []byte
-	if msgSize > len(r.byteSlice.Buffer) {
-		bufSlice := allocator.Acquire(msgSize)
-		defer allocator.Release(bufSlice)
-		buf = bufSlice.Buffer[:msgSize]
-	} else {
-		buf = r.byteSlice.Buffer[:msgSize]
-	}
+	bufSlice := allocator.Acquire(msgSize)
+	defer allocator.Release(bufSlice)
+	buf := bufSlice.Buffer[:msgSize]
+
 	n, err := request.MarshalTo(buf)
 	req, err := http.NewRequest(http.MethodPost, u.String(),
-		bytes.NewReader(r.byteSlice.Buffer[:n]))
+		bytes.NewReader(buf[:n]))
 	if err != nil {
 		return babuzapb.PublishApplicationServiceResponse{
 			Status:  babuzapb.FAILED,
@@ -225,6 +210,5 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 }
 
 func (r *RaftMsgClient) Close() error {
-	allocator.Release(r.byteSlice)
 	return nil
 }
