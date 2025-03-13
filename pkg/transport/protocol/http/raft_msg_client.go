@@ -30,27 +30,27 @@ type RaftMsgClient struct {
 	byteSlice *allocator.ByteSlice
 	client    *http.Client
 	resolver  ibabuza.TransportResolver
-	targetUrl url.URL
+	urlPool   *UrlPool
 }
 
-func NewRaftMsgClient(client *http.Client, options Options, u url.URL, resolver ibabuza.TransportResolver) *RaftMsgClient {
+func NewRaftMsgClient(client *http.Client, options Options, resolver ibabuza.TransportResolver, enableTls bool) *RaftMsgClient {
 	return &RaftMsgClient{
 		byteSlice: allocator.Acquire(options.MaxBufferSize),
 		client:    client,
 		resolver:  resolver,
-		targetUrl: u,
+		urlPool:   NewUrlPool(enableTls),
 	}
 }
 
-func (r *RaftMsgClient) getUrl(peerId uint64, path string) (url.URL, error) {
+func (r *RaftMsgClient) getUrl(peerId uint64, path string) (*url.URL, error) {
 	addr, err := r.resolver.ResolvePeerAddress(peerId)
 	if err != nil {
-		return url.URL{}, err
+		return nil, err
 	}
-	result := r.targetUrl
-	result.Host = addr
-	result.Path = path
-	return result, nil
+	u := r.urlPool.Acquire()
+	u.Host = addr
+	u.Path = path
+	return u, nil
 }
 
 func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
@@ -62,6 +62,7 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	if err != nil {
 		return err
 	}
+	defer r.urlPool.Release(u)
 	msgSize := batchMsg.Size()
 	var buf []byte
 	if msgSize > len(r.byteSlice.Buffer) {
@@ -98,6 +99,7 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 	if err != nil {
 		return err
 	}
+	defer r.urlPool.Release(u)
 	msgSize := snapMsg.Size()
 	var buf []byte
 	if msgSize > len(r.byteSlice.Buffer) {
@@ -132,6 +134,7 @@ func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest)
 			Message: err.Error(),
 		}
 	}
+	defer r.urlPool.Release(u)
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
 		return babuzapb.GetClusterPeersResponse{
@@ -177,6 +180,7 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 			Message: err.Error(),
 		}
 	}
+	defer r.urlPool.Release(u)
 	msgSize := request.Size()
 	var buf []byte
 	if msgSize > len(r.byteSlice.Buffer) {

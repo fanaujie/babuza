@@ -11,7 +11,6 @@ import (
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"math/rand"
 	"net"
-	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -191,7 +190,7 @@ func TestNewServerClient(t *testing.T) {
 		client, err := NewClient(tc.TLSConfig, defaultOpts)
 		assert.Nil(t, err, identify)
 		resolver := NewMockTransportResolver()
-		assert.NotNil(t, NewRaftMsgClient(client, defaultOpts, url.URL{}, resolver), identify)
+		assert.NotNil(t, NewRaftMsgClient(client, defaultOpts, resolver, tc.EnableTLS), identify)
 		assert.Nil(t, srv.Stop())
 	}
 }
@@ -247,10 +246,10 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 		assert.Nil(t, srv.Start(), identify)
 		httpClient, err := NewClient(c.TLSConfig, defaultOpts)
 		assert.Nil(t, err, identify)
-		
+
 		resolver := NewMockTransportResolver()
-		client := NewRaftMsgClient(httpClient, defaultOpts, gerHostUrl(c.PeerAddress, c.EnableTLS), resolver)
-		
+		client := NewRaftMsgClient(httpClient, defaultOpts, resolver, c.EnableTLS)
+
 		tms := genTestMsg(c.totalMsgCount, c.batchRaftMsgCount, 1)
 		mr.setupMsgCount(1, len(tms))
 		for index, tm := range tms {
@@ -259,7 +258,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 			} else if tm.snapMsg != nil {
 				assert.Nil(t, client.SendSnapshotMessage(*tm.snapMsg), identify)
 			}
-			
+
 			res := babuzapb.GetClusterPeersResponse{
 				Peers: []babuzapb.Peer{
 					{
@@ -356,7 +355,7 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 				httpClient, err := NewClient(c.TLSConfig, defaultOpts)
 				assert.Nil(t, err, identify)
 				resolver := NewMockTransportResolver()
-				client := NewRaftMsgClient(httpClient, defaultOpts, gerHostUrl(c.PeerAddress, c.EnableTLS), resolver)
+				client := NewRaftMsgClient(httpClient, defaultOpts, resolver, c.EnableTLS)
 				defer client.Close()
 				for _, tm := range tms {
 					if tm.batchMsg != nil {
@@ -411,14 +410,4 @@ func genRaftMsg(maxMsgs int, startIndex, fromNode uint64) []raftpb.Message {
 		}
 	}
 	return r
-}
-
-func gerHostUrl(host string, enableTLS bool) url.URL {
-	u := url.URL{Host: host}
-	if enableTLS {
-		u.Scheme = "https"
-	} else {
-		u.Scheme = "http"
-	}
-	return u
 }
