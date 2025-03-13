@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -19,21 +20,24 @@ var (
 )
 
 type DialContext func(tlsConfig ibabuza.TLSConfig, endpoint string) (net.Conn, error)
+type DialContextTimeout func(tlsConfig ibabuza.TLSConfig, endpoint string, timeout time.Duration) (net.Conn, error)
 
 type ProxyNetwork struct {
-	dialContext     DialContext
-	proxy           map[uint64]*Proxy
-	dialToProxyConn map[uint64]map[string][]net.Conn
-	proxyConnectMap map[uint64]map[string]bool
-	mu              sync.Mutex
+	dialContext            DialContext
+	dialContextWithTimeout DialContextTimeout
+	proxy                  map[uint64]*Proxy
+	dialToProxyConn        map[uint64]map[string][]net.Conn
+	proxyConnectMap        map[uint64]map[string]bool
+	mu                     sync.Mutex
 }
 
 func New() *ProxyNetwork {
 	return &ProxyNetwork{
-		dialContext:     netutil.TcpDial,
-		proxy:           make(map[uint64]*Proxy),
-		dialToProxyConn: make(map[uint64]map[string][]net.Conn),
-		proxyConnectMap: make(map[uint64]map[string]bool),
+		dialContext:            netutil.TcpDial,
+		dialContextWithTimeout: netutil.TcpDialTimeout,
+		proxy:                  make(map[uint64]*Proxy),
+		dialToProxyConn:        make(map[uint64]map[string][]net.Conn),
+		proxyConnectMap:        make(map[uint64]map[string]bool),
 	}
 }
 
@@ -167,6 +171,35 @@ func (n *ProxyNetwork) Dial(cfg ibabuza.TLSConfig, fromProxyId uint64, toProxyIn
 	n.dialToProxyConn[fromProxyId] = dialToProxyConn
 	return pConn, nil
 }
+
+func (n *ProxyNetwork) DialWithTimeout(cfg ibabuza.TLSConfig, fromProxyId uint64, toProxyInEndpoint string, timeout time.Duration) (net.Conn, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	canDialMap, ok := n.proxyConnectMap[fromProxyId]
+	if !ok {
+		return nil, ErrNotExistProxy
+	}
+	canDial, ok := canDialMap[toProxyInEndpoint]
+	if !ok {
+		return nil, ErrNotExistProxy
+	}
+	if !canDial {
+		return nil, ErrDialFromDisconnectedPeer
+	}
+	conn, err := n.dialContextWithTimeout(cfg, toProxyInEndpoint, timeout)
+	if err != nil {
+		return nil, err
+	}
+	pConn := newProxyDialConn(conn)
+	dialToProxyConn, ok := n.dialToProxyConn[fromProxyId]
+	if !ok {
+		dialToProxyConn = make(map[string][]net.Conn)
+	}
+	dialToProxyConn[toProxyInEndpoint] = append(dialToProxyConn[toProxyInEndpoint], pConn)
+	n.dialToProxyConn[fromProxyId] = dialToProxyConn
+	return pConn, nil
+}
+
 func (n *ProxyNetwork) Listen(tlsCfg ibabuza.TLSConfig, endpoint string) (net.Listener, error) {
 	return netutil.TcpListen(tlsCfg, endpoint)
 }

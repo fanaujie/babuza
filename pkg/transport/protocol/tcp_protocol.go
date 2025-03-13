@@ -23,9 +23,9 @@ func defaultTcpOptions() connpool.Options {
 		WriteDeadline: time.Second * 5,
 		ReadDeadline:  time.Second * 5,
 		// Connection pool options
-		MaxConnectionsPerHost: 5,                // Default: 5 connections per host
-		DialTimeout:           30 * time.Second, // Default: 30 second connection timeout
-		IdleTimeout:           5 * time.Minute,  // Default: 5 minute idle timeout
+		MaxConnectionsPerHost: 5,               // Default: 5 connections per host
+		DialTimeout:           3 * time.Second, // Default: 3 second connection timeout
+		IdleTimeout:           5 * time.Minute, // Default: 5 minute idle timeout
 	}
 }
 

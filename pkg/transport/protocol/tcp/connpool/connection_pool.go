@@ -16,6 +16,7 @@ var (
 
 type Dialer interface {
 	Dial(ibabuza.TLSConfig, uint64, string) (net.Conn, error)
+	DialWithTimeout(ibabuza.TLSConfig, uint64, string, time.Duration) (net.Conn, error)
 }
 
 type ConnectionPool struct {
@@ -102,7 +103,7 @@ func (p *ConnectionPool) GetConnection(addr string) (*Connection, error) {
 	}
 
 	// Create a new connection
-	netConn, err := p.dialer.Dial(p.tlsConfig, 0, addr)
+	netConn, err := p.dialer.DialWithTimeout(p.tlsConfig, 0, addr, p.options.DialTimeout)
 	if err != nil {
 		return nil, err
 	}

@@ -589,3 +589,102 @@ func TestSaveTopologyAsSVG(t *testing.T) {
 		t.Error("SVG file is unusually large")
 	}
 }
+
+func TestRaftNetwork_DialWithTimeout(t *testing.T) {
+	// Create a mock dial function that succeeds immediately
+	mockSuccessDial := func(tlsConfig ibabuza.TLSConfig, endpoint string, timeout time.Duration) (net.Conn, error) {
+		return mockConn{}, nil
+	}
+
+	// Create a mock dial function that simulates a timeout
+	mockTimeoutDial := func(tlsConfig ibabuza.TLSConfig, endpoint string, timeout time.Duration) (net.Conn, error) {
+		return nil, fmt.Errorf("connection timeout")
+	}
+
+	t.Run("success with timeout", func(t *testing.T) {
+		p := New()
+		defer p.TeardownNetwork()
+		p.dialContextWithTimeout = mockSuccessDial
+
+		assert.Nil(t, p.AddProxy(ibabuza.ProxyConfig{
+			Id:     1,
+			InAddr: getProxyInEndpoint(1),
+		}))
+		assert.Nil(t, p.AddProxy(ibabuza.ProxyConfig{
+			Id:     2,
+			InAddr: getProxyInEndpoint(2),
+		}))
+		assert.Nil(t, p.SetPartition([]uint64{1, 2}))
+
+		// Test with different timeout values
+		timeouts := []time.Duration{
+			100 * time.Millisecond,
+			1 * time.Second,
+			5 * time.Second,
+		}
+
+		for _, timeout := range timeouts {
+			conn, err := p.DialWithTimeout(ibabuza.TLSConfig{}, 1, getProxyInEndpoint(2), timeout)
+			assert.Nil(t, err)
+			assert.NotNil(t, conn)
+		}
+
+		// Verify connections were tracked correctly
+		conns, ok := p.dialToProxyConn[1]
+		assert.Equal(t, true, ok)
+		connMap, ok := conns[getProxyInEndpoint(2)]
+		assert.Equal(t, 3, len(connMap))
+	})
+
+	t.Run("connection timeout", func(t *testing.T) {
+		p := New()
+		defer p.TeardownNetwork()
+		p.dialContextWithTimeout = mockTimeoutDial
+
+		assert.Nil(t, p.AddProxy(ibabuza.ProxyConfig{
+			Id:     1,
+			InAddr: getProxyInEndpoint(1),
+		}))
+		assert.Nil(t, p.AddProxy(ibabuza.ProxyConfig{
+			Id:     2,
+			InAddr: getProxyInEndpoint(2),
+		}))
+		assert.Nil(t, p.SetPartition([]uint64{1, 2}))
+
+		conn, err := p.DialWithTimeout(ibabuza.TLSConfig{}, 1, getProxyInEndpoint(2), 100*time.Millisecond)
+		assert.Error(t, err)
+		assert.Nil(t, conn)
+	})
+
+	t.Run("dial from disconnected proxy", func(t *testing.T) {
+		p := New()
+		defer p.TeardownNetwork()
+		p.dialContextWithTimeout = mockSuccessDial
+
+		assert.Nil(t, p.AddProxy(ibabuza.ProxyConfig{
+			Id:     1,
+			InAddr: getProxyInEndpoint(1),
+		}))
+		assert.Nil(t, p.AddProxy(ibabuza.ProxyConfig{
+			Id:     2,
+			InAddr: getProxyInEndpoint(2),
+		}))
+
+		// Without setting partition, proxies can't connect
+		conn, err := p.DialWithTimeout(ibabuza.TLSConfig{}, 1, getProxyInEndpoint(2), 100*time.Millisecond)
+		assert.Error(t, err)
+		assert.Equal(t, ErrDialFromDisconnectedPeer, err)
+		assert.Nil(t, conn)
+	})
+
+	t.Run("nonexistent proxy", func(t *testing.T) {
+		p := New()
+		defer p.TeardownNetwork()
+
+		// Try to dial from a proxy that doesn't exist
+		conn, err := p.DialWithTimeout(ibabuza.TLSConfig{}, 999, getProxyInEndpoint(1), 100*time.Millisecond)
+		assert.Error(t, err)
+		assert.Equal(t, ErrNotExistProxy, err)
+		assert.Nil(t, conn)
+	})
+}

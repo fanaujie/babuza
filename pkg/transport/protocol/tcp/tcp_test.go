@@ -24,7 +24,7 @@ var (
 		WriteDeadline:         time.Second * 2,
 		ReadDeadline:          time.Second * 2,
 		MaxConnectionsPerHost: 5,
-		DialTimeout:           30 * time.Second,
+		DialTimeout:           1 * time.Second,
 		IdleTimeout:           5 * time.Minute,
 	}
 )
@@ -218,7 +218,7 @@ func TestServer_StartAndStop(t *testing.T) {
 	assert.Nil(t, srv.Start())
 	conns := make(map[int]net.Conn)
 	for i := 0; i < 8; i++ {
-		conn, err := n.Dial(ibabuza.TLSConfig{}, 0, local)
+		conn, err := n.DialWithTimeout(ibabuza.TLSConfig{}, 0, local, defaultOpts.DialTimeout)
 		assert.Nil(t, err)
 		conns[i] = conn
 	}

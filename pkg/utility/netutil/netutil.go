@@ -1,11 +1,13 @@
 package netutil
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"github.com/fanaujie/babuza/ibabuza"
-	"io/ioutil"
 	"net"
+	"os"
+	"time"
 )
 
 //
@@ -81,7 +83,7 @@ func GetServerTlsConfig(tc ibabuza.TLSConfig) (*tls.Config, error) {
 	if !tc.MutualTLS {
 		return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
 	}
-	certBytes, err := ioutil.ReadFile(tc.TLSRootCA)
+	certBytes, err := os.ReadFile(tc.TLSRootCA)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +104,7 @@ func GetClientTlsConfig(tc ibabuza.TLSConfig) (*tls.Config, error) {
 	if !tc.EnableTLS {
 		return nil, nil
 	}
-	certBytes, err := ioutil.ReadFile(tc.TLSRootCA)
+	certBytes, err := os.ReadFile(tc.TLSRootCA)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +138,20 @@ func TcpDial(tlsConfig ibabuza.TLSConfig, endpoint string) (net.Conn, error) {
 		return net.Dial("tcp", endpoint)
 	}
 	return tls.Dial("tcp", endpoint, tlsCfg)
+}
+
+func TcpDialTimeout(tlsConfig ibabuza.TLSConfig, endpoint string, timeout time.Duration) (net.Conn, error) {
+	tlsCfg, err := GetClientTlsConfig(tlsConfig)
+	if err != nil {
+		return nil, err
+	}
+	dialer := &net.Dialer{Timeout: timeout}
+	if tlsCfg == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		return dialer.DialContext(ctx, "tcp", endpoint)
+	}
+	return tls.DialWithDialer(dialer, "tcp", endpoint, tlsCfg)
 }
 
 func TcpListen(tlsConfig ibabuza.TLSConfig, endpoint string) (net.Listener, error) {

@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+var defaultOptions = Options{
+	WriteDeadline:         time.Second * 2,
+	ReadDeadline:          time.Second * 2,
+	IdleTimeout:           time.Second * 30,
+	DialTimeout:           time.Second,
+	MaxConnectionsPerHost: 5,
+}
+
 // MockNetworkIO implements the NetworkIO interface for testing
 type MockNetworkIO struct {
 	dialFunc   func(ibabuza.TLSConfig, string) (net.Conn, error)
@@ -19,6 +27,13 @@ type MockNetworkIO struct {
 }
 
 func (m *MockNetworkIO) Dial(config ibabuza.TLSConfig, fromPeerId uint64, toEndPoint string) (net.Conn, error) {
+	if m.dialFunc != nil {
+		return m.dialFunc(config, toEndPoint)
+	}
+	return nil, errors.New("CreateTransportClient not implemented")
+}
+
+func (m *MockNetworkIO) DialWithTimeout(config ibabuza.TLSConfig, fromPeerId uint64, toEndPoint string, timeout time.Duration) (net.Conn, error) {
 	if m.dialFunc != nil {
 		return m.dialFunc(config, toEndPoint)
 	}
@@ -136,13 +151,7 @@ func (m *MockConn) SetWriteDeadline(t time.Time) error {
 // TestNewConnectionPool tests the creation of a new connection pool
 func TestNewConnectionPool(t *testing.T) {
 	mockIO := &MockNetworkIO{}
-	options := Options{
-		WriteDeadline:         time.Second * 2,
-		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
-		IdleTimeout:           time.Second * 30,
-		MaxConnectionsPerHost: 5,
-	}
+	options := defaultOptions
 
 	pool := NewConnectionPool(mockIO, ibabuza.TLSConfig{}, options)
 
@@ -164,13 +173,7 @@ func TestGetConnection(t *testing.T) {
 		},
 	}
 
-	options := Options{
-		WriteDeadline:         time.Second * 2,
-		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
-		IdleTimeout:           time.Second * 30,
-		MaxConnectionsPerHost: 5,
-	}
+	options := defaultOptions
 
 	pool := NewConnectionPool(mockIO, ibabuza.TLSConfig{}, options)
 	defer pool.Close()
@@ -194,13 +197,8 @@ func TestGetConnectionMaxReached(t *testing.T) {
 		},
 	}
 
-	options := Options{
-		WriteDeadline:         time.Second * 2,
-		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
-		IdleTimeout:           time.Second * 30,
-		MaxConnectionsPerHost: 2, // Set max connections to 2
-	}
+	options := defaultOptions
+	options.MaxConnectionsPerHost = 2
 
 	pool := NewConnectionPool(mockIO, ibabuza.TLSConfig{}, options)
 	defer pool.Close()
@@ -228,13 +226,7 @@ func TestReturnConnection(t *testing.T) {
 		},
 	}
 
-	options := Options{
-		WriteDeadline:         time.Second * 2,
-		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
-		IdleTimeout:           time.Second * 30,
-		MaxConnectionsPerHost: 5,
-	}
+	options := defaultOptions
 
 	pool := NewConnectionPool(mockIO, ibabuza.TLSConfig{}, options)
 	defer pool.Close()
@@ -263,14 +255,7 @@ func TestRemoveConnection(t *testing.T) {
 		},
 	}
 
-	options := Options{
-		WriteDeadline:         time.Second * 2,
-		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
-		IdleTimeout:           time.Second * 30,
-		MaxConnectionsPerHost: 5,
-	}
-
+	options := defaultOptions
 	pool := NewConnectionPool(mockIO, ibabuza.TLSConfig{}, options)
 
 	// Get a connection
@@ -299,13 +284,8 @@ func TestCleanIdleConnections(t *testing.T) {
 	}
 
 	// Use a short idle timeout for testing
-	options := Options{
-		WriteDeadline:         time.Second * 2,
-		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
-		IdleTimeout:           100 * time.Millisecond, // Very short for testing
-		MaxConnectionsPerHost: 5,
-	}
+	options := defaultOptions
+	options.IdleTimeout = 100 * time.Millisecond // Very short for testing
 
 	pool := NewConnectionPool(mockIO, ibabuza.TLSConfig{}, options)
 
@@ -339,19 +319,13 @@ func TestCleanIdleConnections(t *testing.T) {
 func TestConnectionSendReadFrame(t *testing.T) {
 	mockConn := NewMockConn()
 
-	options := Options{
-		WriteDeadline:         time.Second * 2,
-		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
-		IdleTimeout:           time.Second * 30,
-		MaxConnectionsPerHost: 5,
-	}
+	options := defaultOptions
 
 	pool := NewConnectionPool(nil, ibabuza.TLSConfig{}, options)
 
 	conn := &Connection{
 		conn:     mockConn,
-		reader:   frame.NewReader(mockConn, options.MaxBufferSize),
+		reader:   frame.NewReader(mockConn),
 		writer:   frame.NewWriter(mockConn),
 		addr:     "test-addr",
 		inUse:    true,
@@ -387,14 +361,7 @@ func TestConnectionPoolClose(t *testing.T) {
 		},
 	}
 
-	options := Options{
-		WriteDeadline:         time.Second * 2,
-		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
-		IdleTimeout:           time.Second * 30,
-		MaxConnectionsPerHost: 5,
-	}
-
+	options := defaultOptions
 	pool := NewConnectionPool(mockIO, ibabuza.TLSConfig{}, options)
 
 	// Get some connections
@@ -422,13 +389,8 @@ func TestConcurrentGetConnection(t *testing.T) {
 		},
 	}
 
-	options := Options{
-		WriteDeadline:         time.Second * 2,
-		ReadDeadline:          time.Second * 2,
-		MaxBufferSize:         4 * 1024 * 1024,
-		IdleTimeout:           time.Second * 30,
-		MaxConnectionsPerHost: 10,
-	}
+	options := defaultOptions
+	options.MaxConnectionsPerHost = 10
 
 	pool := NewConnectionPool(mockIO, ibabuza.TLSConfig{}, options)
 	defer pool.Close()

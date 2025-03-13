@@ -5,6 +5,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"net"
 	"sync"
+	"time"
 )
 
 type TcpMemoryIO struct {
@@ -33,6 +34,9 @@ func (n *TcpMemoryIO) Dial(cfg ibabuza.TLSConfig, fromPeerId uint64, toEndpoint 
 	w, r := net.Pipe()
 	l.listenCh <- r
 	return w, nil
+}
+func (n *TcpMemoryIO) DialWithTimeout(cfg ibabuza.TLSConfig, fromPeerId uint64, toEndpoint string, timeout time.Duration) (net.Conn, error) {
+	return n.Dial(cfg, fromPeerId, toEndpoint)
 }
 
 func (n *TcpMemoryIO) Listen(cfg ibabuza.TLSConfig, endpoint string) (net.Listener, error) {
