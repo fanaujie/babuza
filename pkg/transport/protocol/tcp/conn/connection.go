@@ -1,7 +1,6 @@
 package conn
 
 import (
-	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"net"
@@ -15,19 +14,24 @@ type Dialer interface {
 	DialWithTimeout(config ibabuza.TLSConfig, fromPeerId uint64, toEndpoint string, timeout time.Duration) (net.Conn, error)
 }
 
-type FrameConnection struct {
-	conn    net.Conn
-	reader  *frame.Reader
-	writer  *frame.Writer
-	options connpool.Options
+type Config struct {
+	ReadDeadline  time.Duration
+	WriteDeadline time.Duration
 }
 
-func NewConnection(conn net.Conn, options connpool.Options) *FrameConnection {
+type FrameConnection struct {
+	conn   net.Conn
+	reader *frame.Reader
+	writer *frame.Writer
+	config Config
+}
+
+func NewConnection(conn net.Conn, config Config) *FrameConnection {
 	return &FrameConnection{
-		conn:    conn,
-		reader:  frame.NewReader(conn),
-		writer:  frame.NewWriter(conn),
-		options: options,
+		conn:   conn,
+		reader: frame.NewReader(conn),
+		writer: frame.NewWriter(conn),
+		config: config,
 	}
 }
 
@@ -36,7 +40,7 @@ func (c *FrameConnection) Close() error {
 }
 
 func (c *FrameConnection) SendFrame(msgType frame.MessageType, msg frame.Message) error {
-	if err := c.conn.SetWriteDeadline(time.Now().Add(c.options.WriteDeadline)); err != nil {
+	if err := c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteDeadline)); err != nil {
 		return err
 	}
 
@@ -46,7 +50,7 @@ func (c *FrameConnection) SendFrame(msgType frame.MessageType, msg frame.Message
 }
 
 func (c *FrameConnection) ReadFrame(msgHandler func(msgType frame.MessageType, msgBuf []byte) error) error {
-	if err := c.conn.SetReadDeadline(time.Now().Add(c.options.ReadDeadline)); err != nil {
+	if err := c.conn.SetReadDeadline(time.Now().Add(c.config.ReadDeadline)); err != nil {
 		return err
 	}
 	return c.reader.ReadFrame(msgHandler)

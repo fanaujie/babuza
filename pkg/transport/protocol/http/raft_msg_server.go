@@ -10,24 +10,31 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
 )
 
-type RaftMsgServer struct {
-	cfg     ibabuza.TransportConfig
-	raft    ibabuza.RaftMessageHandler
-	options Options
-	logger  ibabuza.Logger
-	srv     *http.Server
+type ServerConfig struct {
+	WriteDeadline   time.Duration
+	ReadDeadline    time.Duration
+	ShutdownTimeout time.Duration
 }
 
-func NewRaftMsgServer(cfg ibabuza.TransportConfig, options Options, raft ibabuza.RaftMessageHandler,
+type RaftMsgServer struct {
+	cfg    ibabuza.TransportConfig
+	raft   ibabuza.RaftMessageHandler
+	config ServerConfig
+	logger ibabuza.Logger
+	srv    *http.Server
+}
+
+func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, raft ibabuza.RaftMessageHandler,
 	logger ibabuza.Logger) *RaftMsgServer {
 
 	r := &RaftMsgServer{
-		cfg:     cfg,
-		raft:    raft,
-		options: options,
-		logger:  logger,
+		cfg:    cfg,
+		raft:   raft,
+		config: config,
+		logger: logger,
 	}
 	mux := http.NewServeMux()
 	h := &handler{
@@ -40,8 +47,8 @@ func NewRaftMsgServer(cfg ibabuza.TransportConfig, options Options, raft ibabuza
 	r.srv = &http.Server{
 		Addr:         cfg.PeerAddress,
 		Handler:      mux,
-		ReadTimeout:  options.ReadDeadline,
-		WriteTimeout: options.WriteDeadline,
+		ReadTimeout:  config.ReadDeadline,
+		WriteTimeout: config.WriteDeadline,
 	}
 	return r
 }
@@ -65,7 +72,7 @@ func (r *RaftMsgServer) Start() error {
 }
 
 func (r *RaftMsgServer) Stop() error {
-	ctx, cancel := context.WithTimeout(context.Background(), r.options.ShutdownTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), r.config.ShutdownTimeout)
 	defer cancel()
 	if err := r.srv.Shutdown(ctx); err != nil {
 		return err

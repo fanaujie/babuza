@@ -15,16 +15,16 @@ var testTLSConfig = []ibabuza.TLSConfig{
 	{
 		EnableTLS: true,
 		MutualTLS: false,
-		TLSCert:   "../../../../../../test/fixtures/babuza.pem",
-		TLSKey:    "../../../../../../test/fixtures/babuza-key.pem",
-		TLSRootCA: "../../../../../../test/fixtures/ca.pem",
+		TLSCert:   "../../../../../../test/fixtures/server.pem",
+		TLSKey:    "../../../../../../test/fixtures/server-key.pem",
+		TLSRootCA: "../../../../../../test/fixtures/root.pem",
 	},
 	{
 		EnableTLS: true,
 		MutualTLS: true,
-		TLSCert:   "../../../../../../test/fixtures/babuza.pem",
-		TLSKey:    "../../../../../../test/fixtures/babuza-key.pem",
-		TLSRootCA: "../../../../../../test/fixtures/ca.pem",
+		TLSCert:   "../../../../../../test/fixtures/server.pem",
+		TLSKey:    "../../../../../../test/fixtures/server-key.pem",
+		TLSRootCA: "../../../../../../test/fixtures/root.pem",
 	},
 }
 

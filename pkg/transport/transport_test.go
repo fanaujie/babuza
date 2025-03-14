@@ -24,6 +24,7 @@ import (
 const (
 	transportTypeTcp  = 1
 	transportTypeHttp = 2
+	transportTypeGrpc = 3
 )
 
 // mockRaftProcessor implements the ibabuza.RaftNodeHandler interface for testing
@@ -212,6 +213,13 @@ func TestTransport_Create(t *testing.T) {
 	httpTrans := New(1, DefaultOptions(), peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), httpProtocol, &logger.Mock{})
 	assert.NotNil(t, httpTrans)
+
+	// Test GRPC protocol
+	peerManager = NewPeerManager()
+	grpcProtocol := protocol.NewGrpc(&logger.Mock{})
+	grpcTrans := New(1, DefaultOptions(), peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
+		breaker.NewNoOpBreaker(), grpcProtocol, &logger.Mock{})
+	assert.NotNil(t, grpcTrans)
 }
 
 // Helper function to create a new transport for testing
@@ -248,6 +256,10 @@ func newTestTransport(t *testing.T, transType int, nodeId uint64, listenAddress 
 		tranProtocol = protocol.NewHttp(&logger.Mock{},
 			protocol.SetHttpOptsWithReadDeadline(time.Second),
 			protocol.SetHttpOptsWithWriteDeadline(time.Second))
+	case transportTypeGrpc:
+		tranProtocol = protocol.NewGrpc(&logger.Mock{},
+			protocol.SetGrpcOptsWithDialTimeout(time.Second),
+			protocol.SetGrpcOptsWithIdleTimeout(time.Second))
 	default:
 		assert.Fail(t, "unknown transport type")
 	}
@@ -272,10 +284,12 @@ func newTestTransport(t *testing.T, transType int, nodeId uint64, listenAddress 
 
 // Test sending messages between transports
 func TestTransport_Send(t *testing.T) {
-	for _, transportType := range []int{transportTypeTcp, transportTypeHttp} {
+	for _, transportType := range []int{transportTypeTcp, transportTypeHttp, transportTypeGrpc} {
 		transportName := "TCP"
 		if transportType == transportTypeHttp {
 			transportName = "HTTP"
+		} else if transportType == transportTypeGrpc {
+			transportName = "GRPC"
 		}
 
 		t.Run(transportName, func(t *testing.T) {
@@ -327,12 +341,13 @@ func TestTransport_Send(t *testing.T) {
 
 // Test sending a snapshot between transports
 func TestTransport_SendSnapshot(t *testing.T) {
-	for _, transportType := range []int{transportTypeTcp, transportTypeHttp} {
+	for _, transportType := range []int{transportTypeTcp, transportTypeHttp, transportTypeGrpc} {
 		transportName := "TCP"
 		if transportType == transportTypeHttp {
 			transportName = "HTTP"
+		} else if transportType == transportTypeGrpc {
+			transportName = "GRPC"
 		}
-
 		t.Run(transportName, func(t *testing.T) {
 			trans1, mockRaft1 := newTestTransport(t, transportType, 1, "localhost:14200")
 			defer trans1.Stop()
@@ -372,10 +387,12 @@ func TestTransport_SendSnapshot(t *testing.T) {
 
 // Test peer management operations
 func TestTransport_PeerManagement(t *testing.T) {
-	for _, transportType := range []int{transportTypeTcp, transportTypeHttp} {
+	for _, transportType := range []int{transportTypeTcp, transportTypeHttp, transportTypeGrpc} {
 		transportName := "TCP"
 		if transportType == transportTypeHttp {
 			transportName = "HTTP"
+		} else if transportType == transportTypeGrpc {
+			transportName = "GRPC"
 		}
 
 		t.Run(transportName, func(t *testing.T) {
@@ -418,10 +435,12 @@ func TestTransport_PeerManagement(t *testing.T) {
 
 // Test unreachable peer reporting
 func TestTransport_UnreachablePeer(t *testing.T) {
-	for _, transportType := range []int{transportTypeTcp, transportTypeHttp} {
+	for _, transportType := range []int{transportTypeTcp, transportTypeHttp, transportTypeGrpc} {
 		transportName := "TCP"
 		if transportType == transportTypeHttp {
 			transportName = "HTTP"
+		} else if transportType == transportTypeGrpc {
+			transportName = "GRPC"
 		}
 
 		t.Run(transportName, func(t *testing.T) {
@@ -455,10 +474,12 @@ func TestTransport_UnreachablePeer(t *testing.T) {
 
 // Test updating a peer's address and continuing to communicate
 func TestTransport_UpdatePeerAndCommunicate(t *testing.T) {
-	for _, transportType := range []int{transportTypeTcp, transportTypeHttp} {
+	for _, transportType := range []int{transportTypeTcp, transportTypeHttp, transportTypeGrpc} {
 		transportName := "TCP"
 		if transportType == transportTypeHttp {
 			transportName = "HTTP"
+		} else if transportType == transportTypeGrpc {
+			transportName = "GRPC"
 		}
 
 		t.Run(transportName, func(t *testing.T) {

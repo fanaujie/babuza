@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
@@ -13,9 +12,14 @@ import (
 	"time"
 )
 
+type ServerConfig struct {
+	ReadDeadline  time.Duration
+	WriteDeadline time.Duration
+}
+
 type RaftMsgServer struct {
 	cfg         ibabuza.TransportConfig
-	options     connpool.Options
+	config      ServerConfig
 	tcpListener Listener
 	raft        ibabuza.RaftMessageHandler
 	logger      ibabuza.Logger
@@ -23,12 +27,12 @@ type RaftMsgServer struct {
 	listener    net.Listener
 }
 
-func NewRaftMsgServer(cfg ibabuza.TransportConfig, options connpool.Options, listener Listener, raft ibabuza.RaftMessageHandler,
+func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, listener Listener, raft ibabuza.RaftMessageHandler,
 	logger ibabuza.Logger) *RaftMsgServer {
 
 	return &RaftMsgServer{
 		cfg:         cfg,
-		options:     options,
+		config:      config,
 		tcpListener: listener,
 		raft:        raft,
 		logger:      logger,
@@ -94,16 +98,19 @@ func (r *RaftMsgServer) Stop() error {
 
 func (r *RaftMsgServer) newSession(c net.Conn) *session {
 	return &session{
-		options:   r.options,
-		conn:      c,
-		frameConn: conn.NewConnection(c, r.options),
-		raft:      r.raft,
-		closeCh:   r.closer.CloseCh(),
+		config: r.config,
+		conn:   c,
+		frameConn: conn.NewConnection(c, conn.Config{
+			ReadDeadline:  r.config.ReadDeadline,
+			WriteDeadline: r.config.WriteDeadline,
+		}),
+		raft:    r.raft,
+		closeCh: r.closer.CloseCh(),
 	}
 }
 
 type session struct {
-	options            connpool.Options
+	config             ServerConfig
 	conn               net.Conn
 	frameConn          *conn.FrameConnection
 	batchMsg           babuzapb.BatchMessage
@@ -136,7 +143,7 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 			return err
 		}
 		res := s.raft.GetClusterPeersRequest(s.getClusterPeersReq)
-		if err := s.conn.SetWriteDeadline(time.Now().Add(s.options.WriteDeadline)); err != nil {
+		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
 			return err
 		}
 		return s.frameConn.SendFrame(frame.ClusterPeersResType, &res)
@@ -145,7 +152,7 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 			return err
 		}
 		res := s.raft.PublishApplicationServiceRequest(s.pubAppServiceReq)
-		if err := s.conn.SetWriteDeadline(time.Now().Add(s.options.WriteDeadline)); err != nil {
+		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
 			return err
 		}
 		return s.frameConn.SendFrame(frame.PubAppServiceResType, &res)
@@ -162,7 +169,7 @@ func (s *session) start() error {
 		case <-s.closeCh:
 			return errors.New("tcp server: close")
 		default:
-			if err := s.conn.SetReadDeadline(time.Now().Add(s.options.ReadDeadline)); err != nil {
+			if err := s.conn.SetReadDeadline(time.Now().Add(s.config.ReadDeadline)); err != nil {
 				return err
 			}
 			if err := s.frameConn.ReadFrame(s.messageHandler); err != nil {

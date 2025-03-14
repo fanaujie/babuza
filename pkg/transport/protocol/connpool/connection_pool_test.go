@@ -36,7 +36,7 @@ func (m *mockConnection) GetID() int {
 	return m.id
 }
 
-// mockConnectionCreator is a mock implementation of the ConnectionCreator interface for testing
+// mockConnectionCreator is a mock implementation of the ConnectionDialer interface for testing
 type mockConnectionCreator struct {
 	connections     map[string][]*mockConnection
 	createCallCount int
@@ -50,7 +50,7 @@ func newMockConnectionCreator() *mockConnectionCreator {
 	}
 }
 
-func (m *mockConnectionCreator) Create(address string) (Connection, error) {
+func (m *mockConnectionCreator) Dial(address string) (Connection, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -86,7 +86,7 @@ func (m *mockConnectionCreator) SetFailCreation(fail bool) {
 
 func TestNewConnectionPool(t *testing.T) {
 	creator := newMockConnectionCreator()
-	options := Options{
+	options := Config{
 		MaxConnectionsPerHost: 10,
 		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
@@ -95,7 +95,7 @@ func TestNewConnectionPool(t *testing.T) {
 	pool := NewConnectionPool(creator, options)
 	assert.NotNil(t, pool)
 	assert.Equal(t, creator, pool.connCreator)
-	assert.Equal(t, options, pool.options)
+	assert.Equal(t, options, pool.config)
 	assert.NotNil(t, pool.connections)
 	assert.NotNil(t, pool.stopCleaner)
 
@@ -106,7 +106,7 @@ func TestNewConnectionPool(t *testing.T) {
 
 func TestConnectionPool_Get(t *testing.T) {
 	creator := newMockConnectionCreator()
-	options := Options{
+	options := Config{
 		MaxConnectionsPerHost: 2,
 		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
@@ -163,7 +163,7 @@ func TestConnectionPool_Get(t *testing.T) {
 
 func TestConnectionPool_Put(t *testing.T) {
 	creator := newMockConnectionCreator()
-	options := Options{
+	options := Config{
 		MaxConnectionsPerHost: 5,
 		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
@@ -200,7 +200,7 @@ func TestConnectionPool_Put(t *testing.T) {
 
 func TestConnectionPool_Remove(t *testing.T) {
 	creator := newMockConnectionCreator()
-	options := Options{
+	options := Config{
 		MaxConnectionsPerHost: 5,
 		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
@@ -259,7 +259,7 @@ func TestConnectionPool_Remove(t *testing.T) {
 
 func TestConnectionPool_Close(t *testing.T) {
 	creator := newMockConnectionCreator()
-	options := Options{
+	options := Config{
 		MaxConnectionsPerHost: 5,
 		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
@@ -289,7 +289,7 @@ func TestConnectionPool_Close(t *testing.T) {
 
 func TestConnectionPool_IdleTimeout(t *testing.T) {
 	creator := newMockConnectionCreator()
-	options := Options{
+	options := Config{
 		MaxConnectionsPerHost: 5,
 		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Millisecond * 100, // Very short timeout for testing
@@ -324,7 +324,7 @@ func TestConnectionPool_IdleTimeout(t *testing.T) {
 
 func TestConnectionPool_Concurrent(t *testing.T) {
 	creator := newMockConnectionCreator()
-	options := Options{
+	options := Config{
 		MaxConnectionsPerHost: 10,
 		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
@@ -387,7 +387,7 @@ func TestConnectionPool_Concurrent(t *testing.T) {
 // Add a test for the ConnectionPool implementation bug
 func TestConnectionPool_GetActiveAndIdleConnectionCountFix(t *testing.T) {
 	creator := newMockConnectionCreator()
-	options := Options{
+	options := Config{
 		MaxConnectionsPerHost: 5,
 		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,

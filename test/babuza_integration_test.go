@@ -238,6 +238,7 @@ func TestRaft_Cluster_UpdatePeer_RaftListenAddr(t *testing.T) {
 		_, err = c.Set(ctx, "foo", "bar")
 		return err
 	}))
+	println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 	assert.Nil(t, tc.RestartPeer(wait, updateRaftPeer, connectGroup.GetIds()))
 	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
 	assert.Nil(t, err)

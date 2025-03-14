@@ -28,7 +28,7 @@ func (c *Connection) Write(b []byte) (n int, err error) {
 	return c.Conn.Write(b)
 }
 
-func dialContext(cfg ibabuza.TLSConfig, options Options) (func(ctx context.Context, network string, addr string) (net.Conn, error), error) {
+func dialContext(cfg ibabuza.TLSConfig, options ServerConfig) (func(ctx context.Context, network string, addr string) (net.Conn, error), error) {
 	tlsCfg, err := netutil.GetClientTlsConfig(cfg)
 	if err != nil {
 		return nil, err

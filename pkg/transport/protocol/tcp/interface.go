@@ -8,7 +8,8 @@ import (
 
 type Dialer interface {
 	Dial(config ibabuza.TLSConfig, fromPeerId uint64, toEndPoint string) (net.Conn, error)
-	DialWithTimeout(config ibabuza.TLSConfig, fromPeerId uint64, toEndPoint string, timeout time.Duration) (net.Conn, error)
+	DialWithTimeout(config ibabuza.TLSConfig, fromPeerId uint64, toEndPoint string,
+		timeout time.Duration) (net.Conn, error)
 }
 
 type Listener interface {

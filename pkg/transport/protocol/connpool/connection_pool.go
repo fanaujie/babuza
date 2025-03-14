@@ -11,34 +11,34 @@ var (
 	ErrConnectionNotFound    = errors.New("connection not found")
 )
 
-type connectionWrapper struct {
-	conn     Connection
+type connectionWrapper[V ComparableConnection] struct {
+	conn     V
 	addr     string
 	inUse    bool
 	lastUsed time.Time
 	mu       sync.RWMutex
 }
 
-type ConnectionPool struct {
+type ConnectionPool[T ComparableConnection] struct {
 	mu          sync.RWMutex
-	connections map[string][]*connectionWrapper
-	connCreator ConnectionCreator
-	options     Options
+	connections map[string][]*connectionWrapper[T]
+	connCreator ConnectionDialer[T]
+	config      Config
 	stopCleaner chan struct{}
 }
 
-func NewConnectionPool(connCreator ConnectionCreator, options Options) *ConnectionPool {
-	pool := &ConnectionPool{
-		connections: make(map[string][]*connectionWrapper),
+func NewConnectionPool[T ComparableConnection](connCreator ConnectionDialer[T], config Config) *ConnectionPool[T] {
+	pool := &ConnectionPool[T]{
+		connections: make(map[string][]*connectionWrapper[T]),
 		connCreator: connCreator,
-		options:     options,
+		config:      config,
 		stopCleaner: make(chan struct{}),
 	}
 	go pool.startCleanup()
 	return pool
 }
 
-func (p *ConnectionPool) Get(address string) (Connection, error) {
+func (p *ConnectionPool[T]) Get(address string) (T, error) {
 	p.mu.RLock()
 	conns, exists := p.connections[address]
 	p.mu.RUnlock()
@@ -54,17 +54,19 @@ func (p *ConnectionPool) Get(address string) (Connection, error) {
 			}
 			c.mu.Unlock()
 		}
-		if len(conns) >= p.options.MaxConnectionsPerHost {
-			return nil, ErrMaxConnectionsReached
+		if len(conns) >= p.config.MaxConnectionsPerHost {
+			var zero T
+			return zero, ErrMaxConnectionsReached
 		}
 	}
 
-	conn, err := p.connCreator.Create(address)
+	conn, err := p.connCreator.Dial(address)
 	if err != nil {
-		return nil, err
+		var zero T
+		return zero, err
 	}
 
-	wrapper := &connectionWrapper{
+	wrapper := &connectionWrapper[T]{
 		conn:     conn,
 		addr:     address,
 		inUse:    true,
@@ -76,7 +78,7 @@ func (p *ConnectionPool) Get(address string) (Connection, error) {
 
 	connsList, exists := p.connections[address]
 	if !exists {
-		p.connections[address] = []*connectionWrapper{wrapper}
+		p.connections[address] = []*connectionWrapper[T]{wrapper}
 	} else {
 		p.connections[address] = append(connsList, wrapper)
 	}
@@ -84,7 +86,7 @@ func (p *ConnectionPool) Get(address string) (Connection, error) {
 	return conn, nil
 }
 
-func (p *ConnectionPool) Put(conn Connection) error {
+func (p *ConnectionPool[T]) Put(conn T) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, conns := range p.connections {
@@ -102,7 +104,7 @@ func (p *ConnectionPool) Put(conn Connection) error {
 	return ErrConnectionNotFound
 }
 
-func (p *ConnectionPool) Remove(conn Connection) error {
+func (p *ConnectionPool[T]) Remove(conn T) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -126,7 +128,7 @@ func (p *ConnectionPool) Remove(conn Connection) error {
 	return ErrConnectionNotFound
 }
 
-func (p *ConnectionPool) Close() error {
+func (p *ConnectionPool[T]) Close() error {
 	close(p.stopCleaner)
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -141,7 +143,7 @@ func (p *ConnectionPool) Close() error {
 	return nil
 }
 
-func (p *ConnectionPool) GetActiveConnectionCount(address string) int {
+func (p *ConnectionPool[T]) GetActiveConnectionCount(address string) int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -162,7 +164,7 @@ func (p *ConnectionPool) GetActiveConnectionCount(address string) int {
 	return count
 }
 
-func (p *ConnectionPool) GetIdleConnectionCount(address string) int {
+func (p *ConnectionPool[T]) GetIdleConnectionCount(address string) int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -183,8 +185,8 @@ func (p *ConnectionPool) GetIdleConnectionCount(address string) int {
 	return count
 }
 
-func (p *ConnectionPool) startCleanup() {
-	cleanupTicker := time.NewTicker(p.options.IdleTimeout / 2)
+func (p *ConnectionPool[T]) startCleanup() {
+	cleanupTicker := time.NewTicker(p.config.IdleTimeout / 2)
 	defer cleanupTicker.Stop()
 	for {
 		select {
@@ -194,10 +196,10 @@ func (p *ConnectionPool) startCleanup() {
 			p.mu.Lock()
 			now := time.Now()
 			for addr, conns := range p.connections {
-				var remaining []*connectionWrapper
+				var remaining []*connectionWrapper[T]
 
 				for _, conn := range conns {
-					if !conn.inUse && now.Sub(conn.lastUsed) > p.options.IdleTimeout {
+					if !conn.inUse && now.Sub(conn.lastUsed) > p.config.IdleTimeout {
 						_ = conn.conn.Close()
 					} else {
 						remaining = append(remaining, conn)

@@ -4,14 +4,19 @@ type Connection interface {
 	Close() error
 }
 
-type ConnectionCreator interface {
-	Create(address string) (Connection, error)
+type ComparableConnection interface {
+	Connection
+	comparable
 }
 
-type Pool interface {
-	Get(address string) (Connection, error)
-	Put(conn Connection) error
-	Remove(conn Connection) error
+type ConnectionDialer[T ComparableConnection] interface {
+	Dial(address string) (T, error)
+}
+
+type Pool[T ComparableConnection] interface {
+	Get(address string) (T, error)
+	Put(conn T) error
+	Remove(conn T) error
 	Close() error
 	GetActiveConnectionCount(address string) int
 	GetIdleConnectionCount(address string) int

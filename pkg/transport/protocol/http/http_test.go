@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	defaultOpts = Options{
+	defaultServerCfg = ServerConfig{
 		WriteDeadline:   time.Second * 2,
 		ReadDeadline:    time.Second * 2,
 		ShutdownTimeout: time.Second * 2,
@@ -156,6 +156,7 @@ func (m *MockTransportResolver) ResolvePeerAddress(peerId uint64) (string, error
 func TestSingleServerClient_SendAndReceive(t *testing.T) {
 	type testCase struct {
 		ibabuza.TransportConfig
+		clientTls         ibabuza.TLSConfig
 		totalMsgCount     int
 		batchRaftMsgCount int
 	}
@@ -174,10 +175,17 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				TLSConfig: ibabuza.TLSConfig{
 					EnableTLS: true,
 					MutualTLS: false,
-					TLSCert:   "../../../../test/fixtures/babuza.pem",
-					TLSKey:    "../../../../test/fixtures/babuza-key.pem",
-					TLSRootCA: "../../../../test/fixtures/ca.pem",
+					TLSCert:   "../../../../test/fixtures/server.pem",
+					TLSKey:    "../../../../test/fixtures/server-key.pem",
+					TLSRootCA: "../../../../test/fixtures/root.pem",
 				},
+			},
+			clientTls: ibabuza.TLSConfig{
+				EnableTLS: true,
+				MutualTLS: false,
+				TLSCert:   "../../../../test/fixtures/client.pem",
+				TLSKey:    "../../../../test/fixtures/client-key.pem",
+				TLSRootCA: "../../../../test/fixtures/root.pem",
 			},
 			totalMsgCount:     256,
 			batchRaftMsgCount: 64,
@@ -188,10 +196,17 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				TLSConfig: ibabuza.TLSConfig{
 					EnableTLS: true,
 					MutualTLS: true,
-					TLSCert:   "../../../../test/fixtures/babuza.pem",
-					TLSKey:    "../../../../test/fixtures/babuza-key.pem",
-					TLSRootCA: "../../../../test/fixtures/ca.pem",
+					TLSCert:   "../../../../test/fixtures/server.pem",
+					TLSKey:    "../../../../test/fixtures/server-key.pem",
+					TLSRootCA: "../../../../test/fixtures/root.pem",
 				},
+			},
+			clientTls: ibabuza.TLSConfig{
+				EnableTLS: true,
+				MutualTLS: true,
+				TLSCert:   "../../../../test/fixtures/client.pem",
+				TLSKey:    "../../../../test/fixtures/client-key.pem",
+				TLSRootCA: "../../../../test/fixtures/root.pem",
 			},
 			totalMsgCount:     512,
 			batchRaftMsgCount: 64,
@@ -200,13 +215,13 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
 		mr := newMockTransportRaft(1)
-		srv := NewRaftMsgServer(c.TransportConfig, defaultOpts, mr, &logger.Mock{})
+		srv := NewRaftMsgServer(c.TransportConfig, defaultServerCfg, mr, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
-		httpClient, err := NewClient(c.TLSConfig, defaultOpts)
+		httpClient, err := NewClient(c.clientTls, defaultServerCfg)
 		assert.Nil(t, err, identify)
 
 		resolver := NewMockTransportResolver()
-		client := NewRaftMsgClient(httpClient, defaultOpts, resolver, c.EnableTLS)
+		client := NewRaftMsgClient(httpClient, resolver, c.EnableTLS)
 
 		tms := genTestMsg(c.totalMsgCount, c.batchRaftMsgCount, 1)
 		mr.setupMsgCount(1, len(tms))
@@ -249,6 +264,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 	type testCase struct {
 		ibabuza.TransportConfig
+		clientTls         ibabuza.TLSConfig
 		clients           int
 		totalMsgCount     int
 		batchRaftMsgCount int
@@ -269,10 +285,17 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 				TLSConfig: ibabuza.TLSConfig{
 					EnableTLS: true,
 					MutualTLS: false,
-					TLSCert:   "../../../../test/fixtures/babuza.pem",
-					TLSKey:    "../../../../test/fixtures/babuza-key.pem",
-					TLSRootCA: "../../../../test/fixtures/ca.pem",
+					TLSCert:   "../../../../test/fixtures/server.pem",
+					TLSKey:    "../../../../test/fixtures/server-key.pem",
+					TLSRootCA: "../../../../test/fixtures/root.pem",
 				},
+			},
+			clientTls: ibabuza.TLSConfig{
+				EnableTLS: true,
+				MutualTLS: false,
+				TLSCert:   "../../../../test/fixtures/client.pem",
+				TLSKey:    "../../../../test/fixtures/client-key.pem",
+				TLSRootCA: "../../../../test/fixtures/root.pem",
 			},
 			clients:           16,
 			totalMsgCount:     256,
@@ -284,10 +307,17 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 				TLSConfig: ibabuza.TLSConfig{
 					EnableTLS: true,
 					MutualTLS: false,
-					TLSCert:   "../../../../test/fixtures/babuza.pem",
-					TLSKey:    "../../../../test/fixtures/babuza-key.pem",
-					TLSRootCA: "../../../../test/fixtures/ca.pem",
+					TLSCert:   "../../../../test/fixtures/server.pem",
+					TLSKey:    "../../../../test/fixtures/server-key.pem",
+					TLSRootCA: "../../../../test/fixtures/root.pem",
 				},
+			},
+			clientTls: ibabuza.TLSConfig{
+				EnableTLS: true,
+				MutualTLS: true,
+				TLSCert:   "../../../../test/fixtures/client.pem",
+				TLSKey:    "../../../../test/fixtures/client-key.pem",
+				TLSRootCA: "../../../../test/fixtures/root.pem",
 			},
 			clients:           32,
 			totalMsgCount:     512,
@@ -297,7 +327,7 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
 		mr := newMockTransportRaft(c.clients)
-		srv := NewRaftMsgServer(c.TransportConfig, defaultOpts, mr, &logger.Mock{})
+		srv := NewRaftMsgServer(c.TransportConfig, defaultServerCfg, mr, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
 		allTms := make(map[int][]*testMsg)
 		wg := new(sync.WaitGroup)
@@ -310,10 +340,10 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 			wg.Add(1)
 			go func(tms []*testMsg) {
 				defer wg.Done()
-				httpClient, err := NewClient(c.TLSConfig, defaultOpts)
+				httpClient, err := NewClient(c.clientTls, defaultServerCfg)
 				assert.Nil(t, err, identify)
 				resolver := NewMockTransportResolver()
-				client := NewRaftMsgClient(httpClient, defaultOpts, resolver, c.EnableTLS)
+				client := NewRaftMsgClient(httpClient, resolver, c.EnableTLS)
 				defer client.Close()
 				for _, tm := range tms {
 					if tm.batchMsg != nil {
