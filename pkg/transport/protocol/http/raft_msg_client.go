@@ -9,7 +9,6 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 const (
@@ -19,19 +18,13 @@ const (
 	raftAppServiceUrlsPrefix = "/raft/app-service-urls"
 )
 
-type Options struct {
-	WriteDeadline   time.Duration
-	ReadDeadline    time.Duration
-	ShutdownTimeout time.Duration
-}
-
 type RaftMsgClient struct {
 	client   *http.Client
 	resolver ibabuza.TransportResolver
 	urlPool  *UrlPool
 }
 
-func NewRaftMsgClient(client *http.Client, options Options, resolver ibabuza.TransportResolver, enableTls bool) *RaftMsgClient {
+func NewRaftMsgClient(client *http.Client, resolver ibabuza.TransportResolver, enableTls bool) *RaftMsgClient {
 	return &RaftMsgClient{
 		client:   client,
 		resolver: resolver,

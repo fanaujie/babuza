@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-func NewClient(cfg ibabuza.TLSConfig, options Options) (*http.Client, error) {
+func NewClient(cfg ibabuza.TLSConfig, options ServerConfig) (*http.Client, error) {
 	var roundTrip http.RoundTripper
 
 	dialCtx, err := dialContext(cfg, options)

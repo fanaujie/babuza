@@ -5,17 +5,21 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/connpool/frame"
-	"github.com/fanaujie/babuza/pkg/utility/allocator"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"net"
 	"time"
 )
 
+type ServerConfig struct {
+	ReadDeadline  time.Duration
+	WriteDeadline time.Duration
+}
+
 type RaftMsgServer struct {
 	cfg         ibabuza.TransportConfig
-	options     connpool.Options
+	config      ServerConfig
 	tcpListener Listener
 	raft        ibabuza.RaftMessageHandler
 	logger      ibabuza.Logger
@@ -23,12 +27,12 @@ type RaftMsgServer struct {
 	listener    net.Listener
 }
 
-func NewRaftMsgServer(cfg ibabuza.TransportConfig, options connpool.Options, listener Listener, raft ibabuza.RaftMessageHandler,
+func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, listener Listener, raft ibabuza.RaftMessageHandler,
 	logger ibabuza.Logger) *RaftMsgServer {
 
 	return &RaftMsgServer{
 		cfg:         cfg,
-		options:     options,
+		config:      config,
 		tcpListener: listener,
 		raft:        raft,
 		logger:      logger,
@@ -61,7 +65,7 @@ func (r *RaftMsgServer) Start() error {
 			//	continue
 			//}
 
-			conn, lErr := r.listener.Accept()
+			c, lErr := r.listener.Accept()
 			if lErr != nil {
 				select {
 				case <-r.closer.CloseCh():
@@ -69,8 +73,8 @@ func (r *RaftMsgServer) Start() error {
 				default:
 				}
 			} else {
-				r.logger.Infof("tcp[raft server] peerId(%d) accept conn from %s", r.cfg.PeerId, conn.RemoteAddr().String())
-				s := r.newSession(conn)
+				r.logger.Infof("tcp[raft server] peerId(%d) accept conn from %s", r.cfg.PeerId, c.RemoteAddr().String())
+				s := r.newSession(c)
 				r.closer.Run(func() {
 					if sErr := s.start(); sErr != nil {
 						r.logger.Warningf("tcp[raft server]: failed to decode session. peerId(%d) endpoint(%s) err(%s)",
@@ -92,22 +96,23 @@ func (r *RaftMsgServer) Stop() error {
 	return nil
 }
 
-func (r *RaftMsgServer) newSession(conn net.Conn) *session {
+func (r *RaftMsgServer) newSession(c net.Conn) *session {
 	return &session{
-		options: r.options,
-		conn:    conn,
-		reader:  frame.NewReader(conn),
-		writer:  frame.NewWriter(conn),
+		config: r.config,
+		conn:   c,
+		frameConn: conn.NewConnection(c, conn.Config{
+			ReadDeadline:  r.config.ReadDeadline,
+			WriteDeadline: r.config.WriteDeadline,
+		}),
 		raft:    r.raft,
 		closeCh: r.closer.CloseCh(),
 	}
 }
 
 type session struct {
-	options            connpool.Options
+	config             ServerConfig
 	conn               net.Conn
-	reader             *frame.Reader
-	writer             *frame.Writer
+	frameConn          *conn.FrameConnection
 	batchMsg           babuzapb.BatchMessage
 	snapshotMsg        babuzapb.SnapshotMessage
 	getClusterPeersReq babuzapb.GetClusterPeersRequest
@@ -138,23 +143,19 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 			return err
 		}
 		res := s.raft.GetClusterPeersRequest(s.getClusterPeersReq)
-		if err := s.conn.SetWriteDeadline(time.Now().Add(s.options.WriteDeadline)); err != nil {
+		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
 			return err
 		}
-		byteSlice := allocator.Acquire(frame.EncodeSize(res.Size()))
-		defer allocator.Release(byteSlice)
-		return s.writer.Encode(byteSlice.Buffer, frame.ClusterPeersResType, &res)
+		return s.frameConn.SendFrame(frame.ClusterPeersResType, &res)
 	case frame.PubAppServiceReqType:
 		if err := s.pubAppServiceReq.Unmarshal(msgBuf); err != nil {
 			return err
 		}
 		res := s.raft.PublishApplicationServiceRequest(s.pubAppServiceReq)
-		if err := s.conn.SetWriteDeadline(time.Now().Add(s.options.WriteDeadline)); err != nil {
+		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
 			return err
 		}
-		byteSlice := allocator.Acquire(frame.EncodeSize(res.Size()))
-		defer allocator.Release(byteSlice)
-		return s.writer.Encode(byteSlice.Buffer, frame.PubAppServiceResType, &res)
+		return s.frameConn.SendFrame(frame.PubAppServiceResType, &res)
 	default:
 		return fmt.Errorf("tcp[raft server]: unsupported message type %d", msgType)
 	}
@@ -168,10 +169,10 @@ func (s *session) start() error {
 		case <-s.closeCh:
 			return errors.New("tcp server: close")
 		default:
-			if err := s.conn.SetReadDeadline(time.Now().Add(s.options.ReadDeadline)); err != nil {
+			if err := s.conn.SetReadDeadline(time.Now().Add(s.config.ReadDeadline)); err != nil {
 				return err
 			}
-			if err := s.reader.ReadFrame(s.messageHandler); err != nil {
+			if err := s.frameConn.ReadFrame(s.messageHandler); err != nil {
 				return err
 			}
 		}

@@ -2,9 +2,7 @@ package connpool
 
 import "time"
 
-type Options struct {
-	WriteDeadline         time.Duration
-	ReadDeadline          time.Duration
+type Config struct {
 	MaxConnectionsPerHost int
 	DialTimeout           time.Duration
 	IdleTimeout           time.Duration

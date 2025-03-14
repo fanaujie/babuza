@@ -9,35 +9,35 @@ import (
 
 type Http struct {
 	config  ibabuza.TransportConfig
-	options raftHttp.Options
+	options raftHttp.ServerConfig
 	logger  ibabuza.Logger
 	client  *http.Client
 }
 
-func DefaultHttpOptions() raftHttp.Options {
-	return raftHttp.Options{
+func DefaultHttpOptions() raftHttp.ServerConfig {
+	return raftHttp.ServerConfig{
 		WriteDeadline:   time.Second * 5,
 		ReadDeadline:    time.Second * 5,
 		ShutdownTimeout: time.Second * 5,
 	}
 }
 
-type SetHttpOptions func(opt *raftHttp.Options)
+type SetHttpOptions func(opt *raftHttp.ServerConfig)
 
 func SetHttpOptsWithWriteDeadline(d time.Duration) SetHttpOptions {
-	return func(opt *raftHttp.Options) {
+	return func(opt *raftHttp.ServerConfig) {
 		opt.WriteDeadline = d
 	}
 }
 
 func SetHttpOptsWithReadDeadline(d time.Duration) SetHttpOptions {
-	return func(opt *raftHttp.Options) {
+	return func(opt *raftHttp.ServerConfig) {
 		opt.ReadDeadline = d
 	}
 }
 
 func SetHttpOptsWithShutdownTimeout(d time.Duration) SetHttpOptions {
-	return func(opt *raftHttp.Options) {
+	return func(opt *raftHttp.ServerConfig) {
 		opt.ShutdownTimeout = d
 	}
 }
@@ -69,7 +69,7 @@ func (h *Http) CreateServer(handler ibabuza.RaftMessageHandler) (ibabuza.Transpo
 }
 
 func (h *Http) CreateClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
-	return raftHttp.NewRaftMsgClient(h.client, h.options, resolver, h.config.TLSConfig.EnableTLS), nil
+	return raftHttp.NewRaftMsgClient(h.client, resolver, h.config.TLSConfig.EnableTLS), nil
 }
 
 func (h *Http) Close() error {

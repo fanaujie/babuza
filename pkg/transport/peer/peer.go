@@ -103,6 +103,7 @@ func (p *RaftPeer) SendSnapshot(snapMsg *raftpb.Message, snapReader SnapshotFile
 				p.raftReport.ReportUnreachable(p.peerId)
 				p.raftReport.ReportSnapshot(p.peerId, raft.SnapshotFailure)
 			}
+			p.logger.Errorf("RaftPeer[Id=%d] send snapshot error: %v", p.peerId, err)
 			return
 		}
 		p.raftReport.ReportSnapshot(p.peerId, raft.SnapshotFinish)
@@ -145,6 +146,7 @@ func (p *RaftPeer) getQueue() chan *raftpb.Message {
 					p.breaker.Fail()
 					p.raftReport.ReportUnreachable(p.peerId)
 				}
+				p.logger.Errorf("RaftPeer[Id=%d] send raft message error: %v", p.peerId, err)
 			}
 			p.drainMsgQueue()
 			p.logger.Infof("RaftPeer[Id=%d] sendRaftMessageLoop goroutine exit", p.peerId)
