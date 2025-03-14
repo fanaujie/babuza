@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
+	"github.com/fanaujie/babuza/pkg/connpool"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 )
@@ -46,8 +46,11 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	if err != nil {
 		return err
 	}
-	defer r.pool.Put(c)
-	return c.SendFrame(frame.BatchMsgType, &batchMsg)
+	defer func() {
+		r.returnPool(c, err)
+	}()
+	err = c.SendFrame(frame.BatchMsgType, &batchMsg)
+	return err
 }
 
 func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) error {
@@ -55,8 +58,11 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 	if err != nil {
 		return err
 	}
-	defer r.pool.Put(c)
-	return c.SendFrame(frame.SnapshotMsgType, &snapMsg)
+	defer func() {
+		r.returnPool(c, err)
+	}()
+	err = c.SendFrame(frame.SnapshotMsgType, &snapMsg)
+	return err
 }
 
 func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
@@ -68,7 +74,9 @@ func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest)
 		res.Message = err.Error()
 		return res
 	}
-	defer r.pool.Put(c)
+	defer func() {
+		r.returnPool(c, err)
+	}()
 	err = c.SendFrame(frame.ClusterPeersReqType, &request)
 	if err != nil {
 		res.Status = babuzapb.FAILED
@@ -98,7 +106,9 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 		res.Message = err.Error()
 		return res
 	}
-	defer r.pool.Put(c)
+	defer func() {
+		r.returnPool(c, err)
+	}()
 
 	err = c.SendFrame(frame.PubAppServiceReqType, &request)
 	if err != nil {
@@ -122,4 +132,12 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 
 func (r *RaftMsgClient) Close() error {
 	return nil
+}
+
+func (r *RaftMsgClient) returnPool(c *conn.FrameConnection, err error) {
+	if err == nil {
+		r.pool.Put(c)
+	} else {
+		r.pool.Remove(c)
+	}
 }

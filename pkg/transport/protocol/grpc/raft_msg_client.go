@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
+	"github.com/fanaujie/babuza/pkg/connpool"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/grpc/pb"
 	"google.golang.org/grpc"
 	"time"
@@ -50,7 +50,9 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	if err != nil {
 		return err
 	}
-	defer r.pool.Put(conn)
+	defer func() {
+		r.returnPool(conn, err)
+	}()
 
 	client := pb.NewRaftTransportClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.GrpcDeadline)
@@ -67,7 +69,9 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 	if err != nil {
 		return err
 	}
-	defer r.pool.Put(conn)
+	defer func() {
+		r.returnPool(conn, err)
+	}()
 
 	client := pb.NewRaftTransportClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.GrpcDeadline)
@@ -90,7 +94,9 @@ func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest)
 		res.Message = err.Error()
 		return res
 	}
-	defer r.pool.Put(conn)
+	defer func() {
+		r.returnPool(conn, err)
+	}()
 
 	client := pb.NewRaftTransportClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.GrpcDeadline)
@@ -115,7 +121,9 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 		res.Message = err.Error()
 		return res
 	}
-	defer r.pool.Put(conn)
+	defer func() {
+		r.returnPool(conn, err)
+	}()
 
 	client := pb.NewRaftTransportClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.GrpcDeadline)
@@ -133,4 +141,12 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 
 func (r *RaftMsgClient) Close() error {
 	return nil
+}
+
+func (r *RaftMsgClient) returnPool(c *grpc.ClientConn, err error) {
+	if err == nil {
+		r.pool.Put(c)
+	} else {
+		r.pool.Remove(c)
+	}
 }

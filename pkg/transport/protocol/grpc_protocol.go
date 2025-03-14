@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
+	connpool "github.com/fanaujie/babuza/pkg/connpool"
 	transGrpc "github.com/fanaujie/babuza/pkg/transport/protocol/grpc"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/grpc/networkio"
 	"google.golang.org/grpc"

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
+	"github.com/fanaujie/babuza/pkg/connpool"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/grpc/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"

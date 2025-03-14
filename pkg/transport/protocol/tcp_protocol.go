@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/connpool"
+	"github.com/fanaujie/babuza/pkg/connpool"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
 	"time"
