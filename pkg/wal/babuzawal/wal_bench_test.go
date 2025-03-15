@@ -2,6 +2,7 @@ package babuzawal
 
 import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrystore"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
 	"github.com/stretchr/testify/assert"

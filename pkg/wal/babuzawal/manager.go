@@ -6,10 +6,10 @@ import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
-	collection2 "github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrystore"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
-	player2 "github.com/fanaujie/babuza/pkg/wal/babuzawal/player"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/player"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
@@ -106,8 +106,8 @@ func NewWalManager(walDir string, logger ibabuza.Logger, setOptions ...SetOption
 }
 
 func (w *WalManager) FindSnapshot() ([]walpb.Snapshot, error) {
-	result := player2.NewReplayResult(collection2.NewNopEntry())
-	p, err := player2.Create(w.walDir, EmptyWalpbSnapshot, w.cascade)
+	result := player.NewReplayResult(collection.NewNopEntry())
+	p, err := player.Create(w.walDir, EmptyWalpbSnapshot, w.cascade)
 	if err != nil {
 		return nil, err
 	}
@@ -174,15 +174,15 @@ func (w *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool
 			ConfState: &snapshot.Metadata.ConfState,
 		}
 	}
-	p, err := player2.Create(w.walDir, walSnap, w.cascade)
+	p, err := player.Create(w.walDir, walSnap, w.cascade)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	var result *player2.ReplayResult
+	var result *player.ReplayResult
 	if !w.options.DisableEntryIndex {
-		result = player2.NewReplayResult(collection2.NewEntryIndex())
+		result = player.NewReplayResult(collection.NewEntryIndex())
 	} else {
-		result = player2.NewReplayResult(collection2.NewEntry())
+		result = player.NewReplayResult(collection.NewEntry())
 	}
 	if err = p.Replay(result, true); err != nil {
 		if err != io.ErrUnexpectedEOF {
@@ -209,7 +209,7 @@ func (w *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool
 		em := entrystore.NewStorage(logMgr)
 		wal.SetEntryIndexStorage(em)
 		entryStorage = em
-		result.EntryCollection().(*collection2.EntryIndex).SetReader(logMgr)
+		result.EntryCollection().(*collection.EntryIndex).SetReader(logMgr)
 	} else {
 		entryStorage = raft.NewMemoryStorage()
 	}
