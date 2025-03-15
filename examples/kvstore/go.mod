@@ -5,9 +5,9 @@ go 1.23.1
 
 require (
 	github.com/dgraph-io/badger/v3 v3.2103.2
-	github.com/fanaujie/babuza/ibabuza v0.1.0
-	github.com/fanaujie/babuza/pkg v0.1.0
-	github.com/fanaujie/babuza/raft v0.1.0
+	github.com/fanaujie/babuza/ibabuza v0.1.1
+	github.com/fanaujie/babuza/pkg v0.1.1
+	github.com/fanaujie/babuza/raft v0.1.1
 	github.com/spf13/cobra v1.1.3
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/zap v1.26.0
