@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/fanaujie/babuza/examples/kvStore/server"
+	"github.com/fanaujie/babuza/examples/kvstore/server"
 	"github.com/spf13/cobra"
 	"io"
 	"strconv"

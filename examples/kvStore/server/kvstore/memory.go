@@ -3,7 +3,7 @@ package kvstore
 import (
 	"encoding/binary"
 	"encoding/json"
-	"github.com/fanaujie/babuza/examples/kvStore/server/kverror"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"hash/crc32"

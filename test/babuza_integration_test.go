@@ -3,9 +3,9 @@ package test
 import (
 	"context"
 	"fmt"
-	"github.com/fanaujie/babuza/examples/kvStore/client"
-	"github.com/fanaujie/babuza/examples/kvStore/server/kverror"
-	"github.com/fanaujie/babuza/examples/kvStore/server/kvstore"
+	"github.com/fanaujie/babuza/examples/kvstore/client"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/cluster"

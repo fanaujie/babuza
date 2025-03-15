@@ -3,7 +3,7 @@ package cmdprocessor
 import (
 	"context"
 	"fmt"
-	"github.com/fanaujie/babuza/examples/kvStore/client"
+	"github.com/fanaujie/babuza/examples/kvstore/client"
 )
 
 type GetCommand struct {

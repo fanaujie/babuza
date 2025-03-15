@@ -3,7 +3,7 @@ module github.com/fanaujie/babuza/test
 go 1.23.1
 
 require (
-	github.com/fanaujie/babuza/examples/kvStore v0.1.0
+	github.com/fanaujie/babuza/examples/kvstore v0.1.0
 	github.com/fanaujie/babuza/ibabuza v0.1.0
 	github.com/fanaujie/babuza/pkg v0.1.0
 	github.com/fanaujie/babuza/raft v0.1.0

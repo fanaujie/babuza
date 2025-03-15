@@ -1,6 +1,6 @@
 package response
 
-import "github.com/fanaujie/babuza/examples/kvStore/server/kvstore"
+import "github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 
 type RegisterSessionResponse struct {
 	SessionId uint64

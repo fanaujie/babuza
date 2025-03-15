@@ -2,7 +2,7 @@ package client
 
 import (
 	"context"
-	"github.com/fanaujie/babuza/examples/kvStore/server/response"
+	"github.com/fanaujie/babuza/examples/kvstore/server/response"
 	"net/http"
 	"net/url"
 )

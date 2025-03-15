@@ -1,4 +1,4 @@
-module github.com/fanaujie/babuza/examples/kvStore
+module github.com/fanaujie/babuza/examples/kvstore
 
 go 1.23.1
 

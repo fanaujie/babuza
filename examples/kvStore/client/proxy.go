@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/fanaujie/babuza/examples/kvStore/server/kverror"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
 	"github.com/fanaujie/babuza/pkg/cluster"
 	"github.com/fanaujie/babuza/pkg/session"
 	"github.com/fanaujie/babuza/raft"

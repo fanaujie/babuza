@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/fanaujie/babuza/examples/kvStore/cmd"
+	"github.com/fanaujie/babuza/examples/kvstore/cmd"
 	"os"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/fanaujie/babuza/examples/kvStore/server/response"
+	"github.com/fanaujie/babuza/examples/kvstore/server/response"
 	"github.com/fanaujie/babuza/raft"
 	"net/http"
 )

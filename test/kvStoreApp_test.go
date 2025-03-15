@@ -3,7 +3,7 @@ package test
 import (
 	"context"
 	"errors"
-	"github.com/fanaujie/babuza/examples/kvStore/server/api"
+	"github.com/fanaujie/babuza/examples/kvstore/server/api"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	babuza "github.com/fanaujie/babuza/raft"

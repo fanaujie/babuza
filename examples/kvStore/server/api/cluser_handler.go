@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"github.com/fanaujie/babuza/examples/kvStore/server/request"
+	"github.com/fanaujie/babuza/examples/kvstore/server/request"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/raft"
 	"io"

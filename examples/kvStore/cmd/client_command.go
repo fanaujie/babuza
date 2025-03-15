@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/fanaujie/babuza/examples/kvStore/client"
-	"github.com/fanaujie/babuza/examples/kvStore/cmd/cmdprocessor"
+	"github.com/fanaujie/babuza/examples/kvstore/client"
+	"github.com/fanaujie/babuza/examples/kvstore/cmd/cmdprocessor"
 	"github.com/spf13/cobra"
 	"io"
 	"strconv"

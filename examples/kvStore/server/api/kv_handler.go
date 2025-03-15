@@ -2,10 +2,10 @@ package api
 
 import (
 	"encoding/json"
-	"github.com/fanaujie/babuza/examples/kvStore/server/kverror"
-	"github.com/fanaujie/babuza/examples/kvStore/server/kvstore"
-	"github.com/fanaujie/babuza/examples/kvStore/server/request"
-	"github.com/fanaujie/babuza/examples/kvStore/server/response"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
+	"github.com/fanaujie/babuza/examples/kvstore/server/request"
+	"github.com/fanaujie/babuza/examples/kvstore/server/response"
 	"github.com/fanaujie/babuza/raft"
 	"io"
 	"net/http"
