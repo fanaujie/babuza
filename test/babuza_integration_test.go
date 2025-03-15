@@ -12,7 +12,6 @@ import (
 	"github.com/fanaujie/babuza/pkg/session"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
 	babuza "github.com/fanaujie/babuza/raft"
-	"github.com/fanaujie/babuza/raft/testcluster"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"strconv"
@@ -20,7 +19,7 @@ import (
 	"time"
 )
 
-func TestRaft_Single(t *testing.T) {
+func TestBabuza_Single(t *testing.T) {
 	dir, err := os.MkdirTemp("", "babuza")
 	assert.Nil(t, err)
 	defer os.RemoveAll(dir)
@@ -72,12 +71,12 @@ func TestRaft_Single(t *testing.T) {
 	assert.Equal(t, babuza.None, s.LeaderId)
 }
 
-func TestRaft_Cluster(t *testing.T) {
+func TestBabuza_Cluster(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool,
-			pn ibabuza.ProxyNetwork, appDir string, appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			pn ibabuza.ProxyNetwork, appDir string, appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -100,12 +99,12 @@ func TestRaft_Cluster(t *testing.T) {
 	assert.Nil(t, tc.Teardown())
 }
 
-func TestRaft_Cluster_JoinVotingPeer(t *testing.T) {
+func TestBabuza_Cluster_JoinVotingPeer(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -150,12 +149,12 @@ func TestRaft_Cluster_JoinVotingPeer(t *testing.T) {
 	assert.Equal(t, cluster.ErrPeerRaftListenAddrExists, tc.JoinPeer(wait, c, tp, connectGroup.GetIds()))
 }
 
-func TestRaft_Cluster_JoinLearner(t *testing.T) {
+func TestBabuza_Cluster_JoinLearner(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -192,12 +191,12 @@ func TestRaft_Cluster_JoinLearner(t *testing.T) {
 
 }
 
-func TestRaft_Cluster_UpdatePeer_RaftListenAddr(t *testing.T) {
+func TestBabuza_Cluster_UpdatePeer_RaftListenAddr(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -250,12 +249,12 @@ func TestRaft_Cluster_UpdatePeer_RaftListenAddr(t *testing.T) {
 	}))
 }
 
-func TestRaft_Cluster_RemoveFollower(t *testing.T) {
+func TestBabuza_Cluster_RemoveFollower(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -296,12 +295,12 @@ func TestRaft_Cluster_RemoveFollower(t *testing.T) {
 	assert.Equal(t, cluster.ErrPeerIDNotFound, tc.RemovePeer(wait, c, 100))
 }
 
-func TestRaft_Cluster_RemoveLeader(t *testing.T) {
+func TestBabuza_Cluster_RemoveLeader(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -337,12 +336,12 @@ func TestRaft_Cluster_RemoveLeader(t *testing.T) {
 	assert.NotEqual(t, leaderId, leaderId2)
 }
 
-func TestRaft_Cluster_PromoteLearner(t *testing.T) {
+func TestBabuza_Cluster_PromoteLearner(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -406,12 +405,12 @@ func TestRaft_Cluster_PromoteLearner(t *testing.T) {
 	//}))
 }
 
-func TestRaft_Cluster_TransferLeader(t *testing.T) {
+func TestBabuza_Cluster_TransferLeader(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -484,12 +483,12 @@ func TestRaft_Cluster_TransferLeader(t *testing.T) {
 	assert.Equal(t, uint64(5), leaderId)
 }
 
-func TestRaft_Cluster_FollowerForwardProposal(t *testing.T) {
+func TestBabuza_Cluster_FollowerForwardProposal(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			config.DisableProposalForwarding = false
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
@@ -536,12 +535,12 @@ func TestRaft_Cluster_FollowerForwardProposal(t *testing.T) {
 	assert.Nil(t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
 }
 
-func TestRaft_Cluster_MultiClientProposal(t *testing.T) {
+func TestBabuza_Cluster_MultiClientProposal(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -594,12 +593,12 @@ WaitLoop:
 	assert.Nil(t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
 }
 
-func TestRaft_Cluster_MultiClient_FollowerForwardProposal(t *testing.T) {
+func TestBabuza_Cluster_MultiClient_FollowerForwardProposal(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			config.DisableProposalForwarding = false
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
@@ -664,14 +663,14 @@ WaitLoop:
 	assert.Nil(t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
 }
 
-func TestRaft_Cluster_ClientRegisterSession(t *testing.T) {
+func TestBabuza_Cluster_ClientRegisterSession(t *testing.T) {
 	t.Run("LRUSessionManager", func(t *testing.T) {
 		rootDir, _ := os.MkdirTemp("", "babuza")
 		defer os.RemoveAll(rootDir)
 		maxSessions := int64(5)
-		tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+		tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 			func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-				appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+				appServiceAddresses []string) (EmbeddedApp, error) {
 				config.DisableProposalForwarding = false
 				appConfig := KvStoreEmbeddedAppConfig{
 					BubuzaConfig:   config,
@@ -712,9 +711,9 @@ func TestRaft_Cluster_ClientRegisterSession(t *testing.T) {
 		rootDir, _ := os.MkdirTemp("", "babuza")
 		defer os.RemoveAll(rootDir)
 		sessionExpiredDuration := time.Second
-		tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+		tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 			func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-				appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+				appServiceAddresses []string) (EmbeddedApp, error) {
 				config.DisableProposalForwarding = false
 				appConfig := KvStoreEmbeddedAppConfig{
 					BubuzaConfig:   config,
@@ -748,7 +747,7 @@ func TestRaft_Cluster_ClientRegisterSession(t *testing.T) {
 	})
 }
 
-func TestRaft_Cluster_ClientRequest_Idempotency(t *testing.T) {
+func TestBabuza_Cluster_ClientRequest_Idempotency(t *testing.T) {
 	for _, ca := range []struct {
 		caseName              string
 		stateMachineFactory   func(string) ibabuza.BaseStateMachine
@@ -813,9 +812,9 @@ func TestRaft_Cluster_ClientRequest_Idempotency(t *testing.T) {
 		func(stateMachine CreateStateMachine, sessionMgr CreateSessionMgr) {
 			rootDir, _ := os.MkdirTemp("", "babuza")
 			defer os.RemoveAll(rootDir)
-			tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+			tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 				func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-					appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+					appServiceAddresses []string) (EmbeddedApp, error) {
 					appConfig := KvStoreEmbeddedAppConfig{
 						BubuzaConfig:   config,
 						VotingPeersCfg: votingPeersCfg,
@@ -861,7 +860,7 @@ func TestRaft_Cluster_ClientRequest_Idempotency(t *testing.T) {
 	}
 }
 
-func TestRaft_Cluster_LeaderShutdown_ClientSessionValid(t *testing.T) {
+func TestBabuza_Cluster_LeaderShutdown_ClientSessionValid(t *testing.T) {
 	for _, ca := range []struct {
 		caseName              string
 		stateMachineFactory   func(string) ibabuza.BaseStateMachine
@@ -926,9 +925,9 @@ func TestRaft_Cluster_LeaderShutdown_ClientSessionValid(t *testing.T) {
 		func(stateMachine CreateStateMachine, sessionMgr CreateSessionMgr) {
 			rootDir, _ := os.MkdirTemp("", "babuza")
 			defer os.RemoveAll(rootDir)
-			tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+			tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 				func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-					appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+					appServiceAddresses []string) (EmbeddedApp, error) {
 					appConfig := KvStoreEmbeddedAppConfig{
 						BubuzaConfig:   config,
 						VotingPeersCfg: votingPeersCfg,
@@ -992,12 +991,12 @@ func TestRaft_Cluster_LeaderShutdown_ClientSessionValid(t *testing.T) {
 	}
 }
 
-//func TestRaft_ApplyStateMachineCommand_ExpiredResponse(t *testing.T) {
+//func TestBabuza_ApplyStateMachineCommand_ExpiredResponse(t *testing.T) {
 //	//TODO:
 //}
 //
 
-func TestRaft_RestartNode_RestoreFromSnapshot(t *testing.T) {
+func TestBabuza_RestartNode_RestoreFromSnapshot(t *testing.T) {
 
 	for _, ca := range []struct {
 		caseName              string
@@ -1095,9 +1094,9 @@ func TestRaft_RestartNode_RestoreFromSnapshot(t *testing.T) {
 			rootDir, _ := os.MkdirTemp("", "babuza")
 			defer os.RemoveAll(rootDir)
 			snapshotCount := uint64(50)
-			tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+			tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 				func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-					appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+					appServiceAddresses []string) (EmbeddedApp, error) {
 					config.SnapshotCount = snapshotCount
 					appConfig := KvStoreEmbeddedAppConfig{
 						BubuzaConfig:   config,
@@ -1189,7 +1188,7 @@ func TestRaft_RestartNode_RestoreFromSnapshot(t *testing.T) {
 	}
 }
 
-func TestRaft_Snapshot_ManualTrigger(t *testing.T) {
+func TestBabuza_Snapshot_ManualTrigger(t *testing.T) {
 	for _, c := range []struct {
 		caseName            string
 		fileTag             string
@@ -1221,9 +1220,9 @@ func TestRaft_Snapshot_ManualTrigger(t *testing.T) {
 		func(stateMachine CreateStateMachine) {
 			rootDir, _ := os.MkdirTemp("", "babuza")
 			defer os.RemoveAll(rootDir)
-			tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+			tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 				func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-					appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+					appServiceAddresses []string) (EmbeddedApp, error) {
 					appConfig := KvStoreEmbeddedAppConfig{
 						BubuzaConfig:   config,
 						VotingPeersCfg: votingPeersCfg,
@@ -1297,13 +1296,13 @@ func TestRaft_Snapshot_ManualTrigger(t *testing.T) {
 	}
 }
 
-//func TestRaft_SendSnapshotToFollower(t *testing.T) {
+//func TestBabuza_SendSnapshotToFollower(t *testing.T) {
 //
 //	dir, _ := os.MkdirTemp("", "babuzawal")
 //	defer os.RemoveAll(dir)
 //	pn := NewProxyNetwork()
 //	peers, raftConfig := makeTesterClusterConfig(100, 3, pn)
-//	tc := CreateTestCluster(dir, raftConfig, getTestRaftComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
+//	tc := CreateTestCluster(dir, raftConfig, getTestBabuzaComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
 //	assert.Nil(t, tc.MakeCluster(peers))
 //	assert.Nil(t, tc.ConnectPeers(tc.GetAllPeerIds()))
 //	defer tc.Teardown()
@@ -1347,12 +1346,12 @@ func TestRaft_Snapshot_ManualTrigger(t *testing.T) {
 //	}))
 //}
 //
-//func TestRaft_LinearizableRead(t *testing.T) {
+//func TestBabuza_LinearizableRead(t *testing.T) {
 //	dir, _ := os.MkdirTemp("", "babuzawal")
 //	defer os.RemoveAll(dir)
 //	pn := NewProxyNetwork()
 //	peers, raftConfig := makeTesterClusterConfig(100, 3, pn)
-//	tc := CreateTestCluster(dir, raftConfig, getTestRaftComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
+//	tc := CreateTestCluster(dir, raftConfig, getTestBabuzaComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
 //	assert.Nil(t, tc.MakeCluster(peers))
 //	assert.Nil(t, tc.ConnectPeers(tc.GetAllPeerIds()))
 //	defer tc.Teardown()
@@ -1389,16 +1388,16 @@ func TestRaft_Snapshot_ManualTrigger(t *testing.T) {
 //	assert.Equal(t, []byte(fmt.Sprintf("bar-%d", lastIndex)), result)
 //}
 //
-//func TestRaft_Linearizability(t *testing.T) {
+//func TestBabuza_Linearizability(t *testing.T) {
 //}
 //
 
-func TestRaft_ReElection(t *testing.T) {
+func TestBabuza_ReElection(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -1447,12 +1446,12 @@ func TestRaft_ReElection(t *testing.T) {
 	assert.Equal(t, leader3, lastLeader)
 }
 
-func TestRaft_ReElection_LeaderRestart(t *testing.T) {
+func TestBabuza_ReElection_LeaderRestart(t *testing.T) {
 	rootDir, _ := os.MkdirTemp("", "babuza")
 	defer os.RemoveAll(rootDir)
-	tc := testcluster.CreateTestCluster(100, rootDir, proxynetwork.New(),
+	tc := CreateTestCluster(100, rootDir, proxynetwork.New(),
 		func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool, pn ibabuza.ProxyNetwork, appDir string,
-			appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
+			appServiceAddresses []string) (EmbeddedApp, error) {
 			appConfig := KvStoreEmbeddedAppConfig{
 				BubuzaConfig:   config,
 				VotingPeersCfg: votingPeersCfg,
@@ -1496,12 +1495,12 @@ func TestRaft_ReElection_LeaderRestart(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-//func TestRaft_OneFollowerDisconnection(t *testing.T) {
+//func TestBabuza_OneFollowerDisconnection(t *testing.T) {
 //	dir, _ := os.MkdirTemp("", "babuzawal")
 //	defer os.RemoveAll(dir)
 //	pn := NewProxyNetwork()
 //	peers, raftConfig := makeTesterClusterConfig(100, 3, pn)
-//	tc := CreateTestCluster(dir, raftConfig, getTestRaftComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
+//	tc := CreateTestCluster(dir, raftConfig, getTestBabuzaComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
 //	assert.Nil(t, tc.MakeCluster(peers))
 //	assert.Nil(t, tc.ConnectPeers(tc.GetAllPeerIds()))
 //	defer tc.Teardown()
@@ -1539,7 +1538,7 @@ func TestRaft_ReElection_LeaderRestart(t *testing.T) {
 //	assert.Nil(t, tc.CheckPeersStateMachineConsistency(wait))
 //}
 //
-//func TestRaft_QuorumFollowerDisconnection(t *testing.T) {
+//func TestBabuza_QuorumFollowerDisconnection(t *testing.T) {
 //	for _, testCase := range []struct {
 //		checkQuorum bool
 //		preVote     bool
@@ -1561,7 +1560,7 @@ func TestRaft_ReElection_LeaderRestart(t *testing.T) {
 //			peers, raftConfig := makeTesterClusterConfig(100, 5, pn)
 //			raftConfig.CheckQuorum = checkQuorum
 //			raftConfig.PreVote = preVote
-//			tc := CreateTestCluster(dir, raftConfig, getTestRaftComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
+//			tc := CreateTestCluster(dir, raftConfig, getTestBabuzaComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
 //			assert.Nil(t, tc.MakeCluster(peers))
 //			assert.Nil(t, tc.ConnectPeers(tc.GetAllPeerIds()))
 //			defer tc.Teardown()
@@ -1608,7 +1607,7 @@ func TestRaft_ReElection_LeaderRestart(t *testing.T) {
 //	}
 //}
 //
-//func TestRaft_Two_Partition(t *testing.T) {
+//func TestBabuza_Two_Partition(t *testing.T) {
 //	for _, testCase := range []struct {
 //		checkQuorum bool
 //		preVote     bool
@@ -1630,7 +1629,7 @@ func TestRaft_ReElection_LeaderRestart(t *testing.T) {
 //			peers, raftConfig := makeTesterClusterConfig(100, 5, pn)
 //			raftConfig.CheckQuorum = checkQuorum
 //			raftConfig.PreVote = preVote
-//			tc := CreateTestCluster(dir, raftConfig, getTestRaftComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
+//			tc := CreateTestCluster(dir, raftConfig, getTestBabuzaComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork)), pn)
 //			assert.Nil(t, tc.MakeCluster(peers))
 //			partition1 := []uint64{1, 2, 3}
 //			partition2 := []uint64{4, 5}
@@ -1704,7 +1703,7 @@ func TestRaft_ReElection_LeaderRestart(t *testing.T) {
 //	}
 //}
 //
-//func TestRaft_IntegrateLinearizabilityWithKvStore(t *testing.T) {
+//func TestBabuza_IntegrateLinearizabilityWithKvStore(t *testing.T) {
 //	IntegrateLinearizabilityWithKvStore(t, 3, 5)
 //}
 //
@@ -1714,7 +1713,7 @@ func TestRaft_ReElection_LeaderRestart(t *testing.T) {
 //	pn := NewProxyNetwork()
 //	peers, raftConfig := makeTesterClusterConfig(100, totalKvStores, pn)
 //	raftConfig.SnapshotCount = 1024
-//	f := getTestRaftComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork))
+//	f := getTestBabuzaComponent(t, pn.ProxyNetwork.(ibabuza.TcpNetwork))
 //	f.CreateStateMachine = func(dataDir string) ibabuza.BaseStateMachine {
 //		return stateMachine.NewMemoryExactlyOnce()
 //	}

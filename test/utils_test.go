@@ -22,7 +22,6 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal"
 	babuza "github.com/fanaujie/babuza/raft"
-	"github.com/fanaujie/babuza/raft/testcluster"
 	"go.uber.org/zap/zapcore"
 	"io"
 	"os"
@@ -33,21 +32,21 @@ import (
 type CreateSessionMgr func(logger ibabuza.Logger) ibabuza.SessionManager
 type CreateStateMachine func(stateMachineDir string) ibabuza.BaseStateMachine
 
-func makeVotingPeers(totalPeers int) ([]testcluster.TestPeer, *testcluster.ConnectedGroup) {
-	var peers []testcluster.TestPeer
+func makeVotingPeers(totalPeers int) ([]BabuzaPeer, *ConnectedGroup) {
+	var peers []BabuzaPeer
 	for i := 0; i < totalPeers; i++ {
 		peerId := uint64(i + 1)
-		peers = append(peers, testcluster.TestPeer{
+		peers = append(peers, BabuzaPeer{
 			Id:                  peerId,
 			RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerId),
 			ProxyListenAddr:     fmt.Sprintf("127.0.0.1:%d", 24200+peerId),
 			AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerId)},
 		})
 	}
-	return peers, testcluster.NewConnectedGroup(peers)
+	return peers, NewConnectedGroup(peers)
 }
-func makeSinglePeer(peerId uint64, isLearner bool) testcluster.TestPeer {
-	return testcluster.TestPeer{
+func makeSinglePeer(peerId uint64, isLearner bool) BabuzaPeer {
+	return BabuzaPeer{
 		Id:                  peerId,
 		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerId),
 		ProxyListenAddr:     fmt.Sprintf("127.0.0.1:%d", 24200+peerId),
@@ -159,7 +158,7 @@ func defaultBootstrapBuilder(babuzaConfig *babuza.BabuzaConfig, dirs *babuzaDire
 	return bootstrapBuilder, nil
 }
 
-func peerConfigExists(ctx context.Context, c *client.KvStoreClient, peer testcluster.TestPeer) error {
+func peerConfigExists(ctx context.Context, c *client.KvStoreClient, peer BabuzaPeer) error {
 	for {
 		select {
 		case <-ctx.Done():

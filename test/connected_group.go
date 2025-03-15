@@ -1,4 +1,4 @@
-package testcluster
+package test
 
 import (
 	"sync"
@@ -9,7 +9,7 @@ type ConnectedGroup struct {
 	mu  sync.RWMutex
 }
 
-func NewConnectedGroup(peers []TestPeer) *ConnectedGroup {
+func NewConnectedGroup(peers []BabuzaPeer) *ConnectedGroup {
 	g := &ConnectedGroup{
 		ids: make(map[uint64]struct{}),
 	}
@@ -25,7 +25,6 @@ func (g *ConnectedGroup) Add(id uint64) {
 	g.ids[id] = struct{}{}
 }
 
-// Remove 從群組中移除一個 id
 func (g *ConnectedGroup) Remove(id uint64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

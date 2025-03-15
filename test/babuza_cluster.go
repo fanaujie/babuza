@@ -1,4 +1,4 @@
-package testcluster
+package test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-type TestPeer struct {
+type BabuzaPeer struct {
 	Id                  uint64
 	RaftListenAddr      string
 	TLSConfig           ibabuza.TLSConfig
@@ -58,7 +58,7 @@ func (a *appController) wait() error {
 	return <-a.appStopCh
 }
 
-type TestCluster struct {
+type BabuzaCluster struct {
 	clusterId         uint64
 	rootDir           string
 	config            babuza.BabuzaConfig
@@ -69,9 +69,9 @@ type TestCluster struct {
 }
 
 func CreateTestCluster(clusterId uint64, rootDir string, testNetwork ibabuza.ProxyNetwork,
-	createEmbeddedApp CreateEmbeddedApp) *TestCluster {
+	createEmbeddedApp CreateEmbeddedApp) *BabuzaCluster {
 	config := babuza.DefaultBabuzaConfig(0, 0, "")
-	return &TestCluster{
+	return &BabuzaCluster{
 		clusterId:         clusterId,
 		config:            config,
 		rootDir:           rootDir,
@@ -83,11 +83,11 @@ func CreateTestCluster(clusterId uint64, rootDir string, testNetwork ibabuza.Pro
 
 }
 
-func (c *TestCluster) RaftElectionTimeout() time.Duration {
+func (c *BabuzaCluster) RaftElectionTimeout() time.Duration {
 	return time.Duration(c.config.RaftConfig.LogicalTickMs*c.config.RaftConfig.ElectionTicks) * time.Millisecond
 }
 
-func (c *TestCluster) MakeCluster(wait time.Duration, votingPeers []TestPeer) error {
+func (c *BabuzaCluster) MakeCluster(wait time.Duration, votingPeers []BabuzaPeer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	for _, peer := range votingPeers {
@@ -139,7 +139,7 @@ func (c *TestCluster) MakeCluster(wait time.Duration, votingPeers []TestPeer) er
 	return nil
 }
 
-func (c *TestCluster) GetAllAppServiceAddresses() map[uint64][]string {
+func (c *BabuzaCluster) GetAllAppServiceAddresses() map[uint64][]string {
 	result := make(map[uint64][]string)
 	for id, controller := range c.appControllers {
 		result[id] = controller.appsServiceAddresses
@@ -147,7 +147,7 @@ func (c *TestCluster) GetAllAppServiceAddresses() map[uint64][]string {
 	return result
 }
 
-func (c *TestCluster) Teardown() error {
+func (c *BabuzaCluster) Teardown() error {
 	mu := multierror.New()
 	if err := c.proxyNetwork.TeardownNetwork(); err != nil {
 		mu.Append(err)
@@ -160,7 +160,7 @@ func (c *TestCluster) Teardown() error {
 	return mu.Get()
 }
 
-func (c *TestCluster) JoinPeer(wait time.Duration, client EmbeddedClient, peer TestPeer, connectedGroup []uint64) error {
+func (c *BabuzaCluster) JoinPeer(wait time.Duration, client EmbeddedClient, peer BabuzaPeer, connectedGroup []uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	if err := client.Join(ctx, peer.Id, peer.ProxyListenAddr, peer.IsLearner); err != nil {
@@ -204,7 +204,7 @@ func (c *TestCluster) JoinPeer(wait time.Duration, client EmbeddedClient, peer T
 	return nil
 }
 
-func (c *TestCluster) RemovePeer(wait time.Duration, client EmbeddedClient, peerId uint64) error {
+func (c *BabuzaCluster) RemovePeer(wait time.Duration, client EmbeddedClient, peerId uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	if err := client.Remove(ctx, peerId); err != nil {
@@ -228,7 +228,7 @@ func (c *TestCluster) RemovePeer(wait time.Duration, client EmbeddedClient, peer
 	return nil
 }
 
-func (c *TestCluster) ShutdownPeer(peerId uint64) error {
+func (c *BabuzaCluster) ShutdownPeer(peerId uint64) error {
 	controller, ok := c.appControllers[peerId]
 	if !ok {
 		return fmt.Errorf("test cluster: not found app (id=%d)", peerId)
@@ -243,7 +243,7 @@ func (c *TestCluster) ShutdownPeer(peerId uint64) error {
 	return me.Get()
 }
 
-func (c *TestCluster) RestartPeer(wait time.Duration, peer TestPeer, connectedGroup []uint64) error {
+func (c *BabuzaCluster) RestartPeer(wait time.Duration, peer BabuzaPeer, connectedGroup []uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	if _, ok := c.appControllers[peer.Id]; ok {
@@ -282,7 +282,7 @@ func (c *TestCluster) RestartPeer(wait time.Duration, peer TestPeer, connectedGr
 	return nil
 }
 
-func (c *TestCluster) ExecutePeerRaftOperation(peerId uint64, raftOperation func(r *babuza.Raft) error) error {
+func (c *BabuzaCluster) ExecutePeerRaftOperation(peerId uint64, raftOperation func(r *babuza.Raft) error) error {
 	controller, ok := c.appControllers[peerId]
 	if !ok {
 		return fmt.Errorf("test cluster: not found app (id=%d)", peerId)
@@ -290,15 +290,15 @@ func (c *TestCluster) ExecutePeerRaftOperation(peerId uint64, raftOperation func
 	return raftOperation(controller.app.Raft())
 }
 
-func (c *TestCluster) DisconnectPeer(peerId uint64) error {
+func (c *BabuzaCluster) DisconnectPeer(peerId uint64) error {
 	return c.proxyNetwork.DisconnectProxy(peerId)
 }
 
-func (c *TestCluster) ConnectPeer(peerId uint64) error {
+func (c *BabuzaCluster) ConnectPeer(peerId uint64) error {
 	return c.proxyNetwork.ConnectProxy(peerId)
 }
 
-func (c *TestCluster) CheckOneLeader(wait time.Duration, connectedGroup []uint64) (uint64, error) {
+func (c *BabuzaCluster) CheckOneLeader(wait time.Duration, connectedGroup []uint64) (uint64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
@@ -317,7 +317,7 @@ func (c *TestCluster) CheckOneLeader(wait time.Duration, connectedGroup []uint64
 	}
 }
 
-func (c *TestCluster) CheckNoLeader(wait time.Duration, connectedGroup []uint64) error {
+func (c *BabuzaCluster) CheckNoLeader(wait time.Duration, connectedGroup []uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
@@ -336,7 +336,7 @@ func (c *TestCluster) CheckNoLeader(wait time.Duration, connectedGroup []uint64)
 	}
 }
 
-func (c *TestCluster) CheckPeersConsistency(wait time.Duration, connectedGroup []uint64) error {
+func (c *BabuzaCluster) CheckPeersConsistency(wait time.Duration, connectedGroup []uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
@@ -355,7 +355,7 @@ func (c *TestCluster) CheckPeersConsistency(wait time.Duration, connectedGroup [
 	}
 }
 
-func (c *TestCluster) CheckStatus(wait time.Duration, peerId uint64, matchFunc func(s babuza.Status) bool) error {
+func (c *BabuzaCluster) CheckStatus(wait time.Duration, peerId uint64, matchFunc func(s babuza.Status) bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	checkT := time.NewTicker(c.getCheckTimeout())
@@ -376,11 +376,11 @@ func (c *TestCluster) CheckStatus(wait time.Duration, peerId uint64, matchFunc f
 	}
 }
 
-func (c *TestCluster) getCheckTimeout() time.Duration {
+func (c *BabuzaCluster) getCheckTimeout() time.Duration {
 	return c.RaftElectionTimeout() + time.Duration(rand.Int63n(int64(c.RaftElectionTimeout()/10)))
 }
 
-func (c *TestCluster) genPeerConfig(peer TestPeer, join bool) (babuza.BabuzaConfig, string, error) {
+func (c *BabuzaCluster) genPeerConfig(peer BabuzaPeer, join bool) (babuza.BabuzaConfig, string, error) {
 	cfg := c.config
 	cfg.ClusterId = c.clusterId
 	cfg.LocalPeerId = peer.Id
@@ -391,7 +391,7 @@ func (c *TestCluster) genPeerConfig(peer TestPeer, join bool) (babuza.BabuzaConf
 	return cfg, peerDir, nil
 }
 
-func (c *TestCluster) findConsensusLeader(peerIds []uint64) (uint64, uint64, bool) {
+func (c *BabuzaCluster) findConsensusLeader(peerIds []uint64) (uint64, uint64, bool) {
 	var leaderId, term uint64
 
 	for _, id := range peerIds {
@@ -419,7 +419,7 @@ func (c *TestCluster) findConsensusLeader(peerIds []uint64) (uint64, uint64, boo
 	return leaderId, term, true
 }
 
-func (c *TestCluster) hasLeader(peerIds []uint64) bool {
+func (c *BabuzaCluster) hasLeader(peerIds []uint64) bool {
 	for _, id := range peerIds {
 		controller, ok := c.appControllers[id]
 		if !ok {
@@ -433,7 +433,7 @@ func (c *TestCluster) hasLeader(peerIds []uint64) bool {
 	return true
 }
 
-func (c *TestCluster) areStateMachinesConsistent(peerIds []uint64) bool {
+func (c *BabuzaCluster) areStateMachinesConsistent(peerIds []uint64) bool {
 	hashMap := c.collectStateMachineHashes(peerIds)
 	if len(hashMap) == 0 {
 		return false
@@ -451,7 +451,7 @@ func (c *TestCluster) areStateMachinesConsistent(peerIds []uint64) bool {
 	return true
 }
 
-func (c *TestCluster) collectStateMachineHashes(peerIds []uint64) map[uint64]uint32 {
+func (c *BabuzaCluster) collectStateMachineHashes(peerIds []uint64) map[uint64]uint32 {
 	hashes := make(map[uint64]uint32, len(peerIds))
 	for _, id := range peerIds {
 		controller, ok := c.appControllers[id]
