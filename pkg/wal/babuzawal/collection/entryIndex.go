@@ -11,11 +11,11 @@ import (
 )
 
 type EntryIndexReader interface {
-	ReadEntriesData(readMetadata []storage.EntryIndexMetadata, ents []raftpb.Entry) error
+	ReadEntriesData(readMetadata []walbase.EntryIndex[storage.EntryMetadata], ents []raftpb.Entry) error
 }
 
 type EntryIndex struct {
-	entriesIndex []storage.EntryIndexMetadata
+	entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
 	reader       EntryIndexReader
 }
 
@@ -27,7 +27,7 @@ func (ei *EntryIndex) Decode(fileId, snapshotIndex uint64, logType pb.LogType, l
 	entryDataCapacity int64, r iwal.ReplayWalResult) error {
 
 	nextEntry := r.NextEntry()
-	entry := storage.EntryIndexMetadata{
+	entry := walbase.EntryIndex[storage.EntryMetadata]{
 		Term:  nextEntry.NextTerm,
 		Index: nextEntry.NextIndex,
 		Type:  raftpb.EntryType(logType),
@@ -65,7 +65,7 @@ func (ei *EntryIndex) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb
 		return errors.New("reader is nil")
 	}
 	var confEntries []raftpb.Entry
-	var entriesIndex []storage.EntryIndexMetadata
+	var entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
 
 	for i := range ei.entriesIndex {
 		e := &ei.entriesIndex[i]

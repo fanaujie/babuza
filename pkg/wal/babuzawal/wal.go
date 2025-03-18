@@ -80,7 +80,7 @@ func CreateWal(metadata []byte, logMgr iwal.LogFileManager) (*Wal, error) {
 	if cErr != nil {
 		return nil, cErr
 	}
-	if cErr = logMgr.SyncWalFolder(); err != nil {
+	if cErr = logMgr.SyncWalFolder(); cErr != nil {
 		return nil, cErr
 	}
 
@@ -261,6 +261,9 @@ func (w *Wal) cycle() error {
 	lastCrc := w.currentLogFile.LastCrc()
 	nextId := w.tailLogFileDesc().Id + 1
 	nextLogger, err := w.logMgr.CreateNextTempLogFile(nextId, w.state.lastEntryIndex+1)
+	if err != nil {
+		return err
+	}
 	if err = nextLogger.Crc(lastCrc); err != nil {
 		return err
 	}

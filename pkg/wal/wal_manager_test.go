@@ -6,7 +6,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrystore"
+	babuzaWalStorage "github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/utility"
 	"github.com/fanaujie/babuza/pkg/wal/etcdwal"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +39,7 @@ func TestWalManager_Create(t *testing.T) {
 		})
 		assert.Nil(t, err)
 		defer w.Close()
-		_, ok := m.(*entrystore.Storage)
+		_, ok := m.(*babuzaWalStorage.EntryStorage)
 		assert.Equal(t, true, ok)
 
 		_, ok = w.(*babuzawal.Wal)
