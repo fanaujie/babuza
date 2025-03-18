@@ -7,9 +7,10 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrystore"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/player"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
@@ -155,9 +156,11 @@ func (w *WalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.EntryStor
 	}
 	var entryStorage ibabuza.EntryStorage
 	if !w.options.DisableEntryIndex {
-		em := entrystore.NewStorage(logMgr)
-		wal.SetEntryIndexStorage(em)
-		entryStorage = em
+		es := &storage.EntryStorage{
+			EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](logMgr),
+		}
+		wal.SetEntryIndexStorage(es)
+		entryStorage = es
 	} else {
 		entryStorage = raft.NewMemoryStorage()
 	}
@@ -206,9 +209,11 @@ func (w *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool
 	}
 	var entryStorage ibabuza.EntryStorage
 	if !w.options.DisableEntryIndex {
-		em := entrystore.NewStorage(logMgr)
-		wal.SetEntryIndexStorage(em)
-		entryStorage = em
+		es := &storage.EntryStorage{
+			EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](logMgr),
+		}
+		wal.SetEntryIndexStorage(es)
+		entryStorage = es
 		result.EntryCollection().(*collection.EntryIndex).SetReader(logMgr)
 	} else {
 		entryStorage = raft.NewMemoryStorage()
@@ -227,7 +232,7 @@ func (w *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool
 		return nil, nil, nil, err
 	}
 	if !w.options.DisableEntryIndex {
-		if err = entryStorage.(*entrystore.Storage).AppendEntryIndex(ents.([]entrystore.EntryIndex)); err != nil {
+		if err = entryStorage.(*storage.EntryStorage).AppendEntryIndex(ents.([]walbase.EntryIndex[storage.EntryMetadata])); err != nil {
 			return nil, nil, nil, err
 		}
 	} else {

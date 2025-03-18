@@ -6,8 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrystore"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"golang.org/x/exp/mmap"
@@ -136,7 +137,7 @@ func GetLogFileReader(dir string, desc iwal.LogFileDesc) (*LogFileIoWrapper, err
 	}, nil
 }
 
-func ReadEntriesData(filePath string, readMetadata []entrystore.EntryIndex, destEnts []raftpb.Entry) error {
+func ReadEntriesData(filePath string, readMetadata []walbase.EntryIndex[storage.EntryMetadata], destEnts []raftpb.Entry) error {
 	at, err := mmap.Open(filePath)
 	if err != nil {
 		return err
@@ -145,9 +146,9 @@ func ReadEntriesData(filePath string, readMetadata []entrystore.EntryIndex, dest
 	for i := range readMetadata {
 		m := &readMetadata[i]
 		d := &destEnts[i]
-		if m.EntryDataLen > 0 {
-			d.Data = make([]byte, m.EntryDataLen, m.EntryDataCapacity)
-			if _, err = at.ReadAt(d.Data, m.EntryOffset); err != nil {
+		if m.Metadata.DataLen > 0 {
+			d.Data = make([]byte, m.Metadata.DataLen, m.Metadata.DataCapacity)
+			if _, err = at.ReadAt(d.Data, m.Metadata.Offset); err != nil {
 				return err
 			}
 		}

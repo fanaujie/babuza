@@ -1,4 +1,4 @@
-package entrystore
+package walbase
 
 import (
 	"fmt"

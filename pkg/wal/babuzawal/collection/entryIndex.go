@@ -3,18 +3,19 @@ package collection
 import (
 	"errors"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrystore"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
 type EntryIndexReader interface {
-	ReadEntriesData(readMetadata []entrystore.EntryIndex, ents []raftpb.Entry) error
+	ReadEntriesData(readMetadata []storage.EntryIndexMetadata, ents []raftpb.Entry) error
 }
 
 type EntryIndex struct {
-	entriesIndex []entrystore.EntryIndex
+	entriesIndex []storage.EntryIndexMetadata
 	reader       EntryIndexReader
 }
 
@@ -22,63 +23,63 @@ func NewEntryIndex() *EntryIndex {
 	return &EntryIndex{}
 }
 
-func (e *EntryIndex) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf []byte,
+func (ei *EntryIndex) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf []byte,
 	entryDataCapacity int64, r iwal.ReplayWalResult) error {
 
 	nextEntry := r.NextEntry()
-	entry := entrystore.EntryIndex{
+	entry := storage.EntryIndexMetadata{
 		Term:  nextEntry.NextTerm,
 		Index: nextEntry.NextIndex,
 		Type:  raftpb.EntryType(logType),
-		EntryDataMetadata: entrystore.EntryDataMetadata{
-			FileId:            fileId,
-			EntryOffset:       r.LastValidLogOffset() + codec.HeaderSize,
-			EntryDataLen:      int64(len(logBuf)),
-			EntryDataCapacity: entryDataCapacity,
+		Metadata: storage.EntryMetadata{
+			FileId:       fileId,
+			Offset:       r.LastValidLogOffset() + codec.HeaderSize,
+			DataLen:      int64(len(logBuf)),
+			DataCapacity: entryDataCapacity,
 		},
 	}
 	r.IncreaseNextIndex()
 	if entry.Index > snapshotIndex {
 		// prevent "panic: runtime error: slice bounds out of range [:13038096702221461992] with capacity 0"
 		up := entry.Index - snapshotIndex - 1
-		if up > uint64(len(e.entriesIndex)) {
+		if up > uint64(len(ei.entriesIndex)) {
 			// return error before append call causes runtime panic
 			return errors.New("")
 		}
 		// The line below is potentially overriding some 'uncommitted' termEntriesIndex.
-		e.entriesIndex = append(e.entriesIndex[:up], entry)
+		ei.entriesIndex = append(ei.entriesIndex[:up], entry)
 	}
 	return nil
 }
 
-func (e *EntryIndex) Entries() (interface{}, error) {
-	return e.entriesIndex, nil
+func (ei *EntryIndex) Entries() (interface{}, error) {
+	return ei.entriesIndex, nil
 }
-func (e *EntryIndex) ClearEntries() error {
-	e.entriesIndex = nil
+func (ei *EntryIndex) ClearEntries() error {
+	ei.entriesIndex = nil
 	return nil
 }
 
-func (e *EntryIndex) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry) error) error {
-	if e.reader == nil {
+func (ei *EntryIndex) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry) error) error {
+	if ei.reader == nil {
 		return errors.New("reader is nil")
 	}
 	var confEntries []raftpb.Entry
-	var entriesIndex []entrystore.EntryIndex
+	var entriesIndex []storage.EntryIndexMetadata
 
-	for i := range e.entriesIndex {
-		ei := &e.entriesIndex[i]
-		if ei.Type == entryType {
+	for i := range ei.entriesIndex {
+		e := &ei.entriesIndex[i]
+		if e.Type == entryType {
 			confEntries = append(confEntries, raftpb.Entry{
-				Term:  ei.Term,
-				Index: ei.Index,
-				Type:  ei.Type,
+				Term:  e.Term,
+				Index: e.Index,
+				Type:  e.Type,
 			})
-			entriesIndex = append(entriesIndex, *ei)
+			entriesIndex = append(entriesIndex, *e)
 		}
 	}
 
-	if err := e.reader.ReadEntriesData(entriesIndex, confEntries); err != nil {
+	if err := ei.reader.ReadEntriesData(entriesIndex, confEntries); err != nil {
 		return err
 	}
 	for i := range confEntries {
@@ -88,22 +89,22 @@ func (e *EntryIndex) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.
 	}
 	return nil
 }
-func (e *EntryIndex) DeleteUncommittedEntry(commitIndex uint64) error {
+func (ei *EntryIndex) DeleteUncommittedEntry(commitIndex uint64) error {
 	var deleteFrom int
-	entsLen := len(e.entriesIndex)
+	entsLen := len(ei.entriesIndex)
 	for i := 0; i < entsLen; i++ {
-		e := &e.entriesIndex[i]
+		e := &ei.entriesIndex[i]
 		if e.Index > commitIndex {
 			deleteFrom = i
 			break
 		}
 	}
 	if deleteFrom != 0 {
-		e.entriesIndex = e.entriesIndex[:deleteFrom]
+		ei.entriesIndex = ei.entriesIndex[:deleteFrom]
 	}
 	return nil
 }
 
-func (e *EntryIndex) SetReader(r EntryIndexReader) {
-	e.reader = r
+func (ei *EntryIndex) SetReader(r EntryIndexReader) {
+	ei.reader = r
 }
