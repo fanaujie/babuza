@@ -3,7 +3,7 @@ package volatile
 import (
 	"bytes"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
-	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcFile"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcfile"
 	"io"
 	"os"
 	"path/filepath"
@@ -96,7 +96,7 @@ func (fs *FileSystem) CrcFileRead(path string) (api.CrcFileReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return crcFile.CreateReader(reader), nil
+	return crcfile.CreateReader(reader), nil
 }
 
 func (fs *FileSystem) CrcFileWrite(path string) (api.CrcFileWriter, error) {
@@ -104,7 +104,7 @@ func (fs *FileSystem) CrcFileWrite(path string) (api.CrcFileWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return crcFile.CreateWriter(writer), nil
+	return crcfile.CreateWriter(writer), nil
 }
 
 func (fs *FileSystem) FileAppendData(path string, data []byte, sync bool) error {

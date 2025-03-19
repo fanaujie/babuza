@@ -7,7 +7,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/codec"
-	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcFile"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcfile"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/durable"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/volatile"
 	sanpshotio "github.com/fanaujie/babuza/pkg/snapshot/io"
@@ -149,7 +149,7 @@ func TestSnapshotor_ValidateFileReceiverAndInstall(t *testing.T) {
 		d := make([]byte, tmpSnapshotMetadata.Files["one"].FileSize)
 		rand.Read(d)
 		fsmDesc := tmpSnapshotMetadata.Files["one"]
-		fsmDesc.FileCrc64 = crc64.Checksum(d, crcFile.Crc64Table)
+		fsmDesc.FileCrc64 = crc64.Checksum(d, crcfile.Crc64Table)
 		tmpSnapshotMetadata.Files["one"] = fsmDesc
 		receiver, err := s.CreateAtomicSnapshotReceiver(tmpSnapshotMetadata)
 		assert.Nil(t, err)

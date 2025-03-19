@@ -2,7 +2,7 @@ package codec
 
 import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcFile"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcfile"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"math/rand"
@@ -17,7 +17,7 @@ func TestCompressor(t *testing.T) {
 			tmpFile, err := os.CreateTemp("", "snapshot-compress")
 			assert.Nil(t, err)
 			defer os.Remove(tmpFile.Name())
-			crcW := crcFile.CreateWriter(tmpFile)
+			crcW := crcfile.CreateWriter(tmpFile)
 			compressW, err := CreateCompressor(compressType, crcW)
 			assert.Nil(t, err)
 			jsonStr := `
@@ -55,7 +55,7 @@ func TestCompressor(t *testing.T) {
 
 			tmpFile, err = os.Open(tmpFile.Name())
 			assert.Nil(t, err)
-			crcR := crcFile.CreateReader(tmpFile)
+			crcR := crcfile.CreateReader(tmpFile)
 			decompressR, eErr := CreateDeCompressor(compressType, crcR)
 			assert.Nil(t, eErr)
 			readData, eErr := ioutil.ReadAll(decompressR)

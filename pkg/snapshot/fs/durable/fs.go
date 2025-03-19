@@ -3,7 +3,7 @@ package durable
 import (
 	"fmt"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
-	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcFile"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcfile"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"io"
 	"os"
@@ -37,7 +37,7 @@ func (fs *FileSystem) CrcFileRead(path string) (api.CrcFileReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return crcFile.CreateReader(r), nil
+	return crcfile.CreateReader(r), nil
 }
 
 func (fs *FileSystem) CrcFileWrite(path string) (api.CrcFileWriter, error) {
@@ -45,7 +45,7 @@ func (fs *FileSystem) CrcFileWrite(path string) (api.CrcFileWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return crcFile.CreateWriter(w), nil
+	return crcfile.CreateWriter(w), nil
 }
 
 func (fs *FileSystem) CreateDirAndTouch(path string) error {

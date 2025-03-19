@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcFile"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcfile"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"hash/crc64"
 	"io"
@@ -22,7 +22,7 @@ func (md *Metadata) Encode(destW io.Writer, m babuzapb.SnapshotMetadata) error {
 	if err != nil {
 		return nil
 	}
-	h := crc64.New(crcFile.Crc64Table)
+	h := crc64.New(crcfile.Crc64Table)
 	if _, err = h.Write(d); err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (md *Metadata) Decode(srcR io.Reader) (babuzapb.SnapshotMetadata, error) {
 		return babuzapb.SnapshotMetadata{}, err
 	}
 	crc := binary.LittleEndian.Uint64(buf)
-	h := crc64.New(crcFile.Crc64Table)
+	h := crc64.New(crcfile.Crc64Table)
 	te := io.TeeReader(srcR, h)
 	dataByteSlice := allocator.Acquire(int(dataSize))
 	defer allocator.Release(dataByteSlice)
