@@ -53,9 +53,9 @@ func (e *Entry) ClearEntries() error {
 func (e *Entry) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry) error) error {
 	var confEntries []raftpb.Entry
 	for i := range e.entries {
-		e := &e.entries[i]
-		if e.Type == entryType {
-			confEntries = append(confEntries, *e)
+		entry := &e.entries[i]
+		if entry.Type == entryType {
+			confEntries = append(confEntries, *entry)
 		}
 	}
 	for i := range confEntries {
@@ -69,8 +69,8 @@ func (e *Entry) DeleteUncommittedEntry(commitIndex uint64) error {
 	var deleteFrom int
 	entsLen := len(e.entries)
 	for i := 0; i < entsLen; i++ {
-		e := &e.entries[i]
-		if e.Index > commitIndex {
+		entry := &e.entries[i]
+		if entry.Index > commitIndex {
 			deleteFrom = i
 			break
 		}

@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	ErrNotImplementedOp = errors.New("")
+	ErrNotImplementedOp = errors.New("not implemented operation")
 )
 
 type NopEntry struct {
