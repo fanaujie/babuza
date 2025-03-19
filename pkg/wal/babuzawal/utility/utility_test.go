@@ -3,6 +3,8 @@ package utility
 import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"io/ioutil"
@@ -12,20 +14,22 @@ import (
 	"testing"
 )
 
-func genEntries(t *testing.T, dir string, desc iwal.LogFileDesc, count, minEntryDataSize, maxEntryDataSize int) ([]entrystore.EntryIndex, []raftpb.Entry, [][]byte) {
+func genEntries(t *testing.T, dir string, desc iwal.LogFileDesc, count, minEntryDataSize, maxEntryDataSize int) (
+	[]walbase.EntryIndex[storage.EntryMetadata], []raftpb.Entry, [][]byte) {
+
 	maxLogSize := maxEntryDataSize + ((8 - (maxEntryDataSize % 8)) % 8)
 	handle, err := CreateLogFileHandle(filepath.Join(dir, desc.GetLogFileName()), count*maxLogSize)
 	assert.Nil(t, err)
 	defer handle.Close()
 	var expectData [][]byte
 	var entries []raftpb.Entry
-	var entsIndex []entrystore.EntryIndex
+	var entsIndex []walbase.EntryIndex[storage.EntryMetadata]
 	var offset = int64(LogFileHeaderLength)
-	entIndex := entrystore.EntryIndex{
+	entIndex := walbase.EntryIndex[storage.EntryMetadata]{
 		Term:  1,
 		Index: 1,
 		Type:  raftpb.EntryNormal,
-		EntryDataMetadata: entrystore.EntryDataMetadata{
+		Metadata: storage.EntryMetadata{
 			FileId: desc.Id,
 		},
 	}
@@ -47,9 +51,9 @@ func genEntries(t *testing.T, dir string, desc iwal.LogFileDesc, count, minEntry
 			copy(b.Buffer, data)
 			entIndex.Index = uint64(i + 1)
 			ent.Index = entIndex.Index
-			entIndex.EntryOffset = offset
-			entIndex.EntryDataLen = int64(dataSize)
-			entIndex.EntryDataCapacity = int64(totalSize)
+			entIndex.Metadata.Offset = offset
+			entIndex.Metadata.DataLen = int64(dataSize)
+			entIndex.Metadata.DataCapacity = int64(totalSize)
 			_, err = handle.Write(b.Buffer[:totalSize])
 			assert.Nil(t, err)
 			offset += int64(totalSize)

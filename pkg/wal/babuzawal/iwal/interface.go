@@ -2,8 +2,9 @@ package iwal
 
 import (
 	"fmt"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrystore"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"hash/crc32"
@@ -41,7 +42,7 @@ type LogFileManager interface {
 	FinalizeTempLogFile(id uint64) error
 	Purge(snapshotIndex uint64) error
 	LastLogFileDesc() (LogFileDesc, error)
-	ReadEntriesData(readMetadata []entrystore.EntryIndex, ents []raftpb.Entry) error
+	ReadEntriesData(readMetadata []walbase.EntryIndex[storage.EntryMetadata], ents []raftpb.Entry) error
 	SyncWalFolder() error
 	Close() error
 }

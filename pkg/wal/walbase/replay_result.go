@@ -1,4 +1,4 @@
-package etcdwal
+package walbase
 
 import (
 	"go.etcd.io/etcd/raft/v3/raftpb"

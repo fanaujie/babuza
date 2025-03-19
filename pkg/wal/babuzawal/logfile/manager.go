@@ -6,10 +6,11 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrystore"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile/page"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/utility"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"io"
@@ -186,18 +187,18 @@ func (m *Manager) Purge(snapshotIndex uint64) error {
 	return nil
 }
 
-func (m *Manager) ReadEntriesData(readEntryIndex []entrystore.EntryIndex, destEnts []raftpb.Entry) error {
+func (m *Manager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryMetadata], destEnts []raftpb.Entry) error {
 	if len(readEntryIndex) != len(destEnts) || len(readEntryIndex) == 0 {
 		return errors.New("logfile manager: invalid the size of entryIndex and raftpb.Entry")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	currFileId := readEntryIndex[0].FileId
+	currFileId := readEntryIndex[0].Metadata.FileId
 	startIndex := 0
 	for i := range readEntryIndex {
 		ei := &readEntryIndex[i]
-		if currFileId != ei.FileId {
+		if currFileId != ei.Metadata.FileId {
 			desc, ok := m.filesDesc[currFileId]
 			if !ok {
 				return errors.New(fmt.Sprintf("logfile manager: not found log file(Id=%d).", currFileId))
@@ -206,7 +207,7 @@ func (m *Manager) ReadEntriesData(readEntryIndex []entrystore.EntryIndex, destEn
 				readEntryIndex[startIndex:i], destEnts[startIndex:i]); err != nil {
 				return err
 			}
-			currFileId = ei.FileId
+			currFileId = ei.Metadata.FileId
 			startIndex = i
 		}
 	}

@@ -4,6 +4,8 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal"
@@ -116,7 +118,7 @@ func benchmarkBabuzaWalWriteEntryWithEntryIndex(b *testing.B, size int, batch in
 	metadata := []byte("somedata")
 	logMgr, err := logfile.NewManager(cfg, cp)
 	w, err := CreateWal(metadata, logMgr)
-	w.SetEntryIndexStorage(entrystore.NewStorage(w.logMgr))
+	w.SetEntryIndexStorage(walbase.NewEntryStorage[storage.EntryMetadata](w.logMgr))
 	data := make([]byte, size)
 	for i := 0; i < size; i++ {
 		data[i] = byte(i)

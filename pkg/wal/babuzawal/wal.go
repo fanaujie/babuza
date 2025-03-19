@@ -3,9 +3,10 @@ package babuzawal
 import (
 	"errors"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrystore"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
@@ -15,7 +16,7 @@ import (
 type EntryIndexStorage interface {
 	AppendCache([]raftpb.Entry)
 	DeleteCache(uint64)
-	AppendEntryIndex([]entrystore.EntryIndex) error
+	AppendEntryIndex([]walbase.EntryIndex[storage.EntryMetadata]) error
 }
 
 var EmptyWalpbSnapshot = walpb.Snapshot{}
@@ -79,7 +80,7 @@ func CreateWal(metadata []byte, logMgr iwal.LogFileManager) (*Wal, error) {
 	if cErr != nil {
 		return nil, cErr
 	}
-	if cErr = logMgr.SyncWalFolder(); err != nil {
+	if cErr = logMgr.SyncWalFolder(); cErr != nil {
 		return nil, cErr
 	}
 
@@ -195,9 +196,9 @@ func (w *Wal) SetEntryIndexStorage(es EntryIndexStorage) {
 }
 
 func (w *Wal) saveEntry(entries []raftpb.Entry) error {
-	var entriesIndex []entrystore.EntryIndex
+	var entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
 	if w.entryIndexStorage != nil {
-		entriesIndex = make([]entrystore.EntryIndex, len(entries))
+		entriesIndex = make([]walbase.EntryIndex[storage.EntryMetadata], len(entries))
 	}
 	for i := range entries {
 		e := &entries[i]
@@ -213,10 +214,10 @@ func (w *Wal) saveEntry(entries []raftpb.Entry) error {
 			entIndex.Index = e.Index
 			entIndex.Term = e.Term
 			entIndex.Type = e.Type
-			entIndex.FileId = w.tailLogFileDesc().Id
-			entIndex.EntryOffset = w.currentLogFile.Offset() + codec.HeaderSize
-			entIndex.EntryDataLen = int64(len(e.Data))
-			entIndex.EntryDataCapacity = entIndex.EntryDataLen + ((8 - (entIndex.EntryDataLen % 8)) % 8)
+			entIndex.Metadata.FileId = w.tailLogFileDesc().Id
+			entIndex.Metadata.Offset = w.currentLogFile.Offset() + codec.HeaderSize
+			entIndex.Metadata.DataLen = int64(len(e.Data))
+			entIndex.Metadata.DataCapacity = entIndex.Metadata.DataLen + ((8 - (entIndex.Metadata.DataLen % 8)) % 8)
 		}
 		if err := w.currentLogFile.Entry(pb.LogType(e.Type), e.Data); err != nil {
 			return err
@@ -260,6 +261,9 @@ func (w *Wal) cycle() error {
 	lastCrc := w.currentLogFile.LastCrc()
 	nextId := w.tailLogFileDesc().Id + 1
 	nextLogger, err := w.logMgr.CreateNextTempLogFile(nextId, w.state.lastEntryIndex+1)
+	if err != nil {
+		return err
+	}
 	if err = nextLogger.Crc(lastCrc); err != nil {
 		return err
 	}

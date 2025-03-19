@@ -8,7 +8,9 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile/page"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/player"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/utility"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
@@ -22,7 +24,7 @@ import (
 
 type termEntriesIndex struct {
 	nextEntry    pb.WalNextEntry
-	entriesIndex []entrystore.EntryIndex
+	entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
 }
 
 type termEntries struct {
@@ -246,7 +248,7 @@ func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
 		expectSeg.crcs = append(expectSeg.crcs, uint32(i))
 		assert.Nil(t, logW.Crc(expectSeg.crcs[len(expectSeg.crcs)-1]))
 		exEntries := termEntriesIndex{
-			entriesIndex: make([]entrystore.EntryIndex, numEntries),
+			entriesIndex: make([]walbase.EntryIndex[storage.EntryMetadata], numEntries),
 		}
 		exEntries.nextEntry = pb.WalNextEntry{
 			NextTerm:  i + 1,
@@ -258,9 +260,9 @@ func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
 			rand.Read(data)
 			exEntries.entriesIndex[j].Term = exEntries.nextEntry.NextTerm
 			exEntries.entriesIndex[j].Index = exEntries.nextEntry.NextIndex + j
-			exEntries.entriesIndex[j].FileId = fm.Id
-			exEntries.entriesIndex[j].EntryOffset = logW.Offset() + codec.HeaderSize
-			exEntries.entriesIndex[j].EntryDataLen = int64(dataLen)
+			exEntries.entriesIndex[j].Metadata.FileId = fm.Id
+			exEntries.entriesIndex[j].Metadata.Offset = logW.Offset() + codec.HeaderSize
+			exEntries.entriesIndex[j].Metadata.DataLen = int64(dataLen)
 
 			assert.Nil(t, logW.Entry(pb.LogTypeNormalEntry, data))
 		}
@@ -268,8 +270,8 @@ func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
 		for j := numEntries / 2; j < numEntries; j++ {
 			exEntries.entriesIndex[j].Term = exEntries.nextEntry.NextTerm
 			exEntries.entriesIndex[j].Index = exEntries.nextEntry.NextIndex + j
-			exEntries.entriesIndex[j].FileId = fm.Id
-			exEntries.entriesIndex[j].EntryOffset = logW.Offset() + codec.HeaderSize
+			exEntries.entriesIndex[j].Metadata.FileId = fm.Id
+			exEntries.entriesIndex[j].Metadata.Offset = logW.Offset() + codec.HeaderSize
 			assert.Nil(t, logW.Entry(pb.LogTypeNormalEntry, nil))
 		}
 		expectSeg.termEntriesIndex = append(expectSeg.termEntriesIndex, exEntries)
@@ -281,7 +283,7 @@ func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
 	logR, parsedResult := newTestLogParser(t, collection.NewEntryIndex())
 	assert.ErrorIs(t, logR.Parse(reader), io.EOF)
 	entries, _ := parsedResult.EntryCollection().Entries()
-	resultEntries := entries.([]entrystore.EntryIndex)
+	resultEntries := entries.([]walbase.EntryIndex[storage.EntryMetadata])
 	assert.Equal(t, numTerm*numEntries, uint64(len(resultEntries)))
 
 	for term := uint64(0); term < numTerm; term++ {
@@ -295,10 +297,10 @@ func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
 			assert.Equal(t, expectNextEntry.NextIndex+eIndex, checkEntry.Index)
 
 			expectEntryIndex := expectSeg.termEntriesIndex[term].entriesIndex[eIndex]
-			assert.Equal(t, expectEntryIndex.FileId, checkEntry.FileId)
+			assert.Equal(t, expectEntryIndex.Metadata.FileId, checkEntry.Metadata.FileId)
 			assert.Equal(t, expectEntryIndex.Index, checkEntry.Index)
-			assert.Equal(t, expectEntryIndex.EntryOffset, checkEntry.EntryOffset)
-			assert.Equal(t, expectEntryIndex.EntryDataLen, checkEntry.EntryDataLen)
+			assert.Equal(t, expectEntryIndex.Metadata.Offset, checkEntry.Metadata.Offset)
+			assert.Equal(t, expectEntryIndex.Metadata.DataLen, checkEntry.Metadata.DataLen)
 		}
 
 	}

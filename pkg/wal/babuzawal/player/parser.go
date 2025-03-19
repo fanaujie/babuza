@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
-	codec2 "github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
@@ -47,7 +47,7 @@ func (p *Parser) Parse(reader iwal.LogFileReader) error {
 	p.findNextEntry = false
 
 	defer reader.Close()
-	logDecoder := codec2.NewDecoder(bufio.NewReader(reader), p.cascade, p.logHandler)
+	logDecoder := codec.NewDecoder(bufio.NewReader(reader), p.cascade, p.logHandler)
 
 	for {
 		if err := logDecoder.Decode(); err != nil {
@@ -84,7 +84,7 @@ func (p *Parser) logHandler(logType pb.LogType, logBuf []byte, logSizeWithPaddin
 		if p.parseEntry {
 			if p.findNextEntry {
 				if err := p.result.EntryCollection().Decode(p.result.LastLogFileDesc().Id, p.startSnapshot.Index, logType,
-					logBuf, logSizeWithPadding-codec2.HeaderSize, p.result); err != nil {
+					logBuf, logSizeWithPadding-codec.HeaderSize, p.result); err != nil {
 					return err
 				}
 			} else {

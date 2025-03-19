@@ -4,6 +4,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
+	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	etcdfileutil "go.etcd.io/etcd/client/pkg/v3/fileutil"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -53,7 +54,7 @@ func (e *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool
 		walSnap.Index, walSnap.Term = snapshot.Metadata.Index, snapshot.Metadata.Term
 	}
 	var err error
-	var result *ReplayResult
+	var result *walbase.ReplayResult
 	var w *wal.WAL
 	for {
 		w, err = wal.Open(e.logger, e.walDir, walSnap)
@@ -73,7 +74,7 @@ func (e *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool
 			}
 			continue
 		}
-		result = NewReplayResult(metadata, hardState, entries)
+		result = walbase.NewReplayResult(metadata, hardState, entries)
 		break
 	}
 	m := raft.NewMemoryStorage()

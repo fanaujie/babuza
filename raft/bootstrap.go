@@ -237,11 +237,11 @@ func restartNode(cfg *BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.C
 	if _, err = storage.OpenWalAndReplay(snap, false); err != nil {
 		return nil, err
 	}
-	cache, err := storage.GetEntryStorage()
+	entryStorage, err := storage.GetEntryStorage()
 	if err != nil {
 		return nil, err
 	}
-	hs, _, err := cache.InitialState()
+	hs, _, err := entryStorage.InitialState()
 	if err != nil {
 		return nil, err
 	}

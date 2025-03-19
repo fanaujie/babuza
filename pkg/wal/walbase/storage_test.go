@@ -1,7 +1,7 @@
 /*
 Storage is compatible with interface of etcdwal memory storage.
 So it must pass the test case of etcdwal memory storage.
-The following test cases are from https://github.com/etcd-io/etcd/blob/main/raft/storage_test.go
+The following test cases are from https://github.com/etcd-io/raft/blob/main/storage_test.go
 TestStorageTerm
 TestStorageEntries
 TestStorageLastIndex
@@ -11,7 +11,7 @@ TestStorageCreateSnapshot
 TestStorageAppendIndex
 */
 
-package entrystore
+package walbase
 
 import (
 	"go.etcd.io/etcd/raft/v3"
@@ -21,13 +21,20 @@ import (
 	"testing"
 )
 
+type EntryMetadata struct {
+	FileId       uint64
+	Offset       int64
+	DataLen      int64
+	DataCapacity int64 // for boundary alignment
+}
+
 type mockReader struct {
 }
 
-func (m *mockReader) ReadEntriesData(readMetadata []EntryIndex, ents []raftpb.Entry) error {
+func (m *mockReader) ReadEntriesData(readMetadata []EntryIndex[EntryMetadata], ents []raftpb.Entry) error {
 	for i := 0; i < len(readMetadata); i++ {
-		ents[i].Data = make([]byte, readMetadata[i].EntryDataLen)
-		for j := int64(0); j < readMetadata[i].EntryDataLen; j++ {
+		ents[i].Data = make([]byte, readMetadata[i].Metadata.DataLen)
+		for j := int64(0); j < readMetadata[i].Metadata.DataLen; j++ {
 			ents[i].Data[j] = 1
 		}
 	}
@@ -35,7 +42,7 @@ func (m *mockReader) ReadEntriesData(readMetadata []EntryIndex, ents []raftpb.En
 }
 
 func TestStorageTerm(t *testing.T) {
-	ents := []EntryIndex{
+	ents := []EntryIndex[EntryMetadata]{
 		{Index: 3, Term: 3},
 		{Index: 4, Term: 4},
 		{Index: 5, Term: 5}}
@@ -54,7 +61,7 @@ func TestStorageTerm(t *testing.T) {
 	}
 
 	for i, tt := range tests {
-		s := &Storage{ents: ents}
+		s := &EntryStorage[EntryMetadata]{ents: ents}
 
 		func() {
 			defer func() {
@@ -78,7 +85,7 @@ func TestStorageTerm(t *testing.T) {
 
 func TestStorageEntries(t *testing.T) {
 	ents := []raftpb.Entry{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}, {Index: 6, Term: 6}}
-	entsIndex := []EntryIndex{
+	entsIndex := []EntryIndex[EntryMetadata]{
 		{Index: 3, Term: 3},
 		{Index: 4, Term: 4},
 		{Index: 5, Term: 5},
@@ -106,10 +113,10 @@ func TestStorageEntries(t *testing.T) {
 	}
 
 	for i, tt := range tests {
-		s := &Storage{
-			entryDataCache: NewCache(),
-			ents:           entsIndex,
-			reader:         &mockReader{},
+		s := &EntryStorage[EntryMetadata]{
+			cache:  NewCache(),
+			ents:   entsIndex,
+			reader: &mockReader{},
 		}
 		s.AppendCache(ents) //cache always hit
 		entries, err := s.Entries(tt.lo, tt.hi, tt.maxsize)
@@ -123,11 +130,11 @@ func TestStorageEntries(t *testing.T) {
 }
 
 func TestStorageLastIndex(t *testing.T) {
-	ents := []EntryIndex{
+	ents := []EntryIndex[EntryMetadata]{
 		{Index: 3, Term: 3},
 		{Index: 4, Term: 4},
 		{Index: 5, Term: 5}}
-	s := &Storage{ents: ents}
+	s := &EntryStorage[EntryMetadata]{ents: ents}
 
 	last, err := s.LastIndex()
 	if err != nil {
@@ -137,7 +144,7 @@ func TestStorageLastIndex(t *testing.T) {
 		t.Errorf("last = %d, want %d", last, 5)
 	}
 
-	s.AppendEntryIndex([]EntryIndex{{Index: 6, Term: 5}})
+	s.AppendEntryIndex([]EntryIndex[EntryMetadata]{{Index: 6, Term: 5}})
 	last, err = s.LastIndex()
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
@@ -148,11 +155,11 @@ func TestStorageLastIndex(t *testing.T) {
 }
 
 func TestStorageFirstIndex(t *testing.T) {
-	ents := []EntryIndex{
+	ents := []EntryIndex[EntryMetadata]{
 		{Index: 3, Term: 3},
 		{Index: 4, Term: 4},
 		{Index: 5, Term: 5}}
-	s := &Storage{ents: ents}
+	s := &EntryStorage[EntryMetadata]{ents: ents}
 
 	first, err := s.FirstIndex()
 	if err != nil {
@@ -173,7 +180,7 @@ func TestStorageFirstIndex(t *testing.T) {
 }
 
 func TestStorageCompact(t *testing.T) {
-	ents := []EntryIndex{
+	ents := []EntryIndex[EntryMetadata]{
 		{Index: 3, Term: 3},
 		{Index: 4, Term: 4},
 		{Index: 5, Term: 5}}
@@ -192,7 +199,7 @@ func TestStorageCompact(t *testing.T) {
 	}
 
 	for i, tt := range tests {
-		s := &Storage{ents: ents}
+		s := &EntryStorage[EntryMetadata]{ents: ents}
 		err := s.Compact(tt.i)
 		if err != tt.werr {
 			t.Errorf("#%d: err = %v, want %v", i, err, tt.werr)
@@ -210,7 +217,7 @@ func TestStorageCompact(t *testing.T) {
 }
 
 func TestStorageCreateSnapshot(t *testing.T) {
-	ents := []EntryIndex{
+	ents := []EntryIndex[EntryMetadata]{
 		{Index: 3, Term: 3},
 		{Index: 4, Term: 4},
 		{Index: 5, Term: 5}}
@@ -228,7 +235,7 @@ func TestStorageCreateSnapshot(t *testing.T) {
 	}
 
 	for i, tt := range tests {
-		s := &Storage{ents: ents}
+		s := &EntryStorage[EntryMetadata]{ents: ents}
 		snap, err := s.CreateSnapshot(tt.i, cs, data)
 		if err != tt.werr {
 			t.Errorf("#%d: err = %v, want %v", i, err, tt.werr)
@@ -240,59 +247,59 @@ func TestStorageCreateSnapshot(t *testing.T) {
 }
 
 func TestStorageAppendIndex(t *testing.T) {
-	entsIndex := []EntryIndex{
+	entsIndex := []EntryIndex[EntryMetadata]{
 		{Index: 3, Term: 3},
 		{Index: 4, Term: 4},
 		{Index: 5, Term: 5}}
 
 	tests := []struct {
-		entries []EntryIndex
+		entries []EntryIndex[EntryMetadata]
 
 		werr     error
-		wentries []EntryIndex
+		wentries []EntryIndex[EntryMetadata]
 	}{
 		{
-			[]EntryIndex{{Index: 1, Term: 1}, {Index: 2, Term: 2}},
+			[]EntryIndex[EntryMetadata]{{Index: 1, Term: 1}, {Index: 2, Term: 2}},
 			nil,
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}},
 		},
 		{
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}},
 			nil,
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}},
 		},
 		{
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 6}, {Index: 5, Term: 6}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 6}, {Index: 5, Term: 6}},
 			nil,
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 6}, {Index: 5, Term: 6}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 6}, {Index: 5, Term: 6}},
 		},
 		{
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}, {Index: 6, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}, {Index: 6, Term: 5}},
 			nil,
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}, {Index: 6, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}, {Index: 6, Term: 5}},
 		},
 		// truncate incoming entries, truncate the existing entries and append
 		{
-			[]EntryIndex{{Index: 2, Term: 3}, {Index: 3, Term: 3}, {Index: 4, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 2, Term: 3}, {Index: 3, Term: 3}, {Index: 4, Term: 5}},
 			nil,
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 5}},
 		},
 		// truncate the existing entries and append
 		{
-			[]EntryIndex{{Index: 4, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 4, Term: 5}},
 			nil,
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 5}},
 		},
 		// direct append
 		{
-			[]EntryIndex{{Index: 6, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 6, Term: 5}},
 			nil,
-			[]EntryIndex{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}, {Index: 6, Term: 5}},
+			[]EntryIndex[EntryMetadata]{{Index: 3, Term: 3}, {Index: 4, Term: 4}, {Index: 5, Term: 5}, {Index: 6, Term: 5}},
 		},
 	}
 
 	for i, tt := range tests {
-		s := &Storage{ents: entsIndex}
+		s := &EntryStorage[EntryMetadata]{ents: entsIndex}
 		err := s.AppendEntryIndex(tt.entries)
 		if err != tt.werr {
 			t.Errorf("#%d: err = %v, want %v", i, err, tt.werr)
@@ -311,18 +318,14 @@ func TestStorageEntriesCacheHit(t *testing.T) {
 			ents[i].Data[j] = 1
 		}
 	}
-	var entsIndex []EntryIndex
+	var entsIndex []EntryIndex[EntryMetadata]
 	for i := uint64(1); i <= 10; i++ {
-		e := EntryIndex{
-			Index: i, Term: i, EntryDataMetadata: EntryDataMetadata{EntryDataLen: int64(i)}}
+		e := EntryIndex[EntryMetadata]{
+			Index: i, Term: i, Metadata: EntryMetadata{DataLen: int64(i)}}
 		entsIndex = append(entsIndex, e)
 	}
-	s := &Storage{
-		entryDataCache: NewCache(),
-		ents:           entsIndex,
-		reader:         &mockReader{},
-	}
-	s.Append(ents)
+	s := NewEntryStorage[EntryMetadata](&mockReader{})
+	s.AppendEntryIndex(entsIndex)
 	type testRange struct {
 		start    uint64
 		end      uint64

@@ -39,7 +39,6 @@ func (r *Raft) processStateMachine() {
 				continue
 			}
 			r.triggerSnapshot(ctx, s.resultCh)
-			r.status.SetSnapshotIndex(ctx.Index())
 		case ap := <-r.applyCh:
 			if err := r.applySnapshot(ap.snapshot); err != nil {
 				r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.config.LocalPeerId, err)
@@ -65,7 +64,6 @@ func (r *Raft) processStateMachine() {
 				r.logger.Panicf("raft[id=%d]: create snapshot context failed: %v", r.config.LocalPeerId, err)
 			}
 			r.triggerSnapshot(ctx, r.concurrentSnapResultCh)
-			r.status.SetSnapshotIndex(ctx.Index())
 		case snapResult := <-r.concurrentSnapResultCh:
 			if snapResult.err != nil {
 				r.logger.Panicf("raft[id=%d]: concurrent snapshot failed: %v", r.config.LocalPeerId, snapResult.err)
@@ -120,6 +118,7 @@ func (r *Raft) doSnapshot(snapCtx InternalStorageSnapshotContext) (babuzapb.Snap
 	if err = r.storage.Save(raftpb.HardState{}, nil, metadata.Snapshot); err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
+	r.status.SetSnapshotIndex(metadata.Snapshot.Metadata.Index)
 	inflight := r.status.GetInflightSnapshots()
 	if inflight > 0 {
 		r.logger.Warningf("raft[id=%d]: inflight snapshot counts=%d, skip compaction", r.config.LocalPeerId, inflight)
