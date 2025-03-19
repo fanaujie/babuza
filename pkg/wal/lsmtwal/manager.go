@@ -75,6 +75,24 @@ func (m *BadgerWalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.Ent
 		return nil, nil, err
 	}
 	w := NewBadgerWal(m.db)
+	// write empty snapshot and metadata to the database
+	if err = m.db.Update(func(txn *badger.Txn) error {
+		snapshot := walpb.Snapshot{}
+		data, err := snapshot.Marshal()
+		if err != nil {
+			return err
+		}
+		if err = txn.Set([]byte(keySnapshot), data); err != nil {
+			return err
+		}
+		data, err = metadata.Marshal()
+		if err != nil {
+			return err
+		}
+		return txn.Set([]byte(keyMetadata), data)
+	}); err != nil {
+		return nil, nil, err
+	}
 	es := &storage.EntryStorage{
 		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
 	}
@@ -86,19 +104,26 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 
 	var hardState raftpb.HardState
 	var metadata []byte
+	walSnap := walpb.Snapshot{}
+	if snapshot != nil {
+		walSnap = walpb.Snapshot{
+			Index:     snapshot.Metadata.Index,
+			Term:      snapshot.Metadata.Term,
+			ConfState: &snapshot.Metadata.ConfState,
+		}
+	}
 	entries := make([]raftpb.Entry, 0)
 	err := m.db.View(func(txn *badger.Txn) error {
 		hardStateBytes, err := txn.Get([]byte(keyHardState))
-		if err != nil {
-			return err
-		}
-		if err = hardStateBytes.Value(func(value []byte) error {
-			if err = hardState.Unmarshal(value); err != nil {
+		if err == nil {
+			if err = hardStateBytes.Value(func(value []byte) error {
+				if err = hardState.Unmarshal(value); err != nil {
+					return err
+				}
+				return nil
+			}); err != nil {
 				return err
 			}
-			return nil
-		}); err != nil {
-			return err
 		}
 		walMetadata, err := txn.Get([]byte(keyMetadata))
 		if err != nil {
@@ -123,9 +148,9 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 			}); err != nil {
 				return err
 			}
-			if entry.Index > snapshot.Metadata.Index {
+			if entry.Index > walSnap.Index {
 				// prevent "panic: runtime error: slice bounds out of range [:13038096702221461992] with capacity 0"
-				up := entry.Index - snapshot.Metadata.Index - 1
+				up := entry.Index - walSnap.Index - 1
 				if up > uint64(len(entries)) {
 					// return error before append call causes runtime panic
 					return errors.New("up is out of range")
@@ -145,11 +170,13 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 			return nil, nil, nil, err
 		}
 	}
-	w := NewBadgerWal(m.db)
 	es := &storage.EntryStorage{
 		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
 	}
-	return es, w, result, nil
+	if err = es.Append(entries); err != nil {
+		return nil, nil, nil, err
+	}
+	return es, NewBadgerWal(m.db), result, nil
 }
 
 func (m *BadgerWalManager) HasExistingWals() (bool, error) {
