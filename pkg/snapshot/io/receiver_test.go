@@ -54,7 +54,7 @@ func TestReceiver_SaveChunk(t *testing.T) {
 					msgCount  int
 					chunkSize int
 				}) {
-					receiverDir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
+					receiverDir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
 					assert.Nil(t, err)
 					targetSrc := filepath.Join(tmpDir, receiverDir)
 					assert.Nil(t, fs.CreateDirAndTouch(targetSrc))
@@ -91,7 +91,7 @@ func TestReceiver_SaveChunk(t *testing.T) {
 						}
 					}
 
-					receiveFileName, err := api.SnapshotFileName(c.fileType, snapIndex, "one")
+					receiveFileName, err := fs.PathHelper().SnapshotFileName(c.fileType, snapIndex, "one")
 					assert.Nil(t, err)
 					receivedFilePath := filepath.Join(targetSrc, receiveFileName)
 					rf, err := fs.FileRead(receivedFilePath)
@@ -112,7 +112,7 @@ func TestReceiver_SaveChunk(t *testing.T) {
 			// Test ErrReceiverMismatchedSnapshotIndex
 			snapIndex := uint64(10)
 			version := uint64(1)
-			receiverDir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
+			receiverDir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
 			assert.Nil(t, err)
 			targetSrc := filepath.Join(tmpDir, receiverDir)
 			assert.Nil(t, fs.CreateDirAndTouch(targetSrc))
@@ -178,7 +178,7 @@ func TestReceiver_Commit(t *testing.T) {
 		version := uint64(1)
 		snapIndex := uint64(1)
 		snapTerm := uint64(1)
-		receiverDir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
+		receiverDir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
 		assert.Nil(t, err)
 		targetSrc := filepath.Join(tmpDir, receiverDir)
 		m := genSnapshotFiles(t, fs, targetSrc, version, snapTerm, snapIndex, fd)

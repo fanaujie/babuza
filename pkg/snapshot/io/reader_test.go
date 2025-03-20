@@ -18,7 +18,7 @@ func TestReader_Create(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		_ = genSnapshotFiles(t, fs, targetDir, 1, 1, 1, []snapFileDesc{
@@ -61,7 +61,7 @@ func TestReader_Open(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		fd := []snapFileDesc{
@@ -101,7 +101,7 @@ func TestReader_Open(t *testing.T) {
 			case babuzapb.SnapshotFileType_StateMachine:
 				_, fileDesc, err := c.Open(file.tag)
 				assert.Nil(t, err)
-				stateMachinePath, err := api.SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, file.tag)
+				stateMachinePath, err := fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, file.tag)
 				assert.Nil(t, err)
 				assert.Equal(t, fileDesc.Tag, file.tag)
 				assert.Equal(t, fileDesc.Metadata, m.Files[file.tag].Metadata)
@@ -125,7 +125,7 @@ func TestReader_ForEachFile(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		fdFiles := []snapFileDesc{
@@ -189,7 +189,7 @@ func TestReader_ForEachFile_Fail(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		stateMachineFiles := []snapFileDesc{
@@ -216,7 +216,7 @@ func TestReader_ForEachFile_Fail(t *testing.T) {
 		assert.Nil(t, err)
 		r := NewReader(fs, targetDir, m, &codec.Metadata{})
 		assert.NotNil(t, r)
-		stateMachinePath, err := api.SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, "one")
+		stateMachinePath, err := fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, "one")
 		assert.Nil(t, err)
 		assert.Nil(t, fs.RemoveFilePath(filepath.Join(targetDir, stateMachinePath)))
 		assert.Error(t, r.ForEachFile(func(io.Reader, babuzapb.SnapshotFileDesc) error {

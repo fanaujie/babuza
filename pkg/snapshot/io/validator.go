@@ -81,7 +81,7 @@ func (f *FileValidator) ValidateMetadataFile(dir string) (babuzapb.SnapshotMetad
 		return babuzapb.SnapshotMetadata{}, fmt.Errorf("snapshotor: found more than one metadata file in dir %s (files=%d)", dir, len(snapshotIndexs))
 	}
 
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndexs[0], "")
+	filename, err := f.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndexs[0], "")
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
@@ -97,7 +97,7 @@ func (f *FileValidator) ValidateMetadataFile(dir string) (babuzapb.SnapshotMetad
 
 func (f *FileValidator) ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMetadata) error {
 	for _, snapFile := range m.Files {
-		filename, err := api.SnapshotFileName(snapFile.FileType, m.Snapshot.Metadata.Index, snapFile.Tag)
+		filename, err := f.fs.PathHelper().SnapshotFileName(snapFile.FileType, m.Snapshot.Metadata.Index, snapFile.Tag)
 		if err != nil {
 			return err
 		}

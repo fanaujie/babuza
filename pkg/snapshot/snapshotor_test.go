@@ -154,7 +154,7 @@ func TestSnapshotor_ValidateFileReceiverAndInstall(t *testing.T) {
 		receiver, err := s.CreateAtomicSnapshotReceiver(tmpSnapshotMetadata)
 		assert.Nil(t, err)
 		assert.NotNil(t, receiver)
-		dir, err := api.GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_TempReceive, tmpSnapshotMetadata.Snapshot.Metadata.Index)
+		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_TempReceive, tmpSnapshotMetadata.Snapshot.Metadata.Index)
 		assert.Nil(t, err)
 		assert.Equal(t, true, fs.ExistDir(dir))
 
@@ -191,7 +191,7 @@ func TestSnapshotor_ValidateFileReceiverAndInstall_Fail(t *testing.T) {
 		receiver, err := s.CreateAtomicSnapshotReceiver(snapshotMetadata)
 		assert.Nil(t, err)
 		assert.NotNil(t, receiver)
-		dir, err := api.GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_TempReceive, snapshotMetadata.Snapshot.Metadata.Index)
+		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_TempReceive, snapshotMetadata.Snapshot.Metadata.Index)
 		assert.Nil(t, err)
 		assert.Equal(t, true, fs.ExistDir(dir))
 		err = receiver.Commit(snapshotMetadata.Snapshot.Metadata.Index + 1)
@@ -345,7 +345,7 @@ func TestSnapshotor_Purge(t *testing.T) {
 					SnapshotDir:     p,
 				}, fs, &logger.Mock{})
 				for _, snapIndex := range tc.snapIndex {
-					wDir, err := api.GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_TempWrite, snapIndex)
+					wDir, err := fs.PathHelper().GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_TempWrite, snapIndex)
 					assert.Nil(t, err)
 					assert.Nil(t, fs.CreateDirAndTouch(wDir))
 					w := sanpshotio.NewWriter(fs, wDir, &codec.Metadata{}, s, snapIndex)
@@ -360,7 +360,7 @@ func TestSnapshotor_Purge(t *testing.T) {
 					},
 				}))
 				for _, snapIndex := range tc.remainIndex {
-					dir, err := api.GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
+					dir, err := fs.PathHelper().GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
 					assert.Nil(t, err)
 					assert.Equal(t, true, fs.ExistDir(dir))
 				}
@@ -379,7 +379,7 @@ func TestSnapshotor_CommitSnapshot(t *testing.T) {
 		func(dt babuzapb.SnapshotFolderType) {
 			p := t.TempDir()
 			for _, fs := range []api.FileSystem{volatile.NewFileSystem(), durable.NewFileSystem()} {
-				dir, err := api.GenerateSnapshotFolderPath(p, dt, 1)
+				dir, err := fs.PathHelper().GenerateSnapshotFolderPath(p, dt, 1)
 				assert.Nil(t, err)
 				assert.Nil(t, fs.CreateDirAndTouch(dir))
 				s := New(Config{
@@ -389,7 +389,7 @@ func TestSnapshotor_CommitSnapshot(t *testing.T) {
 				assert.Nil(t, s.commitSnapshot(dt, 1))
 				_, ok := s.installedSnapshot[1]
 				assert.Equal(t, true, ok)
-				dir2, err := api.GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_InstallSnapshot, 1)
+				dir2, err := fs.PathHelper().GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_InstallSnapshot, 1)
 				assert.Nil(t, err)
 				assert.Equal(t, true, fs.ExistDir(dir2))
 				assert.Equal(t, "snapshot: the installed snapshot already exists. (snapshot index=1)",

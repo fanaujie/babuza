@@ -11,10 +11,13 @@ import (
 )
 
 type FileSystem struct {
+	ph api.PathHelper
 }
 
 func NewFileSystem() api.FileSystem {
-	return &FileSystem{}
+	return &FileSystem{
+		ph: api.NewPathHelper("temp-writer", "temp-receiver", "snapshot"),
+	}
 }
 
 func (fs *FileSystem) FileRead(path string) (io.ReadCloser, error) {
@@ -80,7 +83,7 @@ func (fs *FileSystem) FindMetadataFile(dirPath string) ([]uint64, error) {
 		if d.IsDir() {
 			continue
 		}
-		index, err := api.ParseMetadataFileName(name)
+		index, err := fs.ph.ParseMetadataFileName(name)
 		if err == nil {
 			ids = append(ids, index)
 		}
@@ -101,7 +104,7 @@ func (fs *FileSystem) ScanInstalledSnapshot(dirPath string) ([]uint64, error) {
 		if !d.IsDir() {
 			continue
 		}
-		index, err = api.ParseSnapshotFolderName(name)
+		index, err = fs.ph.ParseSnapshotFolderName(name)
 		if err == nil {
 			installed = append(installed, index)
 			continue
@@ -122,12 +125,12 @@ func (fs *FileSystem) ScanTempSnapshotFolder(dirPath string) ([]string, []string
 		if !d.IsDir() {
 			continue
 		}
-		_, err = api.ParseWriterTmpFolderName(name)
+		_, err = fs.ph.ParseWriterTmpFolderName(name)
 		if err == nil {
 			tempWrite = append(tempWrite, filepath.Join(dirPath, name))
 			continue
 		}
-		_, err = api.ParseReceiverTmpFolderName(name)
+		_, err = fs.ph.ParseReceiverTmpFolderName(name)
 		if err == nil {
 			tempReceiver = append(tempReceiver, filepath.Join(dirPath, name))
 		}
@@ -172,4 +175,8 @@ func (fs *FileSystem) RemoveDir(path string) error {
 
 func (fs *FileSystem) RemoveFilePath(path string) error {
 	return os.Remove(path)
+}
+
+func (fs *FileSystem) PathHelper() api.PathHelper {
+	return fs.ph
 }

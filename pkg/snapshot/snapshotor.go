@@ -62,7 +62,7 @@ func (s *Snapshotor) CreateInstalledSnapshotReader(snapshotIndex uint64, validat
 	if err != nil {
 		return nil, err
 	}
-	dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
+	dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (s *Snapshotor) CreateInstalledSnapshotReader(snapshotIndex uint64, validat
 }
 
 func (s *Snapshotor) CreateAtomicSnapshotWriter(snapshotTerm, snapshotIndex uint64) (ibabuza.AtomicSnapshotWriter, error) {
-	dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
+	dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (s *Snapshotor) CreateAtomicSnapshotReceiver(metadata babuzapb.SnapshotMeta
 	if ok {
 		return nil, fmt.Errorf("snapshot: already register snapshot index=%d", metadata.Snapshot.Metadata.Index)
 	}
-	dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempReceive, metadata.Snapshot.Metadata.Index)
+	dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempReceive, metadata.Snapshot.Metadata.Index)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (s *Snapshotor) Purge(snapshot raftpb.Snapshot) error {
 	installSnapshot := s.getInstalledSnapshotIndexSlice()
 	for len(installSnapshot) > int(s.config.MaxSnapFiles) {
 		if installSnapshot[0] < snapshot.Metadata.Index {
-			dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, installSnapshot[0])
+			dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, installSnapshot[0])
 			if err != nil {
 				return err
 			}
@@ -160,11 +160,11 @@ func (s *Snapshotor) getInstalledSnapshotMetadata(snapIndex uint64) (babuzapb.Sn
 	if !ok {
 		return babuzapb.SnapshotMetadata{}, fmt.Errorf("snapshot: not found snapshot index=%d", snapIndex)
 	}
-	dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
+	dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
-	metadataFilePath, err := api.GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, snapIndex, "")
+	metadataFilePath, err := s.fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, snapIndex, "")
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
@@ -205,7 +205,7 @@ func (s *Snapshotor) scanInstalledSnapshot() error {
 		return err
 	}
 	for _, snapshotIndex := range installedFolder {
-		dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
+		dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
 		if err != nil {
 			return err
 		}
@@ -243,7 +243,7 @@ func (s *Snapshotor) commitSnapshot(folderType babuzapb.SnapshotFolderType, snap
 	if ok {
 		return errors.New(fmt.Sprintf("snapshot: the installed snapshot already exists. (snapshot index=%d)", snapshotIndex))
 	}
-	installDir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
+	installDir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
 	if err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func (s *Snapshotor) commitSnapshot(folderType babuzapb.SnapshotFolderType, snap
 		return errors.New(fmt.Sprintf("snapshot: the installation directory already exists. path(%s) snapshot idnex(%d)",
 			installDir, snapshotIndex))
 	}
-	sourceDir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, folderType, snapshotIndex)
+	sourceDir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, folderType, snapshotIndex)
 	if err != nil {
 		return err
 	}

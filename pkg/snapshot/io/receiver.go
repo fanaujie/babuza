@@ -42,7 +42,7 @@ func (r *Receiver) SaveChunk(snapshotIndex uint64, msg babuzapb.SnapshotChunkMes
 
 	chunkValidator, ok := r.chunkValidator[msg.FileTag]
 	if !ok {
-		filename, err := api.SnapshotFileName(msg.FileType, snapshotIndex, msg.FileTag)
+		filename, err := r.fs.PathHelper().SnapshotFileName(msg.FileType, snapshotIndex, msg.FileTag)
 		if err != nil {
 			return err
 		}
@@ -69,7 +69,7 @@ func (r *Receiver) Commit(snapshotIndex uint64) error {
 		return fmt.Errorf("snapshotor: mismatch snapshot index(expected=%d,get=%d)", r.metadata.Snapshot.Metadata.Index, snapshotIndex)
 	}
 
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndex, "")
+	filename, err := r.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndex, "")
 	if err != nil {
 		return err
 	}

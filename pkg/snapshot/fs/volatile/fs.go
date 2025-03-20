@@ -34,6 +34,7 @@ func (b *bytesFile) Close() error {
 type FileSystem struct {
 	files map[string]*bytesFile
 	dirs  map[string]struct{}
+	ph    api.PathHelper
 	mu    *sync.RWMutex
 }
 
@@ -41,6 +42,7 @@ func NewFileSystem() api.FileSystem {
 	return &FileSystem{
 		files: make(map[string]*bytesFile),
 		dirs:  make(map[string]struct{}),
+		ph:    api.NewPathHelper("temp-writer", "temp-receiver", "snapshot"),
 		mu:    &sync.RWMutex{},
 	}
 }
@@ -133,7 +135,7 @@ func (fs *FileSystem) FindMetadataFile(dirPath string) ([]uint64, error) {
 	var ids []uint64
 	for fp := range fs.files {
 		if strings.HasPrefix(fp, dirPath) {
-			index, err := api.ParseMetadataFileName(filepath.Base(fp))
+			index, err := fs.ph.ParseMetadataFileName(filepath.Base(fp))
 			if err == nil {
 				ids = append(ids, index)
 			}
@@ -147,9 +149,9 @@ func (fs *FileSystem) ScanInstalledSnapshot(dirPath string) ([]uint64, error) {
 	defer fs.mu.RUnlock()
 	var installed []uint64
 	for dir := range fs.dirs {
-		if strings.HasPrefix(dir, filepath.Join(dirPath, api.SnapshotFolderNamePrefix)) {
+		if strings.HasPrefix(dir, filepath.Join(dirPath, fs.ph.SnapshotFolderPrefix())) {
 			dirName := filepath.Base(dir)
-			index, err := api.ParseSnapshotFolderName(dirName)
+			index, err := fs.ph.ParseSnapshotFolderName(dirName)
 			if err == nil {
 				installed = append(installed, index)
 			}
@@ -165,15 +167,15 @@ func (fs *FileSystem) ScanTempSnapshotFolder(dirPath string) ([]string, []string
 	var tmpWriter, tmpReceiver []string
 
 	for dir := range fs.dirs {
-		if strings.HasPrefix(dir, filepath.Join(dirPath, api.TempWriterFolderNamePrefix)) {
+		if strings.HasPrefix(dir, filepath.Join(dirPath, fs.ph.TempWriterFolderPrefix())) {
 			dirName := filepath.Base(dir)
-			_, err := api.ParseWriterTmpFolderName(dirName)
+			_, err := fs.ph.ParseWriterTmpFolderName(dirName)
 			if err == nil {
 				tmpWriter = append(tmpWriter, dir)
 			}
-		} else if strings.HasPrefix(dir, filepath.Join(dirPath, api.TempReceiverFolderNamePrefix)) {
+		} else if strings.HasPrefix(dir, filepath.Join(dirPath, fs.ph.TempReceiverFolderPrefix())) {
 			dirName := filepath.Base(dir)
-			_, err := api.ParseReceiverTmpFolderName(dirName)
+			_, err := fs.ph.ParseReceiverTmpFolderName(dirName)
 			if err == nil {
 				tmpReceiver = append(tmpReceiver, dir)
 			}
@@ -266,4 +268,8 @@ func (fs *FileSystem) RemoveFilePath(path string) error {
 	}
 	delete(fs.files, path)
 	return nil
+}
+
+func (fs *FileSystem) PathHelper() api.PathHelper {
+	return fs.ph
 }

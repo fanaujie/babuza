@@ -29,7 +29,7 @@ func TestWriter_Create(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
@@ -37,7 +37,7 @@ func TestWriter_Create(t *testing.T) {
 		cw, err := w.CreateStateMachineFile("one", babuzapb.SnapshotFileCompression_None)
 		assert.Nil(t, err)
 		assert.Nil(t, cw.Close())
-		stateMachine1, err := api.SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, "one")
+		stateMachine1, err := fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, "one")
 		stateMachine1Path := filepath.Join(targetDir, stateMachine1)
 		assert.Equal(t, true, fs.ExistFilePath(stateMachine1Path))
 	}
@@ -50,7 +50,7 @@ func TestWriter_Create_Fail(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
@@ -67,16 +67,16 @@ func TestWriter_Write(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 		w := NewWriter(fs, targetDir, &codec.Metadata{}, &mockInstaller{vesion: 1}, 1)
 		writeData(t, w, "one", babuzapb.SnapshotFileCompression_None, 1024)
 		writeData(t, w, "two", babuzapb.SnapshotFileCompression_Snappy, 1024)
-		stateMachine1, err := api.SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, "one")
+		stateMachine1, err := fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, "one")
 		stateMachine1Path := filepath.Join(targetDir, stateMachine1)
-		stateMachine2, err := api.SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, "two")
+		stateMachine2, err := fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, "two")
 		stateMachine2Path := filepath.Join(targetDir, stateMachine2)
 
 		assert.Equal(t, true, fs.ExistFilePath(stateMachine1Path))
@@ -91,7 +91,7 @@ func TestWriter_AddMetadata(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
@@ -114,7 +114,7 @@ func TestWriter_AddMetadata_Fail(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
@@ -134,7 +134,7 @@ func TestWriter_CreateNoneStateMachineFile(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewFileSystem(),
 	} {
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
@@ -148,14 +148,14 @@ func TestWriter_CreateNoneStateMachineFile(t *testing.T) {
 					wc, err := w.CreateClusterFile(babuzapb.SnapshotFileCompression_None)
 					assert.Nil(t, err)
 					defer wc.Close()
-					filename, err := api.SnapshotFileName(sft, 1, "")
+					filename, err := fs.PathHelper().SnapshotFileName(sft, 1, "")
 					_, ok := w.snapshotFiles[filename]
 					assert.Equal(t, true, ok)
 				case babuzapb.SnapshotFileType_Session:
 					wc, err := w.CreateSessionFile(babuzapb.SnapshotFileCompression_None)
 					assert.Nil(t, err)
 					defer wc.Close()
-					filename, err := api.SnapshotFileName(sft, 1, "")
+					filename, err := fs.PathHelper().SnapshotFileName(sft, 1, "")
 					_, ok := w.snapshotFiles[filename]
 					assert.Equal(t, true, ok)
 				}
@@ -200,12 +200,12 @@ func TestWriter_Commit(t *testing.T) {
 				dataSize:        1024,
 			},
 		}
-		dir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
+		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
 		assert.Nil(t, err)
 		targetDir := filepath.Join(tmpDir, dir)
 		genSnapshotFiles(t, fs, targetDir, snapshotVersion, snapshotTerm, snapshotIndex, fdFiles)
 
-		fileName, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndex, "")
+		fileName, err := fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndex, "")
 		metadataPath := filepath.Join(targetDir, fileName)
 
 		assert.Equal(t, true, fs.ExistFilePath(metadataPath))
@@ -221,14 +221,14 @@ func TestWriter_Commit(t *testing.T) {
 		for _, fm := range fdFiles {
 			switch fm.fileType {
 			case babuzapb.SnapshotFileType_StateMachine:
-				filename, err := api.SnapshotFileName(fm.fileType, snapshotIndex, fm.tag)
+				filename, err := fs.PathHelper().SnapshotFileName(fm.fileType, snapshotIndex, fm.tag)
 				assert.Nil(t, err)
 				fsmFilePath := filepath.Join(targetDir, filename)
 				assert.Equal(t, true, fs.ExistFilePath(fsmFilePath))
 				assert.Equal(t, fm.metadata, sm.Files[fm.tag].Metadata)
 			case babuzapb.SnapshotFileType_Cluster:
 			case babuzapb.SnapshotFileType_Session:
-				filename, err := api.SnapshotFileName(fm.fileType, snapshotIndex, "")
+				filename, err := fs.PathHelper().SnapshotFileName(fm.fileType, snapshotIndex, "")
 				assert.Nil(t, err)
 				assert.Equal(t, true, fs.ExistFilePath(filepath.Join(targetDir, filename)))
 			default:

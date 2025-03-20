@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"io"
 )
 
@@ -36,4 +37,20 @@ type FileSystem interface {
 	RenameDir(oldPath string, newPath string) error
 	RemoveDir(path string) error
 	RemoveFilePath(path string) error
+	PathHelper() PathHelper
+}
+
+type PathHelper interface {
+	SnapshotFileName(fileType babuzapb.SnapshotFileType, snapshotIndex uint64, tag string) (string, error)
+	SnapshotFolderName(folderType babuzapb.SnapshotFolderType, snapshotIndex uint64) (string, error)
+	GenerateSnapshotFilePath(snapshotDir string, fileType babuzapb.SnapshotFileType, snapIndex uint64, tag string) (string, error)
+	GenerateSnapshotFolderPath(srcDir string, folderType babuzapb.SnapshotFolderType, snapIndex uint64) (string, error)
+	ParseMetadataFileName(name string) (uint64, error)
+	ParseWriterTmpFolderName(name string) (uint64, error)
+	ParseReceiverTmpFolderName(name string) (uint64, error)
+	ParseSnapshotFolderName(name string) (uint64, error)
+	ParseBrokenFolderName(name string) (uint64, error)
+	SnapshotFolderPrefix() string
+	TempWriterFolderPrefix() string
+	TempReceiverFolderPrefix() string
 }
