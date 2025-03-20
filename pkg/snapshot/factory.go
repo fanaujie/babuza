@@ -33,7 +33,7 @@ func NewDurableSnapshotManager(snapshotDir string, logger ibabuza.Logger, option
 	for _, setOpt := range options {
 		setOpt(&defaultOpt)
 	}
-	fs := durable.NewFileSystem()
+	fs := durable.NewSnapshotFS()
 	logger.Infof("durable snapshot manager: creating durable snapshot manager with snapshotDir=%s", snapshotDir)
 	return New(Config{
 		SnapshotVersion: defaultOpt.snapshotVersion,

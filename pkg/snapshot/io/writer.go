@@ -27,7 +27,7 @@ type snapshotFileMetadata struct {
 }
 
 type Writer struct {
-	fs            api.FileSystem
+	fs            api.SnapshotFileSystem
 	snapshotFiles map[string]snapshotFileMetadata
 	dir           string
 	metadataEn    MetadataEncoder
@@ -36,7 +36,7 @@ type Writer struct {
 	snapshotIndex uint64
 }
 
-func NewWriter(fs api.FileSystem, dir string, metadataEn MetadataEncoder, installer Installer, snapshotIndex uint64) *Writer {
+func NewWriter(fs api.SnapshotFileSystem, dir string, metadataEn MetadataEncoder, installer Installer, snapshotIndex uint64) *Writer {
 	return &Writer{
 		fs:            fs,
 		snapshotFiles: make(map[string]snapshotFileMetadata),

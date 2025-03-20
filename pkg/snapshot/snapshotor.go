@@ -22,7 +22,7 @@ type Config struct {
 
 type Snapshotor struct {
 	config            Config
-	fs                api.FileSystem
+	fs                api.SnapshotFileSystem
 	installedSnapshot map[uint64]struct{}
 	metadataCodec     *codec.Metadata
 	fileValidator     *io.FileValidator
@@ -31,7 +31,7 @@ type Snapshotor struct {
 }
 
 // TODO: add snapshot and wal consistency testing
-func New(config Config, fs api.FileSystem, logger ibabuza.Logger) *Snapshotor {
+func New(config Config, fs api.SnapshotFileSystem, logger ibabuza.Logger) *Snapshotor {
 	mc := &codec.Metadata{}
 	return &Snapshotor{
 		config:            config,
@@ -243,25 +243,13 @@ func (s *Snapshotor) commitSnapshot(folderType babuzapb.SnapshotFolderType, snap
 	if ok {
 		return errors.New(fmt.Sprintf("snapshot: the installed snapshot already exists. (snapshot index=%d)", snapshotIndex))
 	}
-	installDir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
-	if err != nil {
+	if err := s.fs.InstallSnapshotFromTempFolder(s.config.SnapshotDir, folderType, snapshotIndex); err != nil {
 		return err
 	}
-	if s.fs.ExistDir(installDir) {
-		return errors.New(fmt.Sprintf("snapshot: the installation directory already exists. path(%s) snapshot idnex(%d)",
-			installDir, snapshotIndex))
-	}
-	sourceDir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, folderType, snapshotIndex)
-	if err != nil {
-		return err
-	}
-	if err := s.fs.RenameDir(sourceDir, installDir); err != nil {
-		return err
-	}
-	s.installedSnapshot[snapshotIndex] = struct{}{}
 	if err := s.fs.SyncDir(s.config.SnapshotDir); err != nil {
 		return err
 	}
+	s.installedSnapshot[snapshotIndex] = struct{}{}
 	return nil
 }
 

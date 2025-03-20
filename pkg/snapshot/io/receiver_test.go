@@ -16,9 +16,9 @@ import (
 
 func TestReceiver_SaveChunk(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		//volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		t.Run("success", func(t *testing.T) {
 			testCases := []struct {
@@ -145,9 +145,9 @@ func TestReceiver_SaveChunk(t *testing.T) {
 
 func TestReceiver_Commit(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		fd := []snapFileDesc{
 			{

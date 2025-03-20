@@ -25,9 +25,9 @@ func writeData(t *testing.T, w *Writer, tag string, compression babuzapb.Snapsho
 
 func TestWriter_Create(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -46,9 +46,9 @@ func TestWriter_Create(t *testing.T) {
 
 func TestWriter_Create_Fail(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -63,9 +63,9 @@ func TestWriter_Create_Fail(t *testing.T) {
 
 func TestWriter_Write(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -87,9 +87,9 @@ func TestWriter_Write(t *testing.T) {
 
 func TestWriter_AddMetadata(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -110,9 +110,9 @@ func TestWriter_AddMetadata(t *testing.T) {
 
 func TestWriter_AddMetadata_Fail(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -130,9 +130,9 @@ func TestWriter_AddMetadata_Fail(t *testing.T) {
 
 func TestWriter_CreateNoneStateMachineFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -166,9 +166,9 @@ func TestWriter_CreateNoneStateMachineFile(t *testing.T) {
 
 func TestWriter_Commit(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		snapshotTerm := uint64(100)
 		snapshotIndex := uint64(101)

@@ -270,7 +270,7 @@ func restartNode(cfg *BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.C
 	if cfg.EnableWalNoSync {
 		storage.SetWalNoFSync()
 	}
-	return raftNode.Restart(cfg.convertToRaftConfig(logger, cache))
+	return raftNode.Restart(cfg.convertToRaftConfig(logger, entryStorage))
 }
 
 func matchRemoteCluster(remoteCtx context.Context, config *BabuzaConfig, remoteConfiguration *VotingPeersConfiguration,

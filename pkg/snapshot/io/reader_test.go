@@ -14,9 +14,9 @@ import (
 
 func TestReader_Create(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -57,9 +57,9 @@ func TestReader_Create(t *testing.T) {
 
 func TestReader_Open(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -121,9 +121,9 @@ func TestReader_Open(t *testing.T) {
 
 func TestReader_ForEachFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -185,9 +185,9 @@ func TestReader_ForEachFile(t *testing.T) {
 
 func TestReader_ForEachFile_Fail(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)

@@ -98,7 +98,7 @@ func genSnapFiles(t *testing.T, snap *Snapshotor, snapshotTerm, snapshotIndex ui
 func TestSnapshotor_CreateFileWriterAndReader(t *testing.T) {
 	p := t.TempDir()
 
-	for _, fs := range []api.FileSystem{volatile.NewFileSystem(), durable.NewFileSystem()} {
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
 		fds := []snapFileDesc{
 			{
 				fileType:        babuzapb.SnapshotFileType_StateMachine,
@@ -136,7 +136,7 @@ func TestSnapshotor_CreateFileWriterAndReader(t *testing.T) {
 
 func TestSnapshotor_ValidateFileReceiverAndInstall(t *testing.T) {
 	p := t.TempDir()
-	for _, fs := range []api.FileSystem{volatile.NewFileSystem(), durable.NewFileSystem()} {
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
 		snapVer := uint64(1)
 		snapMaxFiles := uint(3)
 
@@ -179,7 +179,7 @@ func TestSnapshotor_ValidateFileReceiverAndInstall(t *testing.T) {
 
 func TestSnapshotor_ValidateFileReceiverAndInstall_Fail(t *testing.T) {
 	p := t.TempDir()
-	for _, fs := range []api.FileSystem{volatile.NewFileSystem(), durable.NewFileSystem()} {
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
 
 		snapVer := uint64(1)
 		snapMaxFiles := uint(3)
@@ -288,7 +288,7 @@ func TestSnapshotor_LoadLastValidSnapshot(t *testing.T) {
 	} {
 		func() {
 			p := t.TempDir()
-			for _, fs := range []api.FileSystem{volatile.NewFileSystem(), durable.NewFileSystem()} {
+			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
 
 				snapMaxFiles := uint(3)
 				snapVer := uint64(1)
@@ -338,7 +338,7 @@ func TestSnapshotor_Purge(t *testing.T) {
 	} {
 		func() {
 			p := t.TempDir()
-			for _, fs := range []api.FileSystem{volatile.NewFileSystem(), durable.NewFileSystem()} {
+			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
 				s := New(Config{
 					SnapshotVersion: snapVer,
 					MaxSnapFiles:    snapMaxFiles,
@@ -378,7 +378,7 @@ func TestSnapshotor_CommitSnapshot(t *testing.T) {
 	} {
 		func(dt babuzapb.SnapshotFolderType) {
 			p := t.TempDir()
-			for _, fs := range []api.FileSystem{volatile.NewFileSystem(), durable.NewFileSystem()} {
+			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
 				dir, err := fs.PathHelper().GenerateSnapshotFolderPath(p, dt, 1)
 				assert.Nil(t, err)
 				assert.Nil(t, fs.CreateDirAndTouch(dir))
@@ -421,7 +421,7 @@ func TestSnapshotor_scanInstalledSnapshot(t *testing.T) {
 			dataSize:        1024,
 		},
 	}
-	for _, fs := range []api.FileSystem{volatile.NewFileSystem(), durable.NewFileSystem()} {
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
 		p := t.TempDir()
 		s := New(Config{
 			SnapshotVersion: 1,

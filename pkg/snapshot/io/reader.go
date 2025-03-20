@@ -13,14 +13,14 @@ import (
 )
 
 type Reader struct {
-	fs              api.FileSystem
+	fs              api.SnapshotFileSystem
 	dir             string
 	metadata        babuzapb.SnapshotMetadata
 	metadataEncoder MetadataEncoder
 	reader          map[string]io.ReadCloser
 }
 
-func NewReader(fs api.FileSystem, dir string, metadata babuzapb.SnapshotMetadata, metadataEncoder MetadataEncoder) *Reader {
+func NewReader(fs api.SnapshotFileSystem, dir string, metadata babuzapb.SnapshotMetadata, metadataEncoder MetadataEncoder) *Reader {
 	return &Reader{
 		fs:              fs,
 		dir:             dir,

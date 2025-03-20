@@ -99,7 +99,7 @@ func writeRandomData(t *testing.T, w ibabuza.AtomicSnapshotWriter, fd snapFileDe
 	assert.Nil(t, err)
 }
 
-func genSnapshotFiles(t *testing.T, fs api.FileSystem, dir string, version, snapshotTerm, snapshotIndex uint64,
+func genSnapshotFiles(t *testing.T, fs api.SnapshotFileSystem, dir string, version, snapshotTerm, snapshotIndex uint64,
 	files []snapFileDesc) babuzapb.SnapshotMetadata {
 
 	assert.Nil(t, fs.CreateDirAndTouch(dir))

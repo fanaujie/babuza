@@ -14,7 +14,7 @@ var (
 )
 
 type ChunkValidator struct {
-	fs            api.FileSystem
+	fs            api.SnapshotFileSystem
 	filePath      string
 	nextChunkId   int64
 	receivedSize  int
@@ -23,7 +23,7 @@ type ChunkValidator struct {
 	snapshotIndex uint64
 }
 
-func NewChunkValidator(fs api.FileSystem, path string) *ChunkValidator {
+func NewChunkValidator(fs api.SnapshotFileSystem, path string) *ChunkValidator {
 	return &ChunkValidator{
 		fs:          fs,
 		filePath:    path,
@@ -59,11 +59,11 @@ type MetadataDecoder interface {
 }
 
 type FileValidator struct {
-	fs             api.FileSystem
+	fs             api.SnapshotFileSystem
 	metadataDecode MetadataDecoder
 }
 
-func NewFileValidator(fs api.FileSystem, metadataDecode MetadataDecoder) *FileValidator {
+func NewFileValidator(fs api.SnapshotFileSystem, metadataDecode MetadataDecoder) *FileValidator {
 	return &FileValidator{
 		fs:             fs,
 		metadataDecode: metadataDecode,

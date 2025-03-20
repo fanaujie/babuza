@@ -13,7 +13,7 @@ type ValidateFile interface {
 }
 
 type Receiver struct {
-	fs             api.FileSystem
+	fs             api.SnapshotFileSystem
 	dir            string
 	metadata       babuzapb.SnapshotMetadata
 	metadataEn     MetadataEncoder
@@ -22,7 +22,7 @@ type Receiver struct {
 	chunkValidator map[string]*ChunkValidator
 }
 
-func NewReceiver(fs api.FileSystem, dir string, metadata babuzapb.SnapshotMetadata, metadataEn MetadataEncoder, installer Installer,
+func NewReceiver(fs api.SnapshotFileSystem, dir string, metadata babuzapb.SnapshotMetadata, metadataEn MetadataEncoder, installer Installer,
 	fileValidator ValidateFile) *Receiver {
 	return &Receiver{
 		fs:             fs,
@@ -81,11 +81,11 @@ func (r *Receiver) Commit(snapshotIndex uint64) error {
 	}
 	defer w.Close()
 
-	if err := r.metadataEn.Encode(w, r.metadata); err != nil {
+	if err = r.metadataEn.Encode(w, r.metadata); err != nil {
 		return err
 	}
 
-	if err := r.fs.SyncDir(r.dir); err != nil {
+	if err = r.fs.SyncDir(r.dir); err != nil {
 		return err
 	}
 

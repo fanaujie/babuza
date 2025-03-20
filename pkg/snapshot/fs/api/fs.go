@@ -19,16 +19,13 @@ type CrcFileWriter interface {
 	Close() error
 }
 
-type FileSystem interface {
+type BaseFileSystem interface {
 	FileRead(path string) (io.ReadCloser, error)
 	FileWrite(path string) (io.WriteCloser, error)
 	CrcFileRead(path string) (CrcFileReader, error)
 	CrcFileWrite(path string) (CrcFileWriter, error)
 	CreateDirAndTouch(path string) error
 	FileAppendData(path string, data []byte, sync bool) error
-	FindMetadataFile(dirPath string) ([]uint64, error)
-	ScanInstalledSnapshot(dirPath string) ([]uint64, error)
-	ScanTempSnapshotFolder(dirPath string) (tmpWriter []string, tmpReceiver []string, err error)
 	ExistFilePath(path string) bool
 	ExistDir(path string) bool
 	FileSize(path string) (int64, error)
@@ -37,6 +34,13 @@ type FileSystem interface {
 	RenameDir(oldPath string, newPath string) error
 	RemoveDir(path string) error
 	RemoveFilePath(path string) error
+}
+
+type SnapshotManager interface {
+	FindMetadataFile(snapshotDirPath string) ([]uint64, error)
+	ScanInstalledSnapshot(snapshotDirPath string) ([]uint64, error)
+	ScanTempSnapshotFolder(snapshotDirPath string) (tmpWriter []string, tmpReceiver []string, err error)
+	InstallSnapshotFromTempFolder(snapshotDirPath string, folderType babuzapb.SnapshotFolderType, snapshotIndex uint64) error
 	PathHelper() PathHelper
 }
 
@@ -53,4 +57,9 @@ type PathHelper interface {
 	SnapshotFolderPrefix() string
 	TempWriterFolderPrefix() string
 	TempReceiverFolderPrefix() string
+}
+
+type SnapshotFileSystem interface {
+	BaseFileSystem
+	SnapshotManager
 }

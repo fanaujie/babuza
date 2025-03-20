@@ -17,9 +17,9 @@ import (
 
 func TestValidator_ValidateMetadata(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -60,9 +60,9 @@ func TestValidator_ValidateMetadata(t *testing.T) {
 
 func TestValidator_ValidateFsmFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
@@ -104,9 +104,9 @@ func TestValidator_ValidateFsmFile(t *testing.T) {
 
 func TestValidator_ValidateMetadata_Failures(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 
 		t.Run("more than one metadata file", func(t *testing.T) {
@@ -150,9 +150,9 @@ func TestValidator_ValidateMetadata_Failures(t *testing.T) {
 
 func TestValidator_ChunkValidation(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
