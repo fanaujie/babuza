@@ -54,10 +54,8 @@ func TestReceiver_SaveChunk(t *testing.T) {
 					msgCount  int
 					chunkSize int
 				}) {
-					receiverDir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
+					targetSrc, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, snapIndex)
 					assert.Nil(t, err)
-					targetSrc := filepath.Join(tmpDir, receiverDir)
-					assert.Nil(t, fs.CreateDirAndTouch(targetSrc))
 
 					m := babuzapb.SnapshotMetadata{
 						Version: 1,
@@ -112,10 +110,8 @@ func TestReceiver_SaveChunk(t *testing.T) {
 			// Test ErrReceiverMismatchedSnapshotIndex
 			snapIndex := uint64(10)
 			version := uint64(1)
-			receiverDir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
+			targetSrc, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, snapIndex)
 			assert.Nil(t, err)
-			targetSrc := filepath.Join(tmpDir, receiverDir)
-			assert.Nil(t, fs.CreateDirAndTouch(targetSrc))
 
 			metaCodec := &codec.Metadata{}
 			r := NewReceiver(fs, targetSrc, babuzapb.SnapshotMetadata{
@@ -178,9 +174,8 @@ func TestReceiver_Commit(t *testing.T) {
 		version := uint64(1)
 		snapIndex := uint64(1)
 		snapTerm := uint64(1)
-		receiverDir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
+		targetSrc, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, snapIndex)
 		assert.Nil(t, err)
-		targetSrc := filepath.Join(tmpDir, receiverDir)
 		m := genSnapshotFiles(t, fs, targetSrc, version, snapTerm, snapIndex, fd)
 		metaCodec := &codec.Metadata{}
 		r := NewReceiver(fs, targetSrc, m, metaCodec, &mockInstaller{version}, NewFileValidator(fs, metaCodec))

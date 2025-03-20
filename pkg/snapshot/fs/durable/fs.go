@@ -52,8 +52,15 @@ func (fs *SnapshotFS) CrcFileWrite(path string) (api.CrcFileWriter, error) {
 	return crcfile.CreateWriter(w), nil
 }
 
-func (fs *SnapshotFS) CreateDirAndTouch(path string) error {
-	return fileutil.CreateDirAndTouch(path)
+func (fs *SnapshotFS) CreateDirAndTouch(snapshotDir string, folderType babuzapb.SnapshotFolderType, snapIndex uint64) (string, error) {
+	dir, err := fs.ph.GenerateSnapshotFolderPath(snapshotDir, folderType, snapIndex)
+	if err != nil {
+		return "", err
+	}
+	if err = fileutil.CreateDirAndTouch(dir); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 func (fs *SnapshotFS) FileAppendData(path string, data []byte, sync bool) error {

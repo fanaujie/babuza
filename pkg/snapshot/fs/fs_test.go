@@ -16,11 +16,9 @@ func TestCreateDirAndTouch(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		p, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		p, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(p))
 		assert.True(t, fs.ExistDir(p))
-		assert.Error(t, fs.CreateDirAndTouch(p))
 	}
 }
 
@@ -31,9 +29,8 @@ func TestOpenForWrite(t *testing.T) {
 		durable.NewSnapshotFS(),
 	} {
 		// First case - create directory and file
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, 1, "")
 		assert.Nil(t, err)
@@ -59,9 +56,8 @@ func TestOpenForRead(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, 1, "")
 		assert.Nil(t, err)
@@ -98,9 +94,8 @@ func TestOpenForCrcWrite(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, 1, "")
 		assert.Nil(t, err)
@@ -125,9 +120,8 @@ func TestOpenForCrcRead(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, 1, "")
 		assert.Nil(t, err)
@@ -164,9 +158,8 @@ func TestAppendData(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempReceive, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_StateMachine, 1, "one")
 		assert.Nil(t, err)
@@ -193,9 +186,8 @@ func TestFindMetadataFile(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 100)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 100)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, 100, "")
 		assert.Nil(t, err)
@@ -255,18 +247,15 @@ func TestScanInstalledSnapshot(t *testing.T) {
 	} {
 		installed := []uint64{1, 2, 3, 4, 5}
 		for _, snapIndex := range installed {
-			dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
+			_, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
 			assert.Nil(t, err)
-			assert.Nil(t, fs.CreateDirAndTouch(dir))
 		}
 
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		_, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
-		dir, err = fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempReceive, 2)
+		_, err = fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, 2)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		indexes, err := fs.ScanInstalledSnapshot(tmpDir)
 		assert.Nil(t, err)
@@ -284,22 +273,18 @@ func TestScanTempSnapshotFolder(t *testing.T) {
 	} {
 		installed := []uint64{1, 2, 3, 4, 5}
 		for _, snapIndex := range installed {
-			dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
+			_, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
 			assert.Nil(t, err)
-			assert.Nil(t, fs.CreateDirAndTouch(dir))
 		}
 
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		_, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
-		dir, err = fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempReceive, 2)
+		_, err = fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, 2)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
-		dir, err = fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempReceive, 3)
+		_, err = fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, 3)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		tempWriter, tempReceiver, err := fs.ScanTempSnapshotFolder(tmpDir)
 		assert.Nil(t, err)
@@ -314,10 +299,8 @@ func TestExistFilePath(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
-
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_StateMachine, 1, "tag")
 		assert.Nil(t, err)
 		w, err := fs.FileWrite(fp)
@@ -343,9 +326,8 @@ func TestExistDir(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 		assert.True(t, fs.ExistDir(dir))
 
 		dir, err = fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 2)
@@ -364,9 +346,8 @@ func TestFileSize(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, 1, "")
 		assert.Nil(t, err)
@@ -390,9 +371,8 @@ func TestRenameDir(t *testing.T) {
 		durable.NewSnapshotFS(),
 	} {
 		// First case - simple directory rename
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		installDir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_InstallSnapshot, 1)
 		assert.Nil(t, err)
@@ -401,9 +381,8 @@ func TestRenameDir(t *testing.T) {
 		assert.False(t, fs.ExistDir(dir))
 
 		// Second case - directory with file rename
-		dir, err = fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 2)
+		dir, err = fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 2)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_StateMachine, 2, "one")
 		assert.Nil(t, err)
@@ -433,14 +412,14 @@ func TestRemoveDir(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		assert.Nil(t, fs.RemoveDir(dir))
 		assert.False(t, fs.ExistDir(dir))
 
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
+		dir, err = fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		assert.Nil(t, err)
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Cluster, 1, "")
 		assert.Nil(t, err)
 		w, err := fs.FileWrite(fp)
@@ -459,9 +438,8 @@ func TestRemoveFilePath(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		dir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err := fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Cluster, 1, "")
 		assert.Nil(t, err)
@@ -472,9 +450,8 @@ func TestRemoveFilePath(t *testing.T) {
 		assert.Nil(t, fs.RemoveFilePath(fp))
 		assert.False(t, fs.ExistFilePath(fp))
 
-		dir, err = fs.PathHelper().GenerateSnapshotFolderPath(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 2)
+		dir, err = fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 2)
 		assert.Nil(t, err)
-		assert.Nil(t, fs.CreateDirAndTouch(dir))
 
 		fp, err = fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_StateMachine, 2, "not found")
 		assert.Nil(t, err)

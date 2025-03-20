@@ -75,14 +75,11 @@ func (s *Snapshotor) CreateInstalledSnapshotReader(snapshotIndex uint64, validat
 }
 
 func (s *Snapshotor) CreateAtomicSnapshotWriter(snapshotTerm, snapshotIndex uint64) (ibabuza.AtomicSnapshotWriter, error) {
-	dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
+	createdDir, err := s.fs.CreateDirAndTouch(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
 	if err != nil {
 		return nil, err
 	}
-	if err = s.fs.CreateDirAndTouch(dir); err != nil {
-		return nil, err
-	}
-	return io.NewWriter(s.fs, dir, s.metadataCodec, s, snapshotIndex), nil
+	return io.NewWriter(s.fs, createdDir, s.metadataCodec, s, snapshotIndex), nil
 }
 
 func (s *Snapshotor) CreateAtomicSnapshotReceiver(metadata babuzapb.SnapshotMetadata) (ibabuza.AtomicSnapshotReceiver, error) {
@@ -92,14 +89,11 @@ func (s *Snapshotor) CreateAtomicSnapshotReceiver(metadata babuzapb.SnapshotMeta
 	if ok {
 		return nil, fmt.Errorf("snapshot: already register snapshot index=%d", metadata.Snapshot.Metadata.Index)
 	}
-	dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempReceive, metadata.Snapshot.Metadata.Index)
+	createdDir, err := s.fs.CreateDirAndTouch(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempReceive, metadata.Snapshot.Metadata.Index)
 	if err != nil {
 		return nil, err
 	}
-	if err = s.fs.CreateDirAndTouch(dir); err != nil {
-		return nil, err
-	}
-	return io.NewReceiver(s.fs, dir, metadata, s.metadataCodec, s, s.fileValidator), nil
+	return io.NewReceiver(s.fs, createdDir, metadata, s.metadataCodec, s, s.fileValidator), nil
 }
 
 func (s *Snapshotor) LoadLastValidSnapshot(walSnaps []walpb.Snapshot) (*raftpb.Snapshot, error) {

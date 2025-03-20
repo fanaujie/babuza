@@ -345,9 +345,8 @@ func TestSnapshotor_Purge(t *testing.T) {
 					SnapshotDir:     p,
 				}, fs, &logger.Mock{})
 				for _, snapIndex := range tc.snapIndex {
-					wDir, err := fs.PathHelper().GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_TempWrite, snapIndex)
+					wDir, err := fs.CreateDirAndTouch(p, babuzapb.SnapshotFolderType_TempWrite, snapIndex)
 					assert.Nil(t, err)
-					assert.Nil(t, fs.CreateDirAndTouch(wDir))
 					w := sanpshotio.NewWriter(fs, wDir, &codec.Metadata{}, s, snapIndex)
 					tmpSnapshotMetadata := snapshotMetadata
 					tmpSnapshotMetadata.Snapshot.Metadata.Index = snapIndex
@@ -379,9 +378,8 @@ func TestSnapshotor_CommitSnapshot(t *testing.T) {
 		func(dt babuzapb.SnapshotFolderType) {
 			p := t.TempDir()
 			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
-				dir, err := fs.PathHelper().GenerateSnapshotFolderPath(p, dt, 1)
+				_, err := fs.CreateDirAndTouch(p, dt, 1)
 				assert.Nil(t, err)
-				assert.Nil(t, fs.CreateDirAndTouch(dir))
 				s := New(Config{
 					SnapshotVersion: 1,
 					SnapshotDir:     p,

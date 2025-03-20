@@ -29,10 +29,8 @@ func TestWriter_Create(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
-		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 		w := NewWriter(fs, targetDir, &codec.Metadata{}, &mockInstaller{vesion: 1}, 1)
 		cw, err := w.CreateStateMachineFile("one", babuzapb.SnapshotFileCompression_None)
 		assert.Nil(t, err)
@@ -50,10 +48,8 @@ func TestWriter_Create_Fail(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
-		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 		w := NewWriter(fs, targetDir, &codec.Metadata{}, &mockInstaller{vesion: 1}, 1)
 		writeData(t, w, "one", babuzapb.SnapshotFileCompression_None, 1024)
 		_, err = w.CreateStateMachineFile("one", babuzapb.SnapshotFileCompression_None)
@@ -67,10 +63,8 @@ func TestWriter_Write(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
-		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 		w := NewWriter(fs, targetDir, &codec.Metadata{}, &mockInstaller{vesion: 1}, 1)
 		writeData(t, w, "one", babuzapb.SnapshotFileCompression_None, 1024)
 		writeData(t, w, "two", babuzapb.SnapshotFileCompression_Snappy, 1024)
@@ -91,10 +85,8 @@ func TestWriter_AddMetadata(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
-		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 		w := NewWriter(fs, targetDir, &codec.Metadata{}, &mockInstaller{vesion: 1}, 1)
 		wc, err := w.CreateStateMachineFile("one", babuzapb.SnapshotFileCompression_None)
 		assert.Nil(t, err)
@@ -114,10 +106,8 @@ func TestWriter_AddMetadata_Fail(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
-		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 		w := NewWriter(fs, targetDir, &codec.Metadata{}, &mockInstaller{vesion: 1}, 1)
 		wc, err := w.CreateStateMachineFile("one", babuzapb.SnapshotFileCompression_None)
 		assert.Nil(t, err)
@@ -134,10 +124,8 @@ func TestWriter_CreateNoneStateMachineFile(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
-		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 		w := NewWriter(fs, targetDir, &codec.Metadata{}, &mockInstaller{vesion: 1}, 1)
 		for _, tc := range []babuzapb.SnapshotFileType{
 			babuzapb.SnapshotFileType_Cluster,
@@ -200,9 +188,8 @@ func TestWriter_Commit(t *testing.T) {
 				dataSize:        1024,
 			},
 		}
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
 		genSnapshotFiles(t, fs, targetDir, snapshotVersion, snapshotTerm, snapshotIndex, fdFiles)
 
 		fileName, err := fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndex, "")

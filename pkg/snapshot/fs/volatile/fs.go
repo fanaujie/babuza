@@ -54,15 +54,19 @@ func (fs *SnapshotFS) isDirExist(path string) bool {
 	return exists
 }
 
-func (fs *SnapshotFS) CreateDirAndTouch(path string) error {
+func (fs *SnapshotFS) CreateDirAndTouch(snapshotDir string, folderType babuzapb.SnapshotFolderType, snapIndex uint64) (string, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	_, ok := fs.dirs[path]
-	if ok {
-		return os.ErrExist
+	dir, err := fs.ph.GenerateSnapshotFolderPath(snapshotDir, folderType, snapIndex)
+	if err != nil {
+		return "", err
 	}
-	fs.dirs[path] = struct{}{}
-	return nil
+	_, ok := fs.dirs[dir]
+	if ok {
+		return "", os.ErrExist
+	}
+	fs.dirs[dir] = struct{}{}
+	return dir, nil
 }
 
 func (fs *SnapshotFS) FileRead(path string) (io.ReadCloser, error) {

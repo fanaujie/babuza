@@ -18,9 +18,8 @@ func TestReader_Create(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
 		_ = genSnapshotFiles(t, fs, targetDir, 1, 1, 1, []snapFileDesc{
 			{
 				fileType:        babuzapb.SnapshotFileType_StateMachine,
@@ -50,7 +49,7 @@ func TestReader_Create(t *testing.T) {
 
 		m, err := NewFileValidator(fs, &codec.Metadata{}).ValidateMetadataFile(targetDir)
 		assert.Nil(t, err)
-		c := NewReader(fs, dir, m, &codec.Metadata{})
+		c := NewReader(fs, targetDir, m, &codec.Metadata{})
 		assert.NotNil(t, c)
 	}
 }
@@ -61,9 +60,8 @@ func TestReader_Open(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
 		fd := []snapFileDesc{
 			{
 				fileType:        babuzapb.SnapshotFileType_StateMachine,
@@ -125,9 +123,8 @@ func TestReader_ForEachFile(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
 		fdFiles := []snapFileDesc{
 			{
 				fileType:        babuzapb.SnapshotFileType_StateMachine,
@@ -189,9 +186,8 @@ func TestReader_ForEachFile_Fail(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
 		stateMachineFiles := []snapFileDesc{
 			{
 				fileType:        babuzapb.SnapshotFileType_StateMachine,

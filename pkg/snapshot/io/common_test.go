@@ -101,8 +101,7 @@ func writeRandomData(t *testing.T, w ibabuza.AtomicSnapshotWriter, fd snapFileDe
 
 func genSnapshotFiles(t *testing.T, fs api.SnapshotFileSystem, dir string, version, snapshotTerm, snapshotIndex uint64,
 	files []snapFileDesc) babuzapb.SnapshotMetadata {
-
-	assert.Nil(t, fs.CreateDirAndTouch(dir))
+	
 	w := NewWriter(fs, dir, &codec.Metadata{}, &mockInstaller{vesion: version}, snapshotIndex)
 
 	for _, fd := range files {

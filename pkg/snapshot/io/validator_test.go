@@ -21,9 +21,8 @@ func TestValidator_ValidateMetadata(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
 		// Generate test snapshot files
 		genSnapshotFiles(t, fs, targetDir, 1, 1, 1, []snapFileDesc{
 			{
@@ -64,9 +63,8 @@ func TestValidator_ValidateFsmFile(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
 		fd := []snapFileDesc{
 			{
 				fileType:        babuzapb.SnapshotFileType_StateMachine,
@@ -110,10 +108,8 @@ func TestValidator_ValidateMetadata_Failures(t *testing.T) {
 	} {
 
 		t.Run("more than one metadata file", func(t *testing.T) {
-			dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+			targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 			assert.Nil(t, err)
-			targetDir := filepath.Join(tmpDir, dir)
-			assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 			f := NewFileValidator(fs, &codec.Metadata{})
 
 			metadataFileName, err := fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, 1, "")
@@ -136,10 +132,8 @@ func TestValidator_ValidateMetadata_Failures(t *testing.T) {
 		})
 
 		t.Run("metadata file not found", func(t *testing.T) {
-			dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 10)
+			targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 10)
 			assert.Nil(t, err)
-			targetDir := filepath.Join(tmpDir, dir)
-			assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 			f := NewFileValidator(fs, &codec.Metadata{})
 			_, err = f.ValidateMetadataFile(targetDir)
 			assert.Error(t, err)
@@ -154,10 +148,8 @@ func TestValidator_ChunkValidation(t *testing.T) {
 		volatile.NewFileSystem(),
 		durable.NewSnapshotFS(),
 	} {
-		dir, err := fs.PathHelper().SnapshotFolderName(babuzapb.SnapshotFolderType_TempWrite, 1)
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
 		assert.Nil(t, err)
-		targetDir := filepath.Join(tmpDir, dir)
-		assert.Nil(t, fs.CreateDirAndTouch(targetDir))
 
 		t.Run("successful chunk validation", func(t *testing.T) {
 			stateMachineFileName, err := fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, 1, "one")
