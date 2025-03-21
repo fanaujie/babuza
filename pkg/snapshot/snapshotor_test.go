@@ -1,17 +1,21 @@
 package snapshot
 
 import (
+	"context"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/codec"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcfile"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/durable"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/volatile"
 	sanpshotio "github.com/fanaujie/babuza/pkg/snapshot/io"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go/modules/minio"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"hash/crc32"
@@ -95,10 +99,54 @@ func genSnapFiles(t *testing.T, snap *Snapshotor, snapshotTerm, snapshotIndex ui
 	assert.Nil(t, err)
 }
 
+func setupMinioContainer(t *testing.T) (*minio.MinioContainer, string, string, string) {
+	// Start MinIO container
+	minioContainer, err := minio.Run(context.Background(), "minio/minio:latest",
+		minio.WithUsername("minioroot"), minio.WithPassword("miniopassword"))
+	require.NoError(t, err)
+
+	// Get connection details
+	endpoint, err := minioContainer.ConnectionString(context.Background())
+	require.NoError(t, err)
+
+	return minioContainer, endpoint, minioContainer.Username, minioContainer.Password
+}
+
+func setupMinioFS(t *testing.T, prefix string) (api.SnapshotFileSystem, func()) {
+	// Setup MinIO container
+	minioContainer, endpoint, accessKey, secretKey := setupMinioContainer(t)
+
+	// Create cleanup function
+	cleanup := func() {
+		if err := minioContainer.Terminate(context.Background()); err != nil {
+			t.Fatalf("failed to terminate container: %s", err)
+		}
+	}
+
+	// Create MinIO FS
+	minioConfig := cloudstorage.Config{
+		Endpoint:        endpoint,
+		AccessKeyID:     accessKey,
+		SecretAccessKey: secretKey,
+		UseSSL:          false,
+		Bucket:          "test-bucket",
+		Prefix:          prefix,
+	}
+
+	minioFS, err := cloudstorage.NewMinioSnapshotFS(minioConfig)
+	require.NoError(t, err)
+
+	return minioFS, cleanup
+}
+
 func TestSnapshotor_CreateFileWriterAndReader(t *testing.T) {
 	p := t.TempDir()
 
-	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
+	// Setup MinIO FS
+	minioFS, cleanup := setupMinioFS(t, "test-writerreader")
+	defer cleanup()
+
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
 		fds := []snapFileDesc{
 			{
 				fileType:        babuzapb.SnapshotFileType_StateMachine,
@@ -136,7 +184,12 @@ func TestSnapshotor_CreateFileWriterAndReader(t *testing.T) {
 
 func TestSnapshotor_ValidateFileReceiverAndInstall(t *testing.T) {
 	p := t.TempDir()
-	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
+
+	// Setup MinIO FS
+	minioFS, cleanup := setupMinioFS(t, "test-receiver")
+	defer cleanup()
+
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
 		snapVer := uint64(1)
 		snapMaxFiles := uint(3)
 
@@ -179,7 +232,12 @@ func TestSnapshotor_ValidateFileReceiverAndInstall(t *testing.T) {
 
 func TestSnapshotor_ValidateFileReceiverAndInstall_Fail(t *testing.T) {
 	p := t.TempDir()
-	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
+
+	// Setup MinIO FS
+	minioFS, cleanup := setupMinioFS(t, "test-receiver-fail")
+	defer cleanup()
+
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
 
 		snapVer := uint64(1)
 		snapMaxFiles := uint(3)
@@ -288,7 +346,13 @@ func TestSnapshotor_LoadLastValidSnapshot(t *testing.T) {
 	} {
 		func() {
 			p := t.TempDir()
-			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
+
+			// Create a unique prefix for this specific test case
+			prefix := fmt.Sprintf("load-snapshot-%d", tc.querySnaps[0].Index)
+			minioFS, cleanup := setupMinioFS(t, prefix)
+			defer cleanup()
+
+			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
 
 				snapMaxFiles := uint(3)
 				snapVer := uint64(1)
@@ -338,7 +402,13 @@ func TestSnapshotor_Purge(t *testing.T) {
 	} {
 		func() {
 			p := t.TempDir()
-			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
+
+			// Create a unique MinIO FS for this test case
+			prefix := fmt.Sprintf("test-purge-%d", tc.purgeIndex)
+			minioFS, cleanup := setupMinioFS(t, prefix)
+			defer cleanup()
+
+			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
 				s := New(Config{
 					SnapshotVersion: snapVer,
 					MaxSnapFiles:    snapMaxFiles,
@@ -377,7 +447,13 @@ func TestSnapshotor_CommitSnapshot(t *testing.T) {
 	} {
 		func(dt babuzapb.SnapshotFolderType) {
 			p := t.TempDir()
-			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
+
+			// Create a unique MinIO FS for this folder type
+			prefix := fmt.Sprintf("test-commit-%d", dt)
+			minioFS, cleanup := setupMinioFS(t, prefix)
+			defer cleanup()
+
+			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
 				_, err := fs.CreateDirAndTouch(p, dt, 1)
 				assert.Nil(t, err)
 				s := New(Config{
@@ -399,6 +475,9 @@ func TestSnapshotor_CommitSnapshot(t *testing.T) {
 }
 
 func TestSnapshotor_scanInstalledSnapshot(t *testing.T) {
+	// Setup MinIO FS
+	minioFS, cleanup := setupMinioFS(t, "test-scan-installed")
+	defer cleanup()
 
 	fds := []snapFileDesc{
 		{
@@ -419,7 +498,7 @@ func TestSnapshotor_scanInstalledSnapshot(t *testing.T) {
 			dataSize:        1024,
 		},
 	}
-	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS()} {
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
 		p := t.TempDir()
 		s := New(Config{
 			SnapshotVersion: 1,

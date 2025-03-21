@@ -52,7 +52,7 @@ func TestValidator_ValidateMetadata(t *testing.T) {
 		})
 
 		f := NewFileValidator(fs, &codec.Metadata{})
-		_, err = f.ValidateMetadataFile(targetDir)
+		_, err = f.GetMetadataFile(targetDir)
 		assert.Nil(t, err)
 	}
 }
@@ -94,7 +94,7 @@ func TestValidator_ValidateFsmFile(t *testing.T) {
 		genSnapshotFiles(t, fs, targetDir, 1, 1, 1, fd)
 
 		f := NewFileValidator(fs, &codec.Metadata{})
-		m, err := f.ValidateMetadataFile(targetDir)
+		m, err := f.GetMetadataFile(targetDir)
 		assert.Nil(t, err)
 		assert.Nil(t, f.ValidateSnapshotFiles(targetDir, m))
 	}
@@ -126,7 +126,7 @@ func TestValidator_ValidateMetadata_Failures(t *testing.T) {
 			defer fs.RemoveFilePath(appendMetadataFilePath2)
 			assert.Nil(t, mf2.Close())
 
-			_, err = f.ValidateMetadataFile(targetDir)
+			_, err = f.GetMetadataFile(targetDir)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "found more than one metadata file")
 		})
@@ -135,7 +135,7 @@ func TestValidator_ValidateMetadata_Failures(t *testing.T) {
 			targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 10)
 			assert.Nil(t, err)
 			f := NewFileValidator(fs, &codec.Metadata{})
-			_, err = f.ValidateMetadataFile(targetDir)
+			_, err = f.GetMetadataFile(targetDir)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "not found metadata file")
 		})

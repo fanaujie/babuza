@@ -8,7 +8,7 @@ import (
 )
 
 type ValidateFile interface {
-	ValidateMetadataFile(dir string) (babuzapb.SnapshotMetadata, error)
+	GetMetadataFile(dir string) (babuzapb.SnapshotMetadata, error)
 	ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMetadata) error
 }
 
@@ -89,7 +89,7 @@ func (r *Receiver) Commit(snapshotIndex uint64) error {
 		return err
 	}
 
-	m, err := r.fileValidator.ValidateMetadataFile(r.dir)
+	m, err := r.fileValidator.GetMetadataFile(r.dir)
 	if err != nil {
 		return err
 	}

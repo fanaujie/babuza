@@ -115,7 +115,7 @@ func (fs *SnapshotFS) CrcFileWrite(path string) (api.CrcFileWriter, error) {
 	return crcfile.CreateWriter(writer), nil
 }
 
-func (fs *SnapshotFS) FileAppendData(path string, data []byte, sync bool) error {
+func (fs *SnapshotFS) FileAppendData(path string, chunkId int64, data []byte) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -132,6 +132,11 @@ func (fs *SnapshotFS) FileAppendData(path string, data []byte, sync bool) error 
 
 	_, err := file.Write(data)
 	return err
+}
+
+func (fs *SnapshotFS) FileAppendFinalize(path string, totalChunks int64) error {
+	// not implemented
+	return nil
 }
 
 func (fs *SnapshotFS) FindMetadataFile(dirPath string) ([]uint64, error) {

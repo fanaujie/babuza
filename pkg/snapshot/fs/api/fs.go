@@ -25,7 +25,8 @@ type BaseFileSystem interface {
 	CrcFileRead(path string) (CrcFileReader, error)
 	CrcFileWrite(path string) (CrcFileWriter, error)
 	CreateDirAndTouch(snapshotDir string, folderType babuzapb.SnapshotFolderType, snapIndex uint64) (string, error)
-	FileAppendData(path string, data []byte, sync bool) error
+	FileAppendData(path string, chunkId int64, data []byte) error
+	FileAppendFinalize(path string, totalChunks int64) error
 	ExistFilePath(path string) bool
 	ExistDir(path string) bool
 	FileSize(path string) (int64, error)

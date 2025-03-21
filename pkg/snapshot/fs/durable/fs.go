@@ -63,7 +63,7 @@ func (fs *SnapshotFS) CreateDirAndTouch(snapshotDir string, folderType babuzapb.
 	return dir, nil
 }
 
-func (fs *SnapshotFS) FileAppendData(path string, data []byte, sync bool) error {
+func (fs *SnapshotFS) FileAppendData(path string, chunkId int64, data []byte) error {
 	w, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, fileutil.FileMode)
 	if err != nil {
 		return err
@@ -72,12 +72,16 @@ func (fs *SnapshotFS) FileAppendData(path string, data []byte, sync bool) error 
 	if _, err = w.Write(data); err != nil {
 		return err
 	}
-	if sync {
-		if err = fileutil.Sync(w); err != nil {
-			return err
-		}
-	}
 	return nil
+}
+
+func (fs *SnapshotFS) FileAppendFinalize(path string, totalChunks int64) error {
+	w, err := os.OpenFile(path, os.O_WRONLY, fileutil.FileMode)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+	return fileutil.Sync(w)
 }
 
 func (fs *SnapshotFS) FindMetadataFile(dirPath string) ([]uint64, error) {

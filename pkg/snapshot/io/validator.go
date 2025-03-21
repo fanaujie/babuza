@@ -44,12 +44,16 @@ func (v *ChunkValidator) ValidateAndAppend(msg babuzapb.SnapshotChunkMessage) er
 			v.snapshotIndex, v.continueCrc32, msg.ContinueCrc32, msg.FileTag)
 	}
 	v.receivedSize += len(msg.Data)
-	v.nextChunkId++
+	if err := v.fs.FileAppendData(v.filePath, v.nextChunkId, msg.Data); err != nil {
+		return err
+	}
 	if msg.LastChunk {
 		v.finish = true
-	}
-	if err := v.fs.FileAppendData(v.filePath, msg.Data, msg.LastChunk); err != nil {
-		return err
+		if err := v.fs.FileAppendFinalize(v.filePath, v.nextChunkId); err != nil {
+			return err
+		}
+	} else {
+		v.nextChunkId++
 	}
 	return nil
 }
@@ -70,7 +74,7 @@ func NewFileValidator(fs api.SnapshotFileSystem, metadataDecode MetadataDecoder)
 	}
 }
 
-func (f *FileValidator) ValidateMetadataFile(dir string) (babuzapb.SnapshotMetadata, error) {
+func (f *FileValidator) GetMetadataFile(dir string) (babuzapb.SnapshotMetadata, error) {
 	snapshotIndexs, err := f.fs.FindMetadataFile(dir)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
@@ -107,29 +111,25 @@ func (f *FileValidator) ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMet
 			return fmt.Errorf("snapshotor[index=%d]: not found snapshot file (tag=%s)", m.Snapshot.Metadata.Index, snapFile.Tag)
 		}
 
-		if err = func() error {
-			crcR, err := f.fs.CrcFileRead(fp)
-			if err != nil {
-				return err
-			}
-			defer crcR.Close()
-			_, err = io.Copy(io.Discard, crcR)
-			if err != nil {
-				return err
-			}
-			if int64(crcR.FileSize()) != snapFile.FileSize {
-				return fmt.Errorf("snapshotor[index=%d]: mismatch file size(%d != %d) (tag=%s)", m.Snapshot.Metadata.Index, crcR.FileSize(),
-					snapFile.FileSize, snapFile.Tag)
-			}
-			crc := crcR.Crc()
-			if crc != snapFile.FileCrc64 {
-				return fmt.Errorf("snapshotor[index=%d]: mismatch crc(%d != %d) (tag=%s)", m.Snapshot.Metadata.Index, crc, snapFile.FileCrc64,
-					snapFile.Tag)
-			}
-			return nil
-		}(); err != nil {
+		crcR, err := f.fs.CrcFileRead(fp)
+		if err != nil {
 			return err
 		}
+		defer crcR.Close()
+		_, err = io.Copy(io.Discard, crcR)
+		if err != nil {
+			return err
+		}
+		if int64(crcR.FileSize()) != snapFile.FileSize {
+			return fmt.Errorf("snapshotor[index=%d]: mismatch file size(%d != %d) (tag=%s)", m.Snapshot.Metadata.Index, crcR.FileSize(),
+				snapFile.FileSize, snapFile.Tag)
+		}
+		crc := crcR.Crc()
+		if crc != snapFile.FileCrc64 {
+			return fmt.Errorf("snapshotor[index=%d]: mismatch crc(%d != %d) (tag=%s)", m.Snapshot.Metadata.Index, crc, snapFile.FileCrc64,
+				snapFile.Tag)
+		}
+		return nil
 	}
 	return nil
 }

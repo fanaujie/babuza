@@ -203,7 +203,7 @@ func (s *Snapshotor) scanInstalledSnapshot() error {
 		if err != nil {
 			return err
 		}
-		if m, err := s.fileValidator.ValidateMetadataFile(dir); err != nil {
+		if m, err := s.fileValidator.GetMetadataFile(dir); err != nil {
 			//if err = os.Rename(installPath, filepath.Join(snapshotDir, snapshot.GetBrokenFolderName(snapshotIndex))); err != nil {
 			//	return nil, err
 			//}

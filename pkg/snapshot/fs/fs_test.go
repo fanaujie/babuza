@@ -166,8 +166,8 @@ func TestAppendData(t *testing.T) {
 
 		func() {
 			data := []byte{1, 2, 3, 4, 5, 6, 7, 8}
-			assert.Nil(t, fs.FileAppendData(fp, data[:4], false))
-			assert.Nil(t, fs.FileAppendData(fp, data[4:], true))
+			assert.Nil(t, fs.FileAppendData(fp, 1, data[:4]))
+			assert.Nil(t, fs.FileAppendData(fp, 1, data[4:]))
 
 			r, err := fs.FileRead(fp)
 			assert.Nil(t, err)

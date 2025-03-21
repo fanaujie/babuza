@@ -47,7 +47,7 @@ func TestReader_Create(t *testing.T) {
 			},
 		})
 
-		m, err := NewFileValidator(fs, &codec.Metadata{}).ValidateMetadataFile(targetDir)
+		m, err := NewFileValidator(fs, &codec.Metadata{}).GetMetadataFile(targetDir)
 		assert.Nil(t, err)
 		c := NewReader(fs, targetDir, m, &codec.Metadata{})
 		assert.NotNil(t, c)
@@ -89,7 +89,7 @@ func TestReader_Open(t *testing.T) {
 			},
 		}
 		_ = genSnapshotFiles(t, fs, targetDir, 1, 1, 1, fd)
-		m, err := NewFileValidator(fs, &codec.Metadata{}).ValidateMetadataFile(targetDir)
+		m, err := NewFileValidator(fs, &codec.Metadata{}).GetMetadataFile(targetDir)
 		assert.Nil(t, err)
 		c := NewReader(fs, targetDir, m, &codec.Metadata{})
 		assert.NotNil(t, c)
@@ -161,7 +161,7 @@ func TestReader_ForEachFile(t *testing.T) {
 			},
 		}
 		metadata := genSnapshotFiles(t, fs, targetDir, 1, 1, 1, fdFiles)
-		vMetadata, err := NewFileValidator(fs, &codec.Metadata{}).ValidateMetadataFile(targetDir)
+		vMetadata, err := NewFileValidator(fs, &codec.Metadata{}).GetMetadataFile(targetDir)
 		assert.Nil(t, err)
 		assert.Equal(t, metadata, vMetadata)
 		r := NewReader(fs, targetDir, metadata, &codec.Metadata{})
@@ -208,7 +208,7 @@ func TestReader_ForEachFile_Fail(t *testing.T) {
 			},
 		}
 		genSnapshotFiles(t, fs, targetDir, 1, 1, 1, stateMachineFiles)
-		m, err := NewFileValidator(fs, &codec.Metadata{}).ValidateMetadataFile(targetDir)
+		m, err := NewFileValidator(fs, &codec.Metadata{}).GetMetadataFile(targetDir)
 		assert.Nil(t, err)
 		r := NewReader(fs, targetDir, m, &codec.Metadata{})
 		assert.NotNil(t, r)
