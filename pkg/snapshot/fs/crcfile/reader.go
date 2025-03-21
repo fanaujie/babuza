@@ -1,4 +1,4 @@
-package crcFile
+package crcfile
 
 import (
 	"hash"
@@ -23,12 +23,12 @@ func CreateReader(r io.ReadCloser) *Reader {
 }
 
 func (cr *Reader) Read(p []byte) (int, error) {
-    n,err := cr.tee.Read(p)
-    if err != nil {
-        return n,err
-    }
+	n, err := cr.tee.Read(p)
+	if err != nil && err != io.EOF {
+		return n, err
+	}
 	cr.fileSize += n
-	return n,err
+	return n, err
 }
 
 func (cr *Reader) Crc() uint64 {

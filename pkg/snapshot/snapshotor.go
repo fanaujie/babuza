@@ -22,7 +22,7 @@ type Config struct {
 
 type Snapshotor struct {
 	config            Config
-	fs                api.FileSystem
+	fs                api.SnapshotFileSystem
 	installedSnapshot map[uint64]struct{}
 	metadataCodec     *codec.Metadata
 	fileValidator     *io.FileValidator
@@ -31,7 +31,7 @@ type Snapshotor struct {
 }
 
 // TODO: add snapshot and wal consistency testing
-func New(config Config, fs api.FileSystem, logger ibabuza.Logger) *Snapshotor {
+func New(config Config, fs api.SnapshotFileSystem, logger ibabuza.Logger) *Snapshotor {
 	mc := &codec.Metadata{}
 	return &Snapshotor{
 		config:            config,
@@ -62,7 +62,7 @@ func (s *Snapshotor) CreateInstalledSnapshotReader(snapshotIndex uint64, validat
 	if err != nil {
 		return nil, err
 	}
-	dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
+	dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -75,14 +75,11 @@ func (s *Snapshotor) CreateInstalledSnapshotReader(snapshotIndex uint64, validat
 }
 
 func (s *Snapshotor) CreateAtomicSnapshotWriter(snapshotTerm, snapshotIndex uint64) (ibabuza.AtomicSnapshotWriter, error) {
-	dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
+	createdDir, err := s.fs.CreateDirAndTouch(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempWrite, snapshotIndex)
 	if err != nil {
 		return nil, err
 	}
-	if err = s.fs.CreateDirAndTouch(dir); err != nil {
-		return nil, err
-	}
-	return io.NewWriter(s.fs, dir, s.metadataCodec, s, snapshotIndex), nil
+	return io.NewWriter(s.fs, createdDir, s.metadataCodec, s, snapshotIndex), nil
 }
 
 func (s *Snapshotor) CreateAtomicSnapshotReceiver(metadata babuzapb.SnapshotMetadata) (ibabuza.AtomicSnapshotReceiver, error) {
@@ -92,14 +89,11 @@ func (s *Snapshotor) CreateAtomicSnapshotReceiver(metadata babuzapb.SnapshotMeta
 	if ok {
 		return nil, fmt.Errorf("snapshot: already register snapshot index=%d", metadata.Snapshot.Metadata.Index)
 	}
-	dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempReceive, metadata.Snapshot.Metadata.Index)
+	createdDir, err := s.fs.CreateDirAndTouch(s.config.SnapshotDir, babuzapb.SnapshotFolderType_TempReceive, metadata.Snapshot.Metadata.Index)
 	if err != nil {
 		return nil, err
 	}
-	if err = s.fs.CreateDirAndTouch(dir); err != nil {
-		return nil, err
-	}
-	return io.NewReceiver(s.fs, dir, metadata, s.metadataCodec, s, s.fileValidator), nil
+	return io.NewReceiver(s.fs, createdDir, metadata, s.metadataCodec, s, s.fileValidator), nil
 }
 
 func (s *Snapshotor) LoadLastValidSnapshot(walSnaps []walpb.Snapshot) (*raftpb.Snapshot, error) {
@@ -129,7 +123,7 @@ func (s *Snapshotor) Purge(snapshot raftpb.Snapshot) error {
 	installSnapshot := s.getInstalledSnapshotIndexSlice()
 	for len(installSnapshot) > int(s.config.MaxSnapFiles) {
 		if installSnapshot[0] < snapshot.Metadata.Index {
-			dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, installSnapshot[0])
+			dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, installSnapshot[0])
 			if err != nil {
 				return err
 			}
@@ -160,11 +154,11 @@ func (s *Snapshotor) getInstalledSnapshotMetadata(snapIndex uint64) (babuzapb.Sn
 	if !ok {
 		return babuzapb.SnapshotMetadata{}, fmt.Errorf("snapshot: not found snapshot index=%d", snapIndex)
 	}
-	dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
+	dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
-	metadataFilePath, err := api.GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, snapIndex, "")
+	metadataFilePath, err := s.fs.PathHelper().GenerateSnapshotFilePath(dir, babuzapb.SnapshotFileType_Metadata, snapIndex, "")
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
@@ -205,11 +199,11 @@ func (s *Snapshotor) scanInstalledSnapshot() error {
 		return err
 	}
 	for _, snapshotIndex := range installedFolder {
-		dir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
+		dir, err := s.fs.PathHelper().GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
 		if err != nil {
 			return err
 		}
-		if m, err := s.fileValidator.ValidateMetadataFile(dir); err != nil {
+		if m, err := s.fileValidator.GetMetadataFile(dir); err != nil {
 			//if err = os.Rename(installPath, filepath.Join(snapshotDir, snapshot.GetBrokenFolderName(snapshotIndex))); err != nil {
 			//	return nil, err
 			//}
@@ -243,25 +237,13 @@ func (s *Snapshotor) commitSnapshot(folderType babuzapb.SnapshotFolderType, snap
 	if ok {
 		return errors.New(fmt.Sprintf("snapshot: the installed snapshot already exists. (snapshot index=%d)", snapshotIndex))
 	}
-	installDir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
-	if err != nil {
+	if err := s.fs.InstallSnapshotFromTempFolder(s.config.SnapshotDir, folderType, snapshotIndex); err != nil {
 		return err
 	}
-	if s.fs.ExistDir(installDir) {
-		return errors.New(fmt.Sprintf("snapshot: the installation directory already exists. path(%s) snapshot idnex(%d)",
-			installDir, snapshotIndex))
-	}
-	sourceDir, err := api.GenerateSnapshotFolderPath(s.config.SnapshotDir, folderType, snapshotIndex)
-	if err != nil {
-		return err
-	}
-	if err := s.fs.RenameDir(sourceDir, installDir); err != nil {
-		return err
-	}
-	s.installedSnapshot[snapshotIndex] = struct{}{}
 	if err := s.fs.SyncDir(s.config.SnapshotDir); err != nil {
 		return err
 	}
+	s.installedSnapshot[snapshotIndex] = struct{}{}
 	return nil
 }
 

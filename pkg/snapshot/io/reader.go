@@ -13,14 +13,14 @@ import (
 )
 
 type Reader struct {
-	fs              api.FileSystem
+	fs              api.SnapshotFileSystem
 	dir             string
 	metadata        babuzapb.SnapshotMetadata
 	metadataEncoder MetadataEncoder
 	reader          map[string]io.ReadCloser
 }
 
-func NewReader(fs api.FileSystem, dir string, metadata babuzapb.SnapshotMetadata, metadataEncoder MetadataEncoder) *Reader {
+func NewReader(fs api.SnapshotFileSystem, dir string, metadata babuzapb.SnapshotMetadata, metadataEncoder MetadataEncoder) *Reader {
 	return &Reader{
 		fs:              fs,
 		dir:             dir,
@@ -31,7 +31,7 @@ func NewReader(fs api.FileSystem, dir string, metadata babuzapb.SnapshotMetadata
 }
 
 func (r *Reader) Open(fileTag string) (io.Reader, ibabuza.StateMachineFileDesc, error) {
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, r.metadata.Snapshot.Metadata.Index, fileTag)
+	filename, err := r.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, r.metadata.Snapshot.Metadata.Index, fileTag)
 	if err != nil {
 		return nil, ibabuza.StateMachineFileDesc{}, err
 	}
@@ -55,7 +55,7 @@ func (r *Reader) Close() error {
 
 func (r *Reader) ForEachFile(visitor func(io.Reader, babuzapb.SnapshotFileDesc) error) error {
 	visit := func(snapshotIndex uint64, fileDesc babuzapb.SnapshotFileDesc) error {
-		filename, err := api.SnapshotFileName(fileDesc.FileType, snapshotIndex, fileDesc.Tag)
+		filename, err := r.fs.PathHelper().SnapshotFileName(fileDesc.FileType, snapshotIndex, fileDesc.Tag)
 		if err != nil {
 			return err
 		}
@@ -81,7 +81,7 @@ func (r *Reader) Metadata() babuzapb.SnapshotMetadata {
 }
 
 func (r *Reader) Cluster() (io.Reader, error) {
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Cluster, r.metadata.Snapshot.Metadata.Index, "")
+	filename, err := r.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Cluster, r.metadata.Snapshot.Metadata.Index, "")
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (r *Reader) Cluster() (io.Reader, error) {
 }
 
 func (r *Reader) Session() (io.Reader, error) {
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Session, r.metadata.Snapshot.Metadata.Index, "")
+	filename, err := r.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Session, r.metadata.Snapshot.Metadata.Index, "")
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (r *Reader) CreateTarArchiveReader() (io.ReadCloser, error) {
 			return err
 		}
 
-		metadataFilename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, r.metadata.Snapshot.Metadata.Index, "")
+		metadataFilename, err := r.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, r.metadata.Snapshot.Metadata.Index, "")
 		if err != nil {
 			wErr = err
 			return
@@ -148,7 +148,7 @@ func (r *Reader) CreateTarArchiveReader() (io.ReadCloser, error) {
 			return
 		}
 		for _, fileDesc := range r.metadata.Files {
-			filename, err := api.SnapshotFileName(fileDesc.FileType, r.metadata.Snapshot.Metadata.Index, fileDesc.Tag)
+			filename, err := r.fs.PathHelper().SnapshotFileName(fileDesc.FileType, r.metadata.Snapshot.Metadata.Index, fileDesc.Tag)
 			if err != nil {
 				wErr = err
 				return

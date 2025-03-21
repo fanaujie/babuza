@@ -27,7 +27,7 @@ type snapshotFileMetadata struct {
 }
 
 type Writer struct {
-	fs            api.FileSystem
+	fs            api.SnapshotFileSystem
 	snapshotFiles map[string]snapshotFileMetadata
 	dir           string
 	metadataEn    MetadataEncoder
@@ -36,7 +36,7 @@ type Writer struct {
 	snapshotIndex uint64
 }
 
-func NewWriter(fs api.FileSystem, dir string, metadataEn MetadataEncoder, installer Installer, snapshotIndex uint64) *Writer {
+func NewWriter(fs api.SnapshotFileSystem, dir string, metadataEn MetadataEncoder, installer Installer, snapshotIndex uint64) *Writer {
 	return &Writer{
 		fs:            fs,
 		snapshotFiles: make(map[string]snapshotFileMetadata),
@@ -48,7 +48,7 @@ func NewWriter(fs api.FileSystem, dir string, metadataEn MetadataEncoder, instal
 }
 
 func (w *Writer) CreateStateMachineFile(fileTag string, compression babuzapb.SnapshotFileCompressionType) (io.WriteCloser, error) {
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, w.snapshotIndex, fileTag)
+	filename, err := w.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, w.snapshotIndex, fileTag)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (w *Writer) AddStateMachineFileMetadata(fileTag string, metadata []byte) er
 }
 
 func (w *Writer) CreateClusterFile(compression babuzapb.SnapshotFileCompressionType) (io.WriteCloser, error) {
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Cluster, w.snapshotIndex, "")
+	filename, err := w.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Cluster, w.snapshotIndex, "")
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (w *Writer) CreateClusterFile(compression babuzapb.SnapshotFileCompressionT
 }
 
 func (w *Writer) CreateSessionFile(compression babuzapb.SnapshotFileCompressionType) (io.WriteCloser, error) {
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Session, w.snapshotIndex, "")
+	filename, err := w.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Session, w.snapshotIndex, "")
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (w *Writer) Commit(snap raftpb.Snapshot) (babuzapb.SnapshotMetadata, error)
 		sm.Files[ff.fileDesc.Tag] = *ff.fileDesc
 	}
 
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, w.snapshotIndex, "")
+	filename, err := w.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, w.snapshotIndex, "")
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}

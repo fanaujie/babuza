@@ -16,9 +16,9 @@ import (
 
 func TestReceiver_SaveChunk(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		//volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		t.Run("success", func(t *testing.T) {
 			testCases := []struct {
@@ -54,10 +54,8 @@ func TestReceiver_SaveChunk(t *testing.T) {
 					msgCount  int
 					chunkSize int
 				}) {
-					receiverDir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
+					targetSrc, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, snapIndex)
 					assert.Nil(t, err)
-					targetSrc := filepath.Join(tmpDir, receiverDir)
-					assert.Nil(t, fs.CreateDirAndTouch(targetSrc))
 
 					m := babuzapb.SnapshotMetadata{
 						Version: 1,
@@ -91,7 +89,7 @@ func TestReceiver_SaveChunk(t *testing.T) {
 						}
 					}
 
-					receiveFileName, err := api.SnapshotFileName(c.fileType, snapIndex, "one")
+					receiveFileName, err := fs.PathHelper().SnapshotFileName(c.fileType, snapIndex, "one")
 					assert.Nil(t, err)
 					receivedFilePath := filepath.Join(targetSrc, receiveFileName)
 					rf, err := fs.FileRead(receivedFilePath)
@@ -112,10 +110,8 @@ func TestReceiver_SaveChunk(t *testing.T) {
 			// Test ErrReceiverMismatchedSnapshotIndex
 			snapIndex := uint64(10)
 			version := uint64(1)
-			receiverDir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
+			targetSrc, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, snapIndex)
 			assert.Nil(t, err)
-			targetSrc := filepath.Join(tmpDir, receiverDir)
-			assert.Nil(t, fs.CreateDirAndTouch(targetSrc))
 
 			metaCodec := &codec.Metadata{}
 			r := NewReceiver(fs, targetSrc, babuzapb.SnapshotMetadata{
@@ -145,9 +141,9 @@ func TestReceiver_SaveChunk(t *testing.T) {
 
 func TestReceiver_Commit(t *testing.T) {
 	tmpDir := t.TempDir()
-	for _, fs := range []api.FileSystem{
+	for _, fs := range []api.SnapshotFileSystem{
 		volatile.NewFileSystem(),
-		durable.NewFileSystem(),
+		durable.NewSnapshotFS(),
 	} {
 		fd := []snapFileDesc{
 			{
@@ -178,9 +174,8 @@ func TestReceiver_Commit(t *testing.T) {
 		version := uint64(1)
 		snapIndex := uint64(1)
 		snapTerm := uint64(1)
-		receiverDir, err := api.SnapshotFolderName(babuzapb.SnapshotFolderType_TempReceive, snapIndex)
+		targetSrc, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempReceive, snapIndex)
 		assert.Nil(t, err)
-		targetSrc := filepath.Join(tmpDir, receiverDir)
 		m := genSnapshotFiles(t, fs, targetSrc, version, snapTerm, snapIndex, fd)
 		metaCodec := &codec.Metadata{}
 		r := NewReceiver(fs, targetSrc, m, metaCodec, &mockInstaller{version}, NewFileValidator(fs, metaCodec))

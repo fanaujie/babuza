@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/durable"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/volatile"
 )
@@ -33,7 +34,7 @@ func NewDurableSnapshotManager(snapshotDir string, logger ibabuza.Logger, option
 	for _, setOpt := range options {
 		setOpt(&defaultOpt)
 	}
-	fs := durable.NewFileSystem()
+	fs := durable.NewSnapshotFS()
 	logger.Infof("durable snapshot manager: creating durable snapshot manager with snapshotDir=%s", snapshotDir)
 	return New(Config{
 		SnapshotVersion: defaultOpt.snapshotVersion,
@@ -51,6 +52,28 @@ func NewVolatileSnapshotManager(snapshotDir string, logger ibabuza.Logger, optio
 		setOpt(&defaultOpt)
 	}
 	fs := volatile.NewFileSystem()
+	logger.Infof("volatile snapshot manager: creating volatile snapshot manager with snapshotDir=%s", snapshotDir)
+	return New(Config{
+		SnapshotVersion: defaultOpt.snapshotVersion,
+		MaxSnapFiles:    defaultOpt.maxKeepSnapFiles,
+		SnapshotDir:     snapshotDir,
+	}, fs, logger)
+}
+
+func NewMinIOSnapshotManager(snapshotDir string, config cloudstorage.Config, logger ibabuza.Logger,
+	options ...SetOptions) ibabuza.SnapshotManager {
+	defaultOpt := Options{
+		snapshotVersion:  1,
+		maxKeepSnapFiles: 3,
+	}
+	for _, setOpt := range options {
+		setOpt(&defaultOpt)
+	}
+	fs, err := cloudstorage.NewMinioSnapshotFS(config)
+	if err != nil {
+		logger.Errorf("failed to create minio snapshot fs: %v", err)
+		return nil
+	}
 	logger.Infof("volatile snapshot manager: creating volatile snapshot manager with snapshotDir=%s", snapshotDir)
 	return New(Config{
 		SnapshotVersion: defaultOpt.snapshotVersion,

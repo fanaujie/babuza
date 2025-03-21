@@ -2,22 +2,26 @@ package durable
 
 import (
 	"fmt"
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
-	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcFile"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcfile"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"io"
 	"os"
 	"path/filepath"
 )
 
-type FileSystem struct {
+type SnapshotFS struct {
+	ph api.PathHelper
 }
 
-func NewFileSystem() api.FileSystem {
-	return &FileSystem{}
+func NewSnapshotFS() api.SnapshotFileSystem {
+	return &SnapshotFS{
+		ph: api.NewPathHelper("temp-writer", "temp-receiver", "snapshot"),
+	}
 }
 
-func (fs *FileSystem) FileRead(path string) (io.ReadCloser, error) {
+func (fs *SnapshotFS) FileRead(path string) (io.ReadCloser, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -28,31 +32,38 @@ func (fs *FileSystem) FileRead(path string) (io.ReadCloser, error) {
 	return os.Open(path)
 }
 
-func (fs *FileSystem) FileWrite(path string) (io.WriteCloser, error) {
+func (fs *SnapshotFS) FileWrite(path string) (io.WriteCloser, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY, fileutil.FileMode)
 }
 
-func (fs *FileSystem) CrcFileRead(path string) (api.CrcFileReader, error) {
+func (fs *SnapshotFS) CrcFileRead(path string) (api.CrcFileReader, error) {
 	r, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	return crcFile.CreateReader(r), nil
+	return crcfile.CreateReader(r), nil
 }
 
-func (fs *FileSystem) CrcFileWrite(path string) (api.CrcFileWriter, error) {
+func (fs *SnapshotFS) CrcFileWrite(path string) (api.CrcFileWriter, error) {
 	w, err := fs.FileWrite(path)
 	if err != nil {
 		return nil, err
 	}
-	return crcFile.CreateWriter(w), nil
+	return crcfile.CreateWriter(w), nil
 }
 
-func (fs *FileSystem) CreateDirAndTouch(path string) error {
-	return fileutil.CreateDirAndTouch(path)
+func (fs *SnapshotFS) CreateDirAndTouch(snapshotDir string, folderType babuzapb.SnapshotFolderType, snapIndex uint64) (string, error) {
+	dir, err := fs.ph.GenerateSnapshotFolderPath(snapshotDir, folderType, snapIndex)
+	if err != nil {
+		return "", err
+	}
+	if err = fileutil.CreateDirAndTouch(dir); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
-func (fs *FileSystem) FileAppendData(path string, data []byte, sync bool) error {
+func (fs *SnapshotFS) FileAppendData(path string, chunkId int64, data []byte) error {
 	w, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, fileutil.FileMode)
 	if err != nil {
 		return err
@@ -61,15 +72,19 @@ func (fs *FileSystem) FileAppendData(path string, data []byte, sync bool) error 
 	if _, err = w.Write(data); err != nil {
 		return err
 	}
-	if sync {
-		if err = fileutil.Sync(w); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
-func (fs *FileSystem) FindMetadataFile(dirPath string) ([]uint64, error) {
+func (fs *SnapshotFS) FileAppendFinalize(path string, totalChunks int64) error {
+	w, err := os.OpenFile(path, os.O_WRONLY, fileutil.FileMode)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+	return fileutil.Sync(w)
+}
+
+func (fs *SnapshotFS) FindMetadataFile(dirPath string) ([]uint64, error) {
 	dirs, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
@@ -80,7 +95,7 @@ func (fs *FileSystem) FindMetadataFile(dirPath string) ([]uint64, error) {
 		if d.IsDir() {
 			continue
 		}
-		index, err := api.ParseMetadataFileName(name)
+		index, err := fs.ph.ParseMetadataFileName(name)
 		if err == nil {
 			ids = append(ids, index)
 		}
@@ -88,7 +103,7 @@ func (fs *FileSystem) FindMetadataFile(dirPath string) ([]uint64, error) {
 	return ids, nil
 }
 
-func (fs *FileSystem) ScanInstalledSnapshot(dirPath string) ([]uint64, error) {
+func (fs *SnapshotFS) ScanInstalledSnapshot(dirPath string) ([]uint64, error) {
 	var installed []uint64
 
 	dirs, err := os.ReadDir(dirPath)
@@ -101,7 +116,7 @@ func (fs *FileSystem) ScanInstalledSnapshot(dirPath string) ([]uint64, error) {
 		if !d.IsDir() {
 			continue
 		}
-		index, err = api.ParseSnapshotFolderName(name)
+		index, err = fs.ph.ParseSnapshotFolderName(name)
 		if err == nil {
 			installed = append(installed, index)
 			continue
@@ -110,7 +125,7 @@ func (fs *FileSystem) ScanInstalledSnapshot(dirPath string) ([]uint64, error) {
 	return installed, nil
 }
 
-func (fs *FileSystem) ScanTempSnapshotFolder(dirPath string) ([]string, []string, error) {
+func (fs *SnapshotFS) ScanTempSnapshotFolder(dirPath string) ([]string, []string, error) {
 	dirs, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, nil, err
@@ -122,12 +137,12 @@ func (fs *FileSystem) ScanTempSnapshotFolder(dirPath string) ([]string, []string
 		if !d.IsDir() {
 			continue
 		}
-		_, err = api.ParseWriterTmpFolderName(name)
+		_, err = fs.ph.ParseWriterTmpFolderName(name)
 		if err == nil {
 			tempWrite = append(tempWrite, filepath.Join(dirPath, name))
 			continue
 		}
-		_, err = api.ParseReceiverTmpFolderName(name)
+		_, err = fs.ph.ParseReceiverTmpFolderName(name)
 		if err == nil {
 			tempReceiver = append(tempReceiver, filepath.Join(dirPath, name))
 		}
@@ -135,22 +150,38 @@ func (fs *FileSystem) ScanTempSnapshotFolder(dirPath string) ([]string, []string
 	return tempWrite, tempReceiver, nil
 }
 
-func (fs *FileSystem) ExistFilePath(path string) bool {
+func (fs *SnapshotFS) InstallSnapshotFromTempFolder(snapshotDirPath string, folderType babuzapb.SnapshotFolderType, snapshotIndex uint64) error {
+	installDir, err := fs.ph.GenerateSnapshotFolderPath(snapshotDirPath, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
+	if err != nil {
+		return err
+	}
+	if fs.ExistDir(installDir) {
+		return fmt.Errorf("snapshot: the installation directory already exists. path(%s) snapshot idnex(%d)",
+			installDir, snapshotIndex)
+	}
+	sourceDir, err := fs.PathHelper().GenerateSnapshotFolderPath(snapshotDirPath, folderType, snapshotIndex)
+	if err != nil {
+		return err
+	}
+	return fs.RenameDir(sourceDir, installDir)
+}
+
+func (fs *SnapshotFS) ExistFilePath(path string) bool {
 	return fileutil.Exist(path)
 }
 
-func (fs *FileSystem) ExistDir(path string) bool {
+func (fs *SnapshotFS) ExistDir(path string) bool {
 	return fileutil.Exist(path)
 }
-func (fs *FileSystem) FileSize(path string) (int64, error) {
+func (fs *SnapshotFS) FileSize(path string) (int64, error) {
 	return fileutil.FileSize(path)
 }
 
-func (fs *FileSystem) SyncDir(path string) error {
+func (fs *SnapshotFS) SyncDir(path string) error {
 	return fileutil.SyncDir(path)
 }
 
-func (fs *FileSystem) SyncFile(path string) error {
+func (fs *SnapshotFS) SyncFile(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -162,14 +193,18 @@ func (fs *FileSystem) SyncFile(path string) error {
 	return nil
 }
 
-func (fs *FileSystem) RenameDir(sourcePath string, destPath string) error {
+func (fs *SnapshotFS) RenameDir(sourcePath string, destPath string) error {
 	return os.Rename(sourcePath, destPath)
 }
 
-func (fs *FileSystem) RemoveDir(path string) error {
+func (fs *SnapshotFS) RemoveDir(path string) error {
 	return os.RemoveAll(path)
 }
 
-func (fs *FileSystem) RemoveFilePath(path string) error {
+func (fs *SnapshotFS) RemoveFilePath(path string) error {
 	return os.Remove(path)
+}
+
+func (fs *SnapshotFS) PathHelper() api.PathHelper {
+	return fs.ph
 }

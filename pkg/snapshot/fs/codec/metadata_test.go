@@ -35,7 +35,8 @@ var (
 
 func TestCodec_Encode_Decode_MetadataFile(t *testing.T) {
 	p := t.TempDir()
-	genMetadataFileName, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, 1, "")
+	ph := api.NewPathHelper("tw", "tr", "snap")
+	genMetadataFileName, err := ph.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, 1, "")
 	assert.Nil(t, err)
 	metaFilePath := filepath.Join(p, genMetadataFileName)
 	f := Metadata{}
@@ -55,8 +56,8 @@ func TestCodec_Encode_Decode_MetadataFile(t *testing.T) {
 
 func TestCodec_UnmarshalFile_Fail(t *testing.T) {
 	p := t.TempDir()
-
-	genMetadataFileName, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, 1, "")
+	ph := api.NewPathHelper("tw", "tr", "snap")
+	genMetadataFileName, err := ph.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, 1, "")
 	assert.Nil(t, err)
 	metaFilePath := filepath.Join(p, genMetadataFileName)
 	f := Metadata{}

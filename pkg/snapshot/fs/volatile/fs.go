@@ -2,8 +2,10 @@ package volatile
 
 import (
 	"bytes"
+	"fmt"
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
-	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcFile"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/crcfile"
 	"io"
 	"os"
 	"path/filepath"
@@ -31,37 +33,43 @@ func (b *bytesFile) Close() error {
 	return nil
 }
 
-type FileSystem struct {
+type SnapshotFS struct {
 	files map[string]*bytesFile
 	dirs  map[string]struct{}
+	ph    api.PathHelper
 	mu    *sync.RWMutex
 }
 
-func NewFileSystem() api.FileSystem {
-	return &FileSystem{
+func NewFileSystem() api.SnapshotFileSystem {
+	return &SnapshotFS{
 		files: make(map[string]*bytesFile),
 		dirs:  make(map[string]struct{}),
+		ph:    api.NewPathHelper("temp-writer", "temp-receiver", "snapshot"),
 		mu:    &sync.RWMutex{},
 	}
 }
 
-func (fs *FileSystem) isDirExist(path string) bool {
+func (fs *SnapshotFS) isDirExist(path string) bool {
 	_, exists := fs.dirs[path]
 	return exists
 }
 
-func (fs *FileSystem) CreateDirAndTouch(path string) error {
+func (fs *SnapshotFS) CreateDirAndTouch(snapshotDir string, folderType babuzapb.SnapshotFolderType, snapIndex uint64) (string, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	_, ok := fs.dirs[path]
-	if ok {
-		return os.ErrExist
+	dir, err := fs.ph.GenerateSnapshotFolderPath(snapshotDir, folderType, snapIndex)
+	if err != nil {
+		return "", err
 	}
-	fs.dirs[path] = struct{}{}
-	return nil
+	_, ok := fs.dirs[dir]
+	if ok {
+		return "", os.ErrExist
+	}
+	fs.dirs[dir] = struct{}{}
+	return dir, nil
 }
 
-func (fs *FileSystem) FileRead(path string) (io.ReadCloser, error) {
+func (fs *SnapshotFS) FileRead(path string) (io.ReadCloser, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
@@ -77,7 +85,7 @@ func (fs *FileSystem) FileRead(path string) (io.ReadCloser, error) {
 	return newReadBytesFile(file), nil
 }
 
-func (fs *FileSystem) FileWrite(path string) (io.WriteCloser, error) {
+func (fs *SnapshotFS) FileWrite(path string) (io.WriteCloser, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -91,23 +99,23 @@ func (fs *FileSystem) FileWrite(path string) (io.WriteCloser, error) {
 	return file, nil
 }
 
-func (fs *FileSystem) CrcFileRead(path string) (api.CrcFileReader, error) {
+func (fs *SnapshotFS) CrcFileRead(path string) (api.CrcFileReader, error) {
 	reader, err := fs.FileRead(path)
 	if err != nil {
 		return nil, err
 	}
-	return crcFile.CreateReader(reader), nil
+	return crcfile.CreateReader(reader), nil
 }
 
-func (fs *FileSystem) CrcFileWrite(path string) (api.CrcFileWriter, error) {
+func (fs *SnapshotFS) CrcFileWrite(path string) (api.CrcFileWriter, error) {
 	writer, err := fs.FileWrite(path)
 	if err != nil {
 		return nil, err
 	}
-	return crcFile.CreateWriter(writer), nil
+	return crcfile.CreateWriter(writer), nil
 }
 
-func (fs *FileSystem) FileAppendData(path string, data []byte, sync bool) error {
+func (fs *SnapshotFS) FileAppendData(path string, chunkId int64, data []byte) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -126,14 +134,19 @@ func (fs *FileSystem) FileAppendData(path string, data []byte, sync bool) error 
 	return err
 }
 
-func (fs *FileSystem) FindMetadataFile(dirPath string) ([]uint64, error) {
+func (fs *SnapshotFS) FileAppendFinalize(path string, totalChunks int64) error {
+	// not implemented
+	return nil
+}
+
+func (fs *SnapshotFS) FindMetadataFile(dirPath string) ([]uint64, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
 	var ids []uint64
 	for fp := range fs.files {
 		if strings.HasPrefix(fp, dirPath) {
-			index, err := api.ParseMetadataFileName(filepath.Base(fp))
+			index, err := fs.ph.ParseMetadataFileName(filepath.Base(fp))
 			if err == nil {
 				ids = append(ids, index)
 			}
@@ -142,14 +155,14 @@ func (fs *FileSystem) FindMetadataFile(dirPath string) ([]uint64, error) {
 	return ids, nil
 }
 
-func (fs *FileSystem) ScanInstalledSnapshot(dirPath string) ([]uint64, error) {
+func (fs *SnapshotFS) ScanInstalledSnapshot(dirPath string) ([]uint64, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	var installed []uint64
 	for dir := range fs.dirs {
-		if strings.HasPrefix(dir, filepath.Join(dirPath, api.SnapshotFolderNamePrefix)) {
+		if strings.HasPrefix(dir, filepath.Join(dirPath, fs.ph.SnapshotFolderPrefix())) {
 			dirName := filepath.Base(dir)
-			index, err := api.ParseSnapshotFolderName(dirName)
+			index, err := fs.ph.ParseSnapshotFolderName(dirName)
 			if err == nil {
 				installed = append(installed, index)
 			}
@@ -158,22 +171,22 @@ func (fs *FileSystem) ScanInstalledSnapshot(dirPath string) ([]uint64, error) {
 	return installed, nil
 }
 
-func (fs *FileSystem) ScanTempSnapshotFolder(dirPath string) ([]string, []string, error) {
+func (fs *SnapshotFS) ScanTempSnapshotFolder(dirPath string) ([]string, []string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
 	var tmpWriter, tmpReceiver []string
 
 	for dir := range fs.dirs {
-		if strings.HasPrefix(dir, filepath.Join(dirPath, api.TempWriterFolderNamePrefix)) {
+		if strings.HasPrefix(dir, filepath.Join(dirPath, fs.ph.TempWriterFolderPrefix())) {
 			dirName := filepath.Base(dir)
-			_, err := api.ParseWriterTmpFolderName(dirName)
+			_, err := fs.ph.ParseWriterTmpFolderName(dirName)
 			if err == nil {
 				tmpWriter = append(tmpWriter, dir)
 			}
-		} else if strings.HasPrefix(dir, filepath.Join(dirPath, api.TempReceiverFolderNamePrefix)) {
+		} else if strings.HasPrefix(dir, filepath.Join(dirPath, fs.ph.TempReceiverFolderPrefix())) {
 			dirName := filepath.Base(dir)
-			_, err := api.ParseReceiverTmpFolderName(dirName)
+			_, err := fs.ph.ParseReceiverTmpFolderName(dirName)
 			if err == nil {
 				tmpReceiver = append(tmpReceiver, dir)
 			}
@@ -182,7 +195,23 @@ func (fs *FileSystem) ScanTempSnapshotFolder(dirPath string) ([]string, []string
 	return tmpWriter, tmpReceiver, nil
 }
 
-func (fs *FileSystem) ExistFilePath(path string) bool {
+func (fs *SnapshotFS) InstallSnapshotFromTempFolder(snapshotDirPath string, folderType babuzapb.SnapshotFolderType, snapshotIndex uint64) error {
+	installDir, err := fs.ph.GenerateSnapshotFolderPath(snapshotDirPath, babuzapb.SnapshotFolderType_InstallSnapshot, snapshotIndex)
+	if err != nil {
+		return err
+	}
+	if fs.ExistDir(installDir) {
+		return fmt.Errorf("snapshot: the installation directory already exists. path(%s) snapshot idnex(%d)",
+			installDir, snapshotIndex)
+	}
+	sourceDir, err := fs.PathHelper().GenerateSnapshotFolderPath(snapshotDirPath, folderType, snapshotIndex)
+	if err != nil {
+		return err
+	}
+	return fs.RenameDir(sourceDir, installDir)
+}
+
+func (fs *SnapshotFS) ExistFilePath(path string) bool {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
@@ -190,14 +219,14 @@ func (fs *FileSystem) ExistFilePath(path string) bool {
 	return exists
 }
 
-func (fs *FileSystem) ExistDir(path string) bool {
+func (fs *SnapshotFS) ExistDir(path string) bool {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
 	return fs.isDirExist(path)
 }
 
-func (fs *FileSystem) FileSize(path string) (int64, error) {
+func (fs *SnapshotFS) FileSize(path string) (int64, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
@@ -209,15 +238,15 @@ func (fs *FileSystem) FileSize(path string) (int64, error) {
 	return int64(file.Len()), nil
 }
 
-func (fs *FileSystem) SyncDir(path string) error {
+func (fs *SnapshotFS) SyncDir(path string) error {
 	return nil
 }
 
-func (fs *FileSystem) SyncFile(path string) error {
+func (fs *SnapshotFS) SyncFile(path string) error {
 	return nil
 }
 
-func (fs *FileSystem) RenameDir(oldPath string, newPath string) error {
+func (fs *SnapshotFS) RenameDir(oldPath string, newPath string) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -239,7 +268,7 @@ func (fs *FileSystem) RenameDir(oldPath string, newPath string) error {
 	return nil
 }
 
-func (fs *FileSystem) RemoveDir(path string) error {
+func (fs *SnapshotFS) RemoveDir(path string) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -257,7 +286,7 @@ func (fs *FileSystem) RemoveDir(path string) error {
 	return nil
 }
 
-func (fs *FileSystem) RemoveFilePath(path string) error {
+func (fs *SnapshotFS) RemoveFilePath(path string) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -266,4 +295,8 @@ func (fs *FileSystem) RemoveFilePath(path string) error {
 	}
 	delete(fs.files, path)
 	return nil
+}
+
+func (fs *SnapshotFS) PathHelper() api.PathHelper {
+	return fs.ph
 }

@@ -14,7 +14,7 @@ var (
 )
 
 type ChunkValidator struct {
-	fs            api.FileSystem
+	fs            api.SnapshotFileSystem
 	filePath      string
 	nextChunkId   int64
 	receivedSize  int
@@ -23,7 +23,7 @@ type ChunkValidator struct {
 	snapshotIndex uint64
 }
 
-func NewChunkValidator(fs api.FileSystem, path string) *ChunkValidator {
+func NewChunkValidator(fs api.SnapshotFileSystem, path string) *ChunkValidator {
 	return &ChunkValidator{
 		fs:          fs,
 		filePath:    path,
@@ -44,12 +44,16 @@ func (v *ChunkValidator) ValidateAndAppend(msg babuzapb.SnapshotChunkMessage) er
 			v.snapshotIndex, v.continueCrc32, msg.ContinueCrc32, msg.FileTag)
 	}
 	v.receivedSize += len(msg.Data)
-	v.nextChunkId++
+	if err := v.fs.FileAppendData(v.filePath, v.nextChunkId, msg.Data); err != nil {
+		return err
+	}
 	if msg.LastChunk {
 		v.finish = true
-	}
-	if err := v.fs.FileAppendData(v.filePath, msg.Data, msg.LastChunk); err != nil {
-		return err
+		if err := v.fs.FileAppendFinalize(v.filePath, v.nextChunkId); err != nil {
+			return err
+		}
+	} else {
+		v.nextChunkId++
 	}
 	return nil
 }
@@ -59,18 +63,18 @@ type MetadataDecoder interface {
 }
 
 type FileValidator struct {
-	fs             api.FileSystem
+	fs             api.SnapshotFileSystem
 	metadataDecode MetadataDecoder
 }
 
-func NewFileValidator(fs api.FileSystem, metadataDecode MetadataDecoder) *FileValidator {
+func NewFileValidator(fs api.SnapshotFileSystem, metadataDecode MetadataDecoder) *FileValidator {
 	return &FileValidator{
 		fs:             fs,
 		metadataDecode: metadataDecode,
 	}
 }
 
-func (f *FileValidator) ValidateMetadataFile(dir string) (babuzapb.SnapshotMetadata, error) {
+func (f *FileValidator) GetMetadataFile(dir string) (babuzapb.SnapshotMetadata, error) {
 	snapshotIndexs, err := f.fs.FindMetadataFile(dir)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
@@ -81,7 +85,7 @@ func (f *FileValidator) ValidateMetadataFile(dir string) (babuzapb.SnapshotMetad
 		return babuzapb.SnapshotMetadata{}, fmt.Errorf("snapshotor: found more than one metadata file in dir %s (files=%d)", dir, len(snapshotIndexs))
 	}
 
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndexs[0], "")
+	filename, err := f.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndexs[0], "")
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
@@ -97,7 +101,7 @@ func (f *FileValidator) ValidateMetadataFile(dir string) (babuzapb.SnapshotMetad
 
 func (f *FileValidator) ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMetadata) error {
 	for _, snapFile := range m.Files {
-		filename, err := api.SnapshotFileName(snapFile.FileType, m.Snapshot.Metadata.Index, snapFile.Tag)
+		filename, err := f.fs.PathHelper().SnapshotFileName(snapFile.FileType, m.Snapshot.Metadata.Index, snapFile.Tag)
 		if err != nil {
 			return err
 		}
@@ -107,29 +111,25 @@ func (f *FileValidator) ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMet
 			return fmt.Errorf("snapshotor[index=%d]: not found snapshot file (tag=%s)", m.Snapshot.Metadata.Index, snapFile.Tag)
 		}
 
-		if err = func() error {
-			crcR, err := f.fs.CrcFileRead(fp)
-			if err != nil {
-				return err
-			}
-			defer crcR.Close()
-			_, err = io.Copy(io.Discard, crcR)
-			if err != nil {
-				return err
-			}
-			if int64(crcR.FileSize()) != snapFile.FileSize {
-				return fmt.Errorf("snapshotor[index=%d]: mismatch file size(%d != %d) (tag=%s)", m.Snapshot.Metadata.Index, crcR.FileSize(),
-					snapFile.FileSize, snapFile.Tag)
-			}
-			crc := crcR.Crc()
-			if crc != snapFile.FileCrc64 {
-				return fmt.Errorf("snapshotor[index=%d]: mismatch crc(%d != %d) (tag=%s)", m.Snapshot.Metadata.Index, crc, snapFile.FileCrc64,
-					snapFile.Tag)
-			}
-			return nil
-		}(); err != nil {
+		crcR, err := f.fs.CrcFileRead(fp)
+		if err != nil {
 			return err
 		}
+		defer crcR.Close()
+		_, err = io.Copy(io.Discard, crcR)
+		if err != nil {
+			return err
+		}
+		if int64(crcR.FileSize()) != snapFile.FileSize {
+			return fmt.Errorf("snapshotor[index=%d]: mismatch file size(%d != %d) (tag=%s)", m.Snapshot.Metadata.Index, crcR.FileSize(),
+				snapFile.FileSize, snapFile.Tag)
+		}
+		crc := crcR.Crc()
+		if crc != snapFile.FileCrc64 {
+			return fmt.Errorf("snapshotor[index=%d]: mismatch crc(%d != %d) (tag=%s)", m.Snapshot.Metadata.Index, crc, snapFile.FileCrc64,
+				snapFile.Tag)
+		}
+		return nil
 	}
 	return nil
 }

@@ -8,12 +8,12 @@ import (
 )
 
 type ValidateFile interface {
-	ValidateMetadataFile(dir string) (babuzapb.SnapshotMetadata, error)
+	GetMetadataFile(dir string) (babuzapb.SnapshotMetadata, error)
 	ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMetadata) error
 }
 
 type Receiver struct {
-	fs             api.FileSystem
+	fs             api.SnapshotFileSystem
 	dir            string
 	metadata       babuzapb.SnapshotMetadata
 	metadataEn     MetadataEncoder
@@ -22,7 +22,7 @@ type Receiver struct {
 	chunkValidator map[string]*ChunkValidator
 }
 
-func NewReceiver(fs api.FileSystem, dir string, metadata babuzapb.SnapshotMetadata, metadataEn MetadataEncoder, installer Installer,
+func NewReceiver(fs api.SnapshotFileSystem, dir string, metadata babuzapb.SnapshotMetadata, metadataEn MetadataEncoder, installer Installer,
 	fileValidator ValidateFile) *Receiver {
 	return &Receiver{
 		fs:             fs,
@@ -42,7 +42,7 @@ func (r *Receiver) SaveChunk(snapshotIndex uint64, msg babuzapb.SnapshotChunkMes
 
 	chunkValidator, ok := r.chunkValidator[msg.FileTag]
 	if !ok {
-		filename, err := api.SnapshotFileName(msg.FileType, snapshotIndex, msg.FileTag)
+		filename, err := r.fs.PathHelper().SnapshotFileName(msg.FileType, snapshotIndex, msg.FileTag)
 		if err != nil {
 			return err
 		}
@@ -69,7 +69,7 @@ func (r *Receiver) Commit(snapshotIndex uint64) error {
 		return fmt.Errorf("snapshotor: mismatch snapshot index(expected=%d,get=%d)", r.metadata.Snapshot.Metadata.Index, snapshotIndex)
 	}
 
-	filename, err := api.SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndex, "")
+	filename, err := r.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndex, "")
 	if err != nil {
 		return err
 	}
@@ -81,15 +81,15 @@ func (r *Receiver) Commit(snapshotIndex uint64) error {
 	}
 	defer w.Close()
 
-	if err := r.metadataEn.Encode(w, r.metadata); err != nil {
+	if err = r.metadataEn.Encode(w, r.metadata); err != nil {
 		return err
 	}
 
-	if err := r.fs.SyncDir(r.dir); err != nil {
+	if err = r.fs.SyncDir(r.dir); err != nil {
 		return err
 	}
 
-	m, err := r.fileValidator.ValidateMetadataFile(r.dir)
+	m, err := r.fileValidator.GetMetadataFile(r.dir)
 	if err != nil {
 		return err
 	}

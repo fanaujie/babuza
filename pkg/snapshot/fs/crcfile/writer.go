@@ -1,4 +1,4 @@
-package crcFile
+package crcfile
 
 import (
 	"hash"
@@ -19,18 +19,18 @@ type Writer struct {
 func CreateWriter(w io.WriteCloser) *Writer {
 	h := crc64.New(Crc64Table)
 	return &Writer{
-		w:  w,
-		h:  h,
+		w: w,
+		h: h,
 	}
 }
 
 func (cw *Writer) Write(p []byte) (int, error) {
 	n, err := cw.w.Write(p)
 	if err != nil {
-		return n,err
+		return n, err
 	}
 	cw.fileSize += n
-    return cw.h.Write(p)
+	return cw.h.Write(p)
 }
 
 func (cw *Writer) FileSize() int {
