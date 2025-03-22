@@ -74,43 +74,43 @@ You can configure various aspects of the KV store server including:
 		"Storage Directory: Root directory path for storing WAL logs, snapshots, and state machine data.")
 
 	// ==== Babuza Framework Component Selection ====
-	serverCommand.Flags().IntVar(&kvStoreConfig.BabuzaSession, "session-type", server.NoOpSession,
+	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaSession, "session-type", server.NoOpSession,
 		`Session Management Implementation (for idempotency):
-  1: No Operation Session (NoOp) - Default, no idempotency support
-  2: Expire Session (Expire) - Session management with simple expiration mechanism
-  3: LRU Session (LRU) - Session management based on Least Recently Used algorithm
-Use cases: Choose 2 or 3 when clients need to ensure operations are not executed multiple times`)
+  "noop": No Operation Session - Default, no idempotency support
+  "expire": Expire Session - Session management with simple expiration mechanism
+  "lru": LRU Session - Session management based on Least Recently Used algorithm
+Use cases: Choose "expire" or "lru" when clients need to ensure operations are not executed multiple times`)
 
-	serverCommand.Flags().IntVar(&kvStoreConfig.BabuzaTransportProtocol, "transport-protocol", server.TcpTransport,
+	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaTransportProtocol, "transport-protocol", server.TcpTransport,
 		`Transport Protocol Implementation:
-  1: TCP Transport (TCP) - Default, basic TCP protocol with physical network I/O, low latency
-  2: TCP Memory Transport (TCP Memory) - In-memory TCP implementation for testing
-  3: HTTP Transport (HTTP) - Based on HTTP protocol, works through proxies and firewalls
-  4: gRPC Transport (gRPC) - Based on gRPC protocol, supports bidirectional streaming and advanced features
-Use cases: Choose 1 for production, 2 for testing or single-process clusters, 3 for cross-network scenarios, 4 for advanced RPC needs`)
+  "tcp": TCP Transport - Default, basic TCP protocol with physical network I/O, low latency
+  "tcp-memory": TCP Memory Transport - In-memory TCP implementation for testing
+  "http": HTTP Transport - Based on HTTP protocol, works through proxies and firewalls
+  "grpc": gRPC Transport - Based on gRPC protocol, supports bidirectional streaming and advanced features
+Use cases: Choose "tcp" for production, "tcp-memory" for testing or single-process clusters, "http" for cross-network scenarios, "grpc" for advanced RPC needs`)
 
-	serverCommand.Flags().IntVar(&kvStoreConfig.BabuzaWal, "wal-type", server.BabuzaWal,
+	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaWal, "wal-type", server.BabuzaWal,
 		`Write-Ahead Log (WAL) Implementation:
-  1: Babuza WAL - Default, Babuza native implementation
-  2: ETCD WAL - Uses etcd's WAL implementation
-  3: LSTM WAL Disk - Disk-based WAL implementation with LSTM
-  4: LSTM WAL Memory - Memory-based WAL implementation with LSTM (for testing only)
-Use cases: Choose 1 for general purposes, 2 for high throughput scenarios, 3 for special durability features, 4 for testing`)
+  "babuza-wal": Babuza WAL - Default, Babuza native implementation
+  "etcd-wal": ETCD WAL - Uses etcd's WAL implementation
+  "lstm-wal-disk": LSTM WAL Disk - Disk-based WAL implementation with LSTM
+  "lstm-wal-memory": LSTM WAL Memory - Memory-based WAL implementation with LSTM (for testing only)
+Use cases: Choose "babuza-wal" for general purposes, "etcd-wal" for high throughput scenarios, "lstm-wal-disk" for special durability features, "lstm-wal-memory" for testing`)
 
-	serverCommand.Flags().IntVar(&kvStoreConfig.BabuzaSnapshot, "snapshot-type", server.DurableSnapshot,
+	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaSnapshot, "snapshot-type", server.DurableSnapshot,
 		`Snapshot Implementation:
-  1: Durable Snapshot (Durable) - Default, stores snapshots on local disk
-  2: Volatile Snapshot (Volatile) - Stores snapshots in memory (for testing only)
-  3: MinIO Snapshot (MinIO) - Stores snapshots using MinIO object storage service
-Use cases: Recommend 1 for production, use 2 for testing, choose 3 for shared storage or cloud storage needs
-Note: When choosing MinIO Snapshot (3), you must provide MinIO configuration parameters.`)
+  "durable": Durable Snapshot - Default, stores snapshots on local disk
+  "volatile": Volatile Snapshot - Stores snapshots in memory (for testing only)
+  "minio": MinIO Snapshot - Stores snapshots using MinIO object storage service
+Use cases: Recommend "durable" for production, use "volatile" for testing, choose "minio" for shared storage or cloud storage needs
+Note: When choosing "minio", you must provide MinIO configuration parameters.`)
 
-	serverCommand.Flags().IntVar(&kvStoreConfig.StateMachine, "state-machine", server.StateMachineMemory,
+	serverCommand.Flags().StringVar(&kvStoreConfig.StateMachine, "state-machine", server.StateMachineMemory,
 		`State Machine Type:
-  1: Memory State Machine - Default, all data stored in memory
-  2: Memory State Machine with Concurrent Snapshot - Doesn't block operations while creating snapshots
-  3: Disk State Machine - Persists data to disk
-Use cases: Choose 1 for high performance needs, 2 for large datasets with snapshot requirements, 3 for data persistence`)
+  "memory": Memory State Machine - Default, all data stored in memory
+  "memory-concurrent": Memory State Machine with Concurrent Snapshot - Doesn't block operations while creating snapshots
+  "disk": Disk State Machine - Persists data to disk
+Use cases: Choose "memory" for high performance needs, "memory-concurrent" for large datasets with snapshot requirements, "disk" for data persistence`)
 
 	// ==== MinIO Configuration (for MinIO Snapshot) ====
 	serverCommand.Flags().StringVar(&kvStoreConfig.MinIOEndpoint, "minio-endpoint", "",
@@ -156,28 +156,33 @@ func parseAndValidateServerParams() error {
 	}
 
 	// Validate Session option
-	if kvStoreConfig.BabuzaSession < 1 || kvStoreConfig.BabuzaSession > 3 {
-		return fmt.Errorf("invalid session option: %d (must be 1-3)", kvStoreConfig.BabuzaSession)
+	validSessionTypes := map[string]bool{"noop": true, "expire": true, "lru": true}
+	if _, ok := validSessionTypes[kvStoreConfig.BabuzaSession]; !ok {
+		return fmt.Errorf("invalid session option: %s (must be 'noop', 'expire', or 'lru')", kvStoreConfig.BabuzaSession)
 	}
 
 	// Validate Transport option
-	if kvStoreConfig.BabuzaTransportProtocol < 1 || kvStoreConfig.BabuzaTransportProtocol > 4 {
-		return fmt.Errorf("invalid transport protocol option: %d (must be 1-4)", kvStoreConfig.BabuzaTransportProtocol)
+	validTransportTypes := map[string]bool{"tcp": true, "tcp-memory": true, "http": true, "grpc": true}
+	if _, ok := validTransportTypes[kvStoreConfig.BabuzaTransportProtocol]; !ok {
+		return fmt.Errorf("invalid transport protocol option: %s (must be 'tcp', 'tcp-memory', 'http', or 'grpc')", kvStoreConfig.BabuzaTransportProtocol)
 	}
 
 	// Validate WAL option
-	if kvStoreConfig.BabuzaWal < 1 || kvStoreConfig.BabuzaWal > 4 {
-		return fmt.Errorf("invalid WAL option: %d (must be 1-4)", kvStoreConfig.BabuzaWal)
+	validWalTypes := map[string]bool{"babuza-wal": true, "etcd-wal": true, "lstm-wal-disk": true, "lstm-wal-memory": true}
+	if _, ok := validWalTypes[kvStoreConfig.BabuzaWal]; !ok {
+		return fmt.Errorf("invalid WAL option: %s (must be 'babuza-wal', 'etcd-wal', 'lstm-wal-disk', or 'lstm-wal-memory')", kvStoreConfig.BabuzaWal)
 	}
 
 	// Validate Snapshot option
-	if kvStoreConfig.BabuzaSnapshot < 1 || kvStoreConfig.BabuzaSnapshot > 3 {
-		return fmt.Errorf("invalid snapshot option: %d (must be 1-3)", kvStoreConfig.BabuzaSnapshot)
+	validSnapshotTypes := map[string]bool{"durable": true, "volatile": true, "minio": true}
+	if _, ok := validSnapshotTypes[kvStoreConfig.BabuzaSnapshot]; !ok {
+		return fmt.Errorf("invalid snapshot option: %s (must be 'durable', 'volatile', or 'minio')", kvStoreConfig.BabuzaSnapshot)
 	}
 
 	// Validate State Machine option
-	if kvStoreConfig.StateMachine < 1 || kvStoreConfig.StateMachine > 3 {
-		return fmt.Errorf("invalid state machine option: %d (must be 1-3)", kvStoreConfig.StateMachine)
+	validStateMachineTypes := map[string]bool{"memory": true, "memory-concurrent": true, "disk": true}
+	if _, ok := validStateMachineTypes[kvStoreConfig.StateMachine]; !ok {
+		return fmt.Errorf("invalid state machine option: %s (must be 'memory', 'memory-concurrent', or 'disk')", kvStoreConfig.StateMachine)
 	}
 
 	// Validate TLS settings
@@ -188,7 +193,7 @@ func parseAndValidateServerParams() error {
 	}
 
 	// Validate MinIO settings when MinIO snapshot is selected
-	if kvStoreConfig.BabuzaSnapshot == server.MinIOSnapshot {
+	if kvStoreConfig.BabuzaSnapshot == "minio" {
 		if kvStoreConfig.MinIOEndpoint == "" {
 			return fmt.Errorf("minio-endpoint is required when using MinIO snapshot storage")
 		}

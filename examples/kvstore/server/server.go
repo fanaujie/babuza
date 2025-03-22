@@ -27,69 +27,34 @@ import (
 	"path/filepath"
 )
 
-// Constants for component types, using numeric values
+// Constants for component types, using descriptive string values
 const (
 	// Session types
-	NoOpSession   = 1
-	ExpireSession = 2
-	LRUSession    = 3
+	NoOpSession   = "noop"
+	ExpireSession = "expire"
+	LRUSession    = "lru"
 
 	// Transport protocols
-	TcpTransport       = 1
-	TcpMemoryTransport = 2
-	HttpTransport      = 3
-	GRPCTranspost      = 4
+	TcpTransport       = "tcp"
+	TcpMemoryTransport = "tcp-memory"
+	HttpTransport      = "http"
+	GRPCTranspost      = "grpc"
 
 	// WAL implementations
-	BabuzaWal     = 1
-	ETCDWal       = 2
-	LstmWalDisk   = 3
-	LstmWalMemory = 4
+	BabuzaWal     = "babuza-wal"
+	ETCDWal       = "etcd-wal"
+	LstmWalDisk   = "lstm-wal-disk"
+	LstmWalMemory = "lstm-wal-memory"
 
 	// Snapshot implementations
-	DurableSnapshot  = 1
-	VolatileSnapshot = 2
-	MinIOSnapshot    = 3
+	DurableSnapshot  = "durable"
+	VolatileSnapshot = "volatile"
+	MinIOSnapshot    = "minio"
 
 	// State machine types
-	StateMachineMemory                           = 1
-	StateMachineMemoryWithConcurrentSnapshotType = 2
-	StateMachineDisk                             = 3
-)
-
-// Maps for converting numeric values to string constants required by the framework
-var (
-	SessionTypeMap = map[int]string{
-		NoOpSession:   "no",
-		ExpireSession: "expire",
-		LRUSession:    "lru",
-	}
-
-	TransportTypeMap = map[int]string{
-		TcpTransport:       "tcp",
-		TcpMemoryTransport: "tcp-memory",
-		HttpTransport:      "http",
-		GRPCTranspost:      "grpc",
-	}
-
-	WalTypeMap = map[int]string{
-		BabuzaWal:     "babuzawal",
-		ETCDWal:       "etcdwal",
-		LstmWalDisk:   "lstmwal-disk",
-		LstmWalMemory: "lstmwal-memory",
-	}
-
-	SnapshotTypeMap = map[int]string{
-		DurableSnapshot:  "durable",
-		VolatileSnapshot: "volatile",
-		MinIOSnapshot:    "minio",
-	}
-
-	StateMachineTypeMap = map[int]string{
-		StateMachineMemory:                           "state-machine-memory",
-		StateMachineMemoryWithConcurrentSnapshotType: "state-machine-memory-concurrent-snapshot",
-		StateMachineDisk:                             "state-machine-disk",
-	}
+	StateMachineMemory                           = "memory"
+	StateMachineMemoryWithConcurrentSnapshotType = "memory-concurrent"
+	StateMachineDisk                             = "disk"
 )
 
 type Config struct {
@@ -106,11 +71,11 @@ type Config struct {
 	RaftTLSKeyFile           string
 	RaftTLSRootCA            string
 	RaftStorageDir           string
-	BabuzaSession            int
-	BabuzaTransportProtocol  int
-	BabuzaWal                int
-	BabuzaSnapshot           int
-	StateMachine             int
+	BabuzaSession            string
+	BabuzaTransportProtocol  string
+	BabuzaWal                string
+	BabuzaSnapshot           string
+	StateMachine             string
 	JoinRaftCluster          bool
 	RaftEncrypt              bool
 	RaftDisableForwarding    bool
@@ -183,7 +148,7 @@ func (s *Server) Start() error {
 	case LRUSession:
 		sessionMgr = session.NewLruManager(raftLogger)
 	default:
-		return fmt.Errorf("unsupported session type: %d", s.cfg.BabuzaSession)
+		return fmt.Errorf("unsupported session type: %s", s.cfg.BabuzaSession)
 	}
 
 	// Set up State machine
@@ -208,7 +173,7 @@ func (s *Server) Start() error {
 			s.stateMachine = kvstore.NewDiskStoreWithSession(dataDir)
 		}
 	default:
-		return fmt.Errorf("unsupported state machine type: %d", s.cfg.StateMachine)
+		return fmt.Errorf("unsupported state machine type: %s", s.cfg.StateMachine)
 	}
 
 	// Set up Transport layer
@@ -229,7 +194,7 @@ func (s *Server) Start() error {
 		trans = transport.New(s.cfg.RaftClusterId, transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
 			limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(), protocol.NewGrpc(raftLogger), raftLogger)
 	default:
-		return fmt.Errorf("unsupported transport protocol: %d", s.cfg.BabuzaTransportProtocol)
+		return fmt.Errorf("unsupported transport protocol: %s", s.cfg.BabuzaTransportProtocol)
 	}
 
 	// Set up WAL manager
@@ -249,7 +214,7 @@ func (s *Server) Start() error {
 			InMemory: true,
 		}, raftLogger)
 	default:
-		return fmt.Errorf("unsupported WAL type: %d", s.cfg.BabuzaWal)
+		return fmt.Errorf("unsupported WAL type: %s", s.cfg.BabuzaWal)
 	}
 
 	// Set up Snapshot manager
@@ -271,7 +236,7 @@ func (s *Server) Start() error {
 			Prefix:          s.cfg.MinIOPrefix,
 		}, raftLogger)
 	default:
-		return fmt.Errorf("unsupported snapshot type: %d", s.cfg.BabuzaSnapshot)
+		return fmt.Errorf("unsupported snapshot type: %s", s.cfg.BabuzaSnapshot)
 	}
 
 	// Set up Raft node
