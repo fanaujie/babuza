@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/fanaujie/babuza/examples/kvstore/client"
-	"github.com/fanaujie/babuza/examples/kvstore/cmd/cmdprocessor"
+	cmdClient "github.com/fanaujie/babuza/examples/kvstore/cmd/client"
 	"github.com/spf13/cobra"
 	"io"
 	"strconv"
@@ -29,11 +29,11 @@ func NewClientCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			processor := cmdprocessor.NewCommandProcessor()
-			processor.AddCommand("exit", cmdprocessor.NewExitCommand())
-			processor.AddCommand("join", cmdprocessor.NewJoinCommand(kvClient))
-			processor.AddCommand("set", cmdprocessor.NewSetCommand(kvClient))
-			processor.AddCommand("get", cmdprocessor.NewGetCommand(kvClient))
+			processor := cmdClient.NewCommandProcessor()
+			processor.AddCommand("exit", cmdClient.NewExitCommand())
+			processor.AddCommand("join", cmdClient.NewJoinCommand(kvClient))
+			processor.AddCommand("set", cmdClient.NewSetCommand(kvClient))
+			processor.AddCommand("get", cmdClient.NewGetCommand(kvClient))
 			return processor.StartCommandLoop()
 		},
 	}

@@ -34,7 +34,7 @@ func newStorageManager(stateMachine ibabuza.BaseStateMachine, snapshotManager ib
 	}, nil
 }
 
-func (s *storageManager) ScanInstallSnapshot() error {
+func (s *storageManager) ScanInstalledSnapshot() error {
 	//TODO: verify snapshot files?
 	return s.snapshotManager.ScanInstalledSnapshots(true)
 }

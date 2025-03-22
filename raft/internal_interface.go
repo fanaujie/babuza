@@ -17,7 +17,7 @@ type InternalStorageSnapshotContext interface {
 }
 
 type InternalStorage interface {
-	ScanInstallSnapshot() error
+	ScanInstalledSnapshot() error
 	FindSnapshotFromWal() ([]walpb.Snapshot, error)
 	LoadLastValidFromSnapshot(walSnaps []walpb.Snapshot) (*raftpb.Snapshot, error)
 	HasExistingWalFiles() (bool, error)

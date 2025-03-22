@@ -38,9 +38,14 @@ type Transport struct {
 	snapMessageCh    chan<- babuzapb.SnapshotMessage
 }
 
-func New(clusterId uint64, opts Options, peerManager PeerManager, memoryLimiter limiter.ResourceLimiter, chunkRateLimiter limiter.RateLimiter,
-	breaker breaker.Breaker, protocol ibabuza.TransportProtocol, logger ibabuza.Logger) *Transport {
+func New(clusterId uint64, peerManager PeerManager, memoryLimiter limiter.ResourceLimiter, chunkRateLimiter limiter.RateLimiter,
+	breaker breaker.Breaker, protocol ibabuza.TransportProtocol, logger ibabuza.Logger, setOpts ...SetTransportOptions) *Transport {
 	logger.Infof("transport: creating transport")
+
+	opts := DefaultOptions()
+	for _, setOpt := range setOpts {
+		setOpt(&opts)
+	}
 	trans := &Transport{
 		clusterId:        clusterId,
 		options:          opts,
