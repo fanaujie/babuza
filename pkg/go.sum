@@ -103,8 +103,8 @@ github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1m
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
 github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a h1:yDWHCSQ40h88yih2JAcL6Ls/kVkSE8GFACTGVnMPruw=
 github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a/go.mod h1:7Ga40egUymuWXxAe151lTNnCv97MddSOVsjpPPkityA=
-github.com/fanaujie/babuza/ibabuza v0.1.1 h1:zJkjLL95oCT63AXep5+VHZJFkFMCnh7UXHZVlitAbOQ=
-github.com/fanaujie/babuza/ibabuza v0.1.1/go.mod h1:ch8iLeNZbZ042q55zydCTiES2eLsO2lPn80QI+Nm4Tw=
+github.com/fanaujie/babuza/ibabuza v0.1.4 h1:00xu9a3b73HDcqf3rm4F6A1jDQzJLCMZr44z+G0QRPw=
+github.com/fanaujie/babuza/ibabuza v0.1.4/go.mod h1:ch8iLeNZbZ042q55zydCTiES2eLsO2lPn80QI+Nm4Tw=
 github.com/felixge/httpsnoop v1.0.4 h1:NFTV2Zj1bL4mc9sqWACXbQFVBBg2W3GPvqp8/ESS2Wg=
 github.com/felixge/httpsnoop v1.0.4/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
 github.com/go-gl/glfw v0.0.0-20190409004039-e6da0acd62b1/go.mod h1:vR7hzQXu2zJy9AVAgeJqvqgH9Q5CA+iKCZ2gyEVpxRU=

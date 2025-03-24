@@ -1,0 +1,70 @@
+services:
+  # Node 1
+  kvstore-node1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: babuza-kvstore:latest
+    container_name: kvstore-node1
+    command: [
+      "server",
+      "--raft-cluster-id=100",
+      "--raft-local-peer-id=1",
+      "--raft-local-peer-address=kvstore-node1:14200",
+      "--kv-http-address=kvstore-node1:24200",
+      "--raft-storage-dir=/data/raft_storage",
+      "--raft-cluster-peers-address=1=kvstore-node1:14200,2=kvstore-node2:14200,3=kvstore-node3:14200",
+      "--transport-protocol=tcp",
+      "--wal-type=babuza-wal",
+      "--snapshot-type=durable",
+      "--state-machine=memory"
+    ]
+    ports:
+      - "24201:24200"  # HTTP API
+
+  # Node 2
+  kvstore-node2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: babuza-kvstore:latest
+    container_name: kvstore-node2
+    command: [
+      "server",
+      "--raft-cluster-id=100",
+      "--raft-local-peer-id=2",
+      "--raft-local-peer-address=kvstore-node2:14200",
+      "--kv-http-address=kvstore-node2:24200",
+      "--raft-storage-dir=/data/raft_storage",
+      "--raft-cluster-peers-address=1=kvstore-node1:14200,2=kvstore-node2:14200,3=kvstore-node3:14200",
+      "--transport-protocol=tcp",
+      "--wal-type=babuza-wal",
+      "--snapshot-type=durable",
+      "--state-machine=memory"
+    ]
+    ports:
+      - "24202:24200"  # HTTP API
+
+
+  # Node 3
+  kvstore-node3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: babuza-kvstore:latest
+    container_name: kvstore-node3
+    command: [
+      "server",
+      "--raft-cluster-id=100",
+      "--raft-local-peer-id=3",
+      "--raft-local-peer-address=kvstore-node3:14200",
+      "--kv-http-address=kvstore-node3:24200",
+      "--raft-storage-dir=/data/raft_storage",
+      "--raft-cluster-peers-address=1=kvstore-node1:14200,2=kvstore-node2:14200,3=kvstore-node3:14200",
+      "--transport-protocol=tcp",
+      "--wal-type=babuza-wal",
+      "--snapshot-type=durable",
+      "--state-machine=memory"
+    ]
+    ports:
+      - "24203:24200"  # HTTP API

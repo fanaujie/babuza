@@ -6,7 +6,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/dgraph-io/badger/v4 v4.6.0
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
-	github.com/fanaujie/babuza/ibabuza v0.1.1
+	github.com/fanaujie/babuza/ibabuza v0.1.4
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/minio/minio-go/v7 v7.0.88
