@@ -217,7 +217,7 @@ func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[s
 		copy(startKey, keyEntry)
 		startIndex := 0
 		binary.BigEndian.PutUint64(startKey[8:], readEntryIndex[startIndex].Index)
-		for it.Seek(startKey); it.ValidForPrefix(startKey[:8]); it.Next() {
+		for it.Seek(startKey); startIndex < len(readEntryIndex) && it.ValidForPrefix(startKey[:8]); it.Next() {
 			if binary.BigEndian.Uint64(it.Item().Key()[8:]) != readEntryIndex[startIndex].Index {
 				return fmt.Errorf("invalid entry index %d expected %d",
 					binary.BigEndian.Uint64(it.Item().Key()), readEntryIndex[startIndex].Index)
@@ -234,9 +234,8 @@ func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[s
 			}
 			startIndex++
 		}
-		if startIndex != len(readEntryIndex) {
-			return fmt.Errorf("start index %d is not equal to the length of readEntryIndex %d",
-				startIndex, len(readEntryIndex))
+		if startIndex == 0 {
+			return fmt.Errorf("no entries found for readEntryIndex %v", readEntryIndex)
 		}
 		return nil
 	})

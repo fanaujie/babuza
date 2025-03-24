@@ -43,8 +43,8 @@ const (
 	// WAL implementations
 	BabuzaWal     = "babuza-wal"
 	ETCDWal       = "etcd-wal"
-	LstmWalDisk   = "lstm-wal-disk"
-	LstmWalMemory = "lstm-wal-memory"
+	LsmtWalDisk   = "lsmt-wal"
+	LsmtWalMemory = "lsmt-wal-memory"
 
 	// Snapshot implementations
 	DurableSnapshot  = "durable"
@@ -205,11 +205,11 @@ func (s *Server) Start() error {
 		walManager = babuzawal.NewWalManager(walDir, raftLogger)
 	case ETCDWal:
 		walManager = etcdwal.NewWalManager(walDir, zapLogger)
-	case LstmWalDisk:
+	case LsmtWalDisk:
 		walManager = lsmtwal.NewBadgerWalManager(lsmtwal.Config{
 			WalDir: walDir,
 		}, raftLogger)
-	case LstmWalMemory:
+	case LsmtWalMemory:
 		walManager = lsmtwal.NewBadgerWalManager(lsmtwal.Config{
 			InMemory: true,
 		}, raftLogger)
