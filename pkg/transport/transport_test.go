@@ -203,21 +203,21 @@ func TestTransport_Create(t *testing.T) {
 	// Test TCP protocol
 	peerManager := NewPeerManager()
 	tcpProtocol := protocol.NewTcp(networkio.NewTcpPhysicalIO(), &logger.Mock{})
-	tcpTrans := New(1, DefaultOptions(), peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
+	tcpTrans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), tcpProtocol, &logger.Mock{})
 	assert.NotNil(t, tcpTrans)
 
 	// Test HTTP protocol
 	peerManager = NewPeerManager()
 	httpProtocol := protocol.NewHttp(&logger.Mock{})
-	httpTrans := New(1, DefaultOptions(), peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
+	httpTrans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), httpProtocol, &logger.Mock{})
 	assert.NotNil(t, httpTrans)
 
 	// Test GRPC protocol
 	peerManager = NewPeerManager()
 	grpcProtocol := protocol.NewGrpc(&logger.Mock{})
-	grpcTrans := New(1, DefaultOptions(), peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
+	grpcTrans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), grpcProtocol, &logger.Mock{})
 	assert.NotNil(t, grpcTrans)
 }
@@ -265,10 +265,8 @@ func newTestTransport(t *testing.T, transType int, nodeId uint64, listenAddress 
 	}
 
 	peerManager := NewPeerManager()
-	opt := DefaultOptions()
-	opt.PeerSnapshotChunkSize = 8
-	trans := New(1, opt, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
-		breaker.NewNoOpBreaker(), tranProtocol, &logger.Mock{})
+	trans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
+		breaker.NewNoOpBreaker(), tranProtocol, &logger.Mock{}, SetTransportOptionsWithPeerSnapshotChunkSize(8))
 
 	err := trans.SetupTransportConfig(ibabuza.TransportConfig{
 		PeerId:      nodeId,

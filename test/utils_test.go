@@ -150,7 +150,6 @@ func defaultBootstrapBuilder(babuzaConfig *babuza.BabuzaConfig, dirs *babuzaDire
 	bootstrapBuilder.SetWalManager(babuzawal.NewWalManager(dirs.walDir, babuzaLogger))
 	bootstrapBuilder.SetTransport(transport.New(
 		babuzaConfig.ClusterId,
-		transport.DefaultOptions(),
 		transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
 		limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(),
 		protocol.NewTcp(networkio.NewTcpPhysicalIO(), babuzaLogger), babuzaLogger))

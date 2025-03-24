@@ -209,7 +209,7 @@ func (m *mockTransport) Send(msg raftpb.Message) { m.send = append(m.send, msg) 
 func (m *mockTransport) SendSnapshot(snap raftpb.Message) {
 	m.snap = append(m.snap, snap)
 }
-func (m *mockTransport) CreateTransportClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
+func (m *mockTransport) CreateTransportClient() (ibabuza.TransportClient, error) {
 	return m.mockClient, nil
 }
 func (m *mockTransport) AddPeer(uint64, string)    {}
@@ -391,7 +391,7 @@ func (m *mockStorageMgr) CreateSnapshotWriter(snapshotTerm, snapshotIndex uint64
 	return nil, err
 }
 
-func (m *mockStorageMgr) ScanInstallSnapshot() error                     { return nil }
+func (m *mockStorageMgr) ScanInstalledSnapshot() error                   { return nil }
 func (m *mockStorageMgr) FindSnapshotFromWal() ([]walpb.Snapshot, error) { return nil, nil }
 func (m *mockStorageMgr) LoadLastValidFromSnapshot(walSnaps []walpb.Snapshot) (*raftpb.Snapshot, error) {
 	return nil, nil

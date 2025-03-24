@@ -1,4 +1,4 @@
-package cmdprocessor
+package client
 
 type ExitCommand struct {
 }

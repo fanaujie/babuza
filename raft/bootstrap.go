@@ -23,7 +23,7 @@ type BootstrapRaftCluster struct {
 	logger     ibabuza.Logger
 }
 
-func NewBootstrapRaftCluster(cfg *BabuzaConfig, configuration *VotingPeersConfiguration, stateMachine ibabuza.BaseStateMachine,
+func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConfiguration, stateMachine ibabuza.BaseStateMachine,
 	cluster ibabuza.Cluster, raftNode ibabuza.RaftNode, sessions ibabuza.SessionManager, snapshotManager ibabuza.SnapshotManager,
 	walManager ibabuza.WalManager, trans ibabuza.Transport, logger ibabuza.Logger) (*BootstrapRaftCluster, error) {
 
@@ -48,7 +48,7 @@ func NewBootstrapRaftCluster(cfg *BabuzaConfig, configuration *VotingPeersConfig
 	if exist, err := storage.HasExistingWalFiles(); err != nil {
 		return nil, err
 	} else if exist {
-		if err = storage.ScanInstallSnapshot(); err != nil {
+		if err = storage.ScanInstalledSnapshot(); err != nil {
 			return nil, err
 		}
 		node, err = restartNode(cfg, raftNode, cluster, sessions, storage, trans, raftStatus, logger)
@@ -56,7 +56,7 @@ func NewBootstrapRaftCluster(cfg *BabuzaConfig, configuration *VotingPeersConfig
 			return nil, err
 		}
 	} else {
-		node, err = startNode(cfg, configuration, raftNode, storage, trans, logger)
+		node, err = startNode(cfg, votingPeersConfig, raftNode, storage, trans, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +80,7 @@ func NewBootstrapRaftCluster(cfg *BabuzaConfig, configuration *VotingPeersConfig
 //	if err := sessions.SetApplyResultSerializer(stateMachine.GetApplyResultSerializer()); err != nil {
 //		return err
 //	}
-//	if err := durable.ScanInstallSnapshot(); err != nil {
+//	if err := durable.ScanInstalledSnapshot(); err != nil {
 //		return err
 //	}
 //	if exist, err := durable.HasExistingWalFiles(cfg.WalDir); err != nil {
@@ -173,7 +173,7 @@ func NewBootstrapRaftCluster(cfg *BabuzaConfig, configuration *VotingPeersConfig
 //
 //}
 
-func startNode(cfg *BabuzaConfig, configuration *VotingPeersConfiguration, raftNode ibabuza.RaftNode,
+func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNode ibabuza.RaftNode,
 	storage InternalStorage, trans ibabuza.Transport, logger ibabuza.Logger) (raft.Node, error) {
 	var peers []raft.Peer
 	var err error
@@ -222,7 +222,7 @@ func startNode(cfg *BabuzaConfig, configuration *VotingPeersConfiguration, raftN
 	return raftNode.Start(raftCfg, peers)
 }
 
-func restartNode(cfg *BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cluster, sessions ibabuza.SessionManager,
+func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cluster, sessions ibabuza.SessionManager,
 	storage InternalStorage, trans ibabuza.Transport, status InternalStatus, logger ibabuza.Logger) (raft.Node, error) {
 
 	//TODO: verify snap and wal match
@@ -273,7 +273,7 @@ func restartNode(cfg *BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.C
 	return raftNode.Restart(cfg.convertToRaftConfig(logger, entryStorage))
 }
 
-func matchRemoteCluster(remoteCtx context.Context, config *BabuzaConfig, remoteConfiguration *VotingPeersConfiguration,
+func matchRemoteCluster(remoteCtx context.Context, config BabuzaConfig, remoteConfiguration VotingPeersConfiguration,
 	trans ibabuza.Transport) error {
 
 	req := babuzapb.GetClusterPeersRequest{
