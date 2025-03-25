@@ -5,6 +5,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/durable"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/volatile"
+	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 )
 
 type Options struct {
@@ -33,6 +34,12 @@ func NewDurableSnapshotManager(snapshotDir string, logger ibabuza.Logger, option
 	}
 	for _, setOpt := range options {
 		setOpt(&defaultOpt)
+	}
+	if !fileutil.Exist(snapshotDir) {
+		if err := fileutil.CreateDirAndTouch(snapshotDir); err != nil {
+			logger.Panicf("failed to create snapshot dir %s: %v", snapshotDir, err)
+			return nil
+		}
 	}
 	fs := durable.NewSnapshotFS()
 	logger.Infof("durable snapshot manager: creating durable snapshot manager with snapshotDir=%s", snapshotDir)

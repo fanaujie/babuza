@@ -17,6 +17,18 @@ func NewTransferLeaderHandler(r *raft.Raft) *TransferLeaderHandler {
 	return &TransferLeaderHandler{r: r}
 }
 
+// ServeHTTP handles leadership transfer requests
+// @Summary Transfer Raft leadership
+// @Description Transfers leadership from the current leader to another node
+// @Tags cluster-management
+// @Accept json
+// @Produce json
+// @Param request body request.TransferLeaderRequest true "Leader transfer request"
+// @Success 200 {object} response.TransferLeaderResponse "Leadership transfer successful"
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Failure 503 {object} string "Service unavailable - not leader"
+// @Router /transfer-leader [put]
 func (h *TransferLeaderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

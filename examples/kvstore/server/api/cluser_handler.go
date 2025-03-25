@@ -32,6 +32,18 @@ func (h *ClusterPeerResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	}
 }
 
+// joinPeerFunc adds a new peer to the cluster
+// @Summary Add a new peer to the cluster
+// @Description Join a new peer (voting or learner) to the Raft cluster
+// @Tags peers
+// @Accept json
+// @Produce json
+// @Param request body request.JoinPeerRequest true "Peer join request"
+// @Success 200 {object} response.ClusterConfigurationResponse "Current cluster configuration after join"
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Failure 503 {object} string "Service unavailable - not leader"
+// @Router /peers [post]
 func (h *ClusterPeerResourceHandler) joinPeerFunc(w http.ResponseWriter, r *http.Request) {
 	var req request.JoinPeerRequest
 	b, err := io.ReadAll(r.Body)
@@ -75,12 +87,32 @@ func (h *ClusterPeerResourceHandler) joinPeerFunc(w http.ResponseWriter, r *http
 	}
 }
 
+// getPeersFunc retrieves all cluster peers
+// @Summary Get all cluster peers
+// @Description Retrieve information about all peers in the Raft cluster
+// @Tags peers
+// @Produce json
+// @Success 200 {object} response.ClusterConfigurationResponse "Cluster configuration"
+// @Failure 500 {object} string "Internal server error"
+// @Router /peers [get]
 func (h *ClusterPeerResourceHandler) getPeersFunc(w http.ResponseWriter, r *http.Request) {
 	if err := writeHttpResponse(w, convertRaftClusterPeersToResponse(h.r, 0, 0)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
+// updatePeerFunc updates an existing peer's configuration
+// @Summary Update peer configuration
+// @Description Update an existing peer's configuration in the Raft cluster
+// @Tags peers
+// @Accept json
+// @Produce json
+// @Param request body request.UpdatePeerRequest true "Peer update request"
+// @Success 200 {object} response.ClusterConfigurationResponse "Updated cluster configuration"
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Failure 503 {object} string "Service unavailable - not leader"
+// @Router /peers [put]
 func (h *ClusterPeerResourceHandler) updatePeerFunc(w http.ResponseWriter, r *http.Request) {
 	var req request.UpdatePeerRequest
 	b, err := io.ReadAll(r.Body)
@@ -118,6 +150,18 @@ func (h *ClusterPeerResourceHandler) updatePeerFunc(w http.ResponseWriter, r *ht
 	}
 }
 
+// removePeerFunc removes a peer from the cluster
+// @Summary Remove a peer from the cluster
+// @Description Remove an existing peer from the Raft cluster
+// @Tags peers
+// @Accept json
+// @Produce json
+// @Param request body request.RemovePeerRequest true "Peer removal request"
+// @Success 200 {object} response.ClusterConfigurationResponse "Updated cluster configuration after removal"
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Failure 503 {object} string "Service unavailable - not leader"
+// @Router /peers [delete]
 func (h *ClusterPeerResourceHandler) removePeerFunc(w http.ResponseWriter, r *http.Request) {
 	var req request.RemovePeerRequest
 	b, err := io.ReadAll(r.Body)

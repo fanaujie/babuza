@@ -1,0 +1,473 @@
+basePath: /
+definitions:
+  request.JoinPeerRequest:
+    properties:
+      is_learner:
+        type: boolean
+      lowest_sequence_number_not_yet_replied:
+        type: integer
+      raft_listen_addr:
+        type: string
+      raft_peer_id:
+        type: integer
+      sequence_number:
+        type: integer
+      session_id:
+        type: integer
+    type: object
+  request.KvStoreAppendRequest:
+    properties:
+      key:
+        type: string
+      lowest_sequence_number_not_yet_replied:
+        type: integer
+      sequence_number:
+        type: integer
+      session_id:
+        type: integer
+      value:
+        type: string
+    type: object
+  request.KvStoreSetRequest:
+    properties:
+      key:
+        type: string
+      lowest_sequence_number_not_yet_replied:
+        type: integer
+      sequence_number:
+        type: integer
+      session_id:
+        type: integer
+      value:
+        type: string
+    type: object
+  request.PromoteLearnerRequest:
+    properties:
+      lowest_sequence_number_not_yet_replied:
+        type: integer
+      raft_peer_id:
+        type: integer
+      sequence_number:
+        type: integer
+      session_id:
+        type: integer
+    type: object
+  request.RemovePeerRequest:
+    properties:
+      lowest_sequence_number_not_yet_replied:
+        type: integer
+      raft_peer_id:
+        type: integer
+      sequence_number:
+        type: integer
+      session_id:
+        type: integer
+    type: object
+  request.TransferLeaderRequest:
+    properties:
+      transferee:
+        type: integer
+    type: object
+  request.UpdatePeerRequest:
+    properties:
+      lowest_sequence_number_not_yet_replied:
+        type: integer
+      raft_listen_addr:
+        type: string
+      raft_peer_id:
+        type: integer
+      sequence_number:
+        type: integer
+      session_id:
+        type: integer
+    type: object
+  response.ClusterConfigurationResponse:
+    properties:
+      leader_id:
+        type: integer
+      peers:
+        items:
+          $ref: '#/definitions/response.ClusterPeer'
+        type: array
+      sequence_number:
+        type: integer
+      session_id:
+        type: integer
+    type: object
+  response.ClusterPeer:
+    properties:
+      app_service_address:
+        type: string
+      id:
+        type: integer
+      is_learner:
+        type: boolean
+      raft_listen_addr:
+        type: string
+    type: object
+  response.KvStoreResponse:
+    properties:
+      command:
+        type: integer
+      key:
+        type: string
+      sequence_number:
+        type: integer
+      session_id:
+        type: integer
+      value:
+        type: string
+    type: object
+  response.RegisterSessionResponse:
+    properties:
+      session_id:
+        type: integer
+    type: object
+  response.TransferLeaderResponse:
+    type: object
+info:
+  contact: {}
+  description: A distributed key-value store using Babuza
+  license:
+    name: Apache 2.0
+  title: Babuza KV Store API
+  version: "1.0"
+paths:
+  /kv:
+    delete:
+      consumes:
+      - application/json
+      description: Remove a key-value pair from the store
+      parameters:
+      - description: Key to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.KvStoreAppendRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Result of the delete operation
+          schema:
+            $ref: '#/definitions/response.KvStoreResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+        "503":
+          description: Service unavailable - not leader
+          schema:
+            type: string
+      summary: Delete a key-value pair
+      tags:
+      - kv-store
+    get:
+      description: Retrieve a value from the key-value store by its key
+      parameters:
+      - description: Key to retrieve
+        in: query
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Key-value pair
+          schema:
+            $ref: '#/definitions/response.KvStoreResponse'
+        "400":
+          description: Bad request - missing key
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get a value by key
+      tags:
+      - kv-store
+    post:
+      consumes:
+      - application/json
+      description: Set or replace a key-value pair in the store
+      parameters:
+      - description: Key-value set request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.KvStoreSetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Result of the set operation
+          schema:
+            $ref: '#/definitions/response.KvStoreResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+        "503":
+          description: Service unavailable - not leader
+          schema:
+            type: string
+      summary: Set a key-value pair
+      tags:
+      - kv-store
+    put:
+      consumes:
+      - application/json
+      description: Append content to an existing key's value
+      parameters:
+      - description: Key-value append request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.KvStoreAppendRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Result of the append operation
+          schema:
+            $ref: '#/definitions/response.KvStoreResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+        "503":
+          description: Service unavailable - not leader
+          schema:
+            type: string
+      summary: Append to a key's value
+      tags:
+      - kv-store
+  /peers:
+    delete:
+      consumes:
+      - application/json
+      description: Remove an existing peer from the Raft cluster
+      parameters:
+      - description: Peer removal request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.RemovePeerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated cluster configuration after removal
+          schema:
+            $ref: '#/definitions/response.ClusterConfigurationResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+        "503":
+          description: Service unavailable - not leader
+          schema:
+            type: string
+      summary: Remove a peer from the cluster
+      tags:
+      - peers
+    get:
+      description: Retrieve information about all peers in the Raft cluster
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Cluster configuration
+          schema:
+            $ref: '#/definitions/response.ClusterConfigurationResponse'
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Get all cluster peers
+      tags:
+      - peers
+    post:
+      consumes:
+      - application/json
+      description: Join a new peer (voting or learner) to the Raft cluster
+      parameters:
+      - description: Peer join request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.JoinPeerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Current cluster configuration after join
+          schema:
+            $ref: '#/definitions/response.ClusterConfigurationResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+        "503":
+          description: Service unavailable - not leader
+          schema:
+            type: string
+      summary: Add a new peer to the cluster
+      tags:
+      - peers
+    put:
+      consumes:
+      - application/json
+      description: Update an existing peer's configuration in the Raft cluster
+      parameters:
+      - description: Peer update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.UpdatePeerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated cluster configuration
+          schema:
+            $ref: '#/definitions/response.ClusterConfigurationResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+        "503":
+          description: Service unavailable - not leader
+          schema:
+            type: string
+      summary: Update peer configuration
+      tags:
+      - peers
+  /promote-learner:
+    put:
+      consumes:
+      - application/json
+      description: Promotes a learner node to a voting member in the Raft cluster
+      parameters:
+      - description: Learner promotion request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.PromoteLearnerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated cluster configuration after promotion
+          schema:
+            $ref: '#/definitions/response.ClusterConfigurationResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+        "503":
+          description: Service unavailable - not leader
+          schema:
+            type: string
+      summary: Promote a learner to a voting member
+      tags:
+      - cluster-management
+  /sessions:
+    post:
+      consumes:
+      - application/json
+      description: Create a new client session for the Raft cluster
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Session successfully registered
+          schema:
+            $ref: '#/definitions/response.RegisterSessionResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+        "503":
+          description: Service unavailable - not leader
+          schema:
+            type: string
+      summary: Register a new client session
+      tags:
+      - sessions
+  /transfer-leader:
+    put:
+      consumes:
+      - application/json
+      description: Transfers leadership from the current leader to another node
+      parameters:
+      - description: Leader transfer request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.TransferLeaderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Leadership transfer successful
+          schema:
+            $ref: '#/definitions/response.TransferLeaderResponse'
+        "400":
+          description: Bad request
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+        "503":
+          description: Service unavailable - not leader
+          schema:
+            type: string
+      summary: Transfer Raft leadership
+      tags:
+      - cluster-management
+swagger: "2.0"

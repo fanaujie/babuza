@@ -287,13 +287,18 @@ func (s *Server) Start() error {
 	return s.startService()
 }
 
+// @title Babuza KV Store API
+// @version 1.0
+// @description A distributed key-value store using Babuza
+// @license.name Apache 2.0
+// @BasePath /
 func (s *Server) startService() error {
 	m := http.NewServeMux()
-	m.Handle(api.SessionsHttpPath, api.NewSessionResourceHandler(s.raft))
-	m.Handle(api.ClusterPeersHttpPath, api.NewClusterPeerResourceHandler(s.raft))
-	m.Handle(api.PromoteLearnerHttpPath, api.NewPromoteLearnerHandler(s.raft))
-	m.Handle(api.TransferLeaderHttpPath, api.NewTransferLeaderHandler(s.raft))
-	m.Handle(api.KvHttpPath, api.NewKvStoreResourceHandler(true, s.raft, s.stateMachine.(api.ReadKvStore)))
+	m.Handle(api.SessionsHttpPath, corsMiddleware(api.NewSessionResourceHandler(s.raft)))
+	m.Handle(api.ClusterPeersHttpPath, corsMiddleware(api.NewClusterPeerResourceHandler(s.raft)))
+	m.Handle(api.PromoteLearnerHttpPath, corsMiddleware(api.NewPromoteLearnerHandler(s.raft)))
+	m.Handle(api.TransferLeaderHttpPath, corsMiddleware(api.NewTransferLeaderHandler(s.raft)))
+	m.Handle(api.KvHttpPath, corsMiddleware(api.NewKvStoreResourceHandler(true, s.raft, s.stateMachine.(api.ReadKvStore))))
 	s.httpSrv = &http.Server{
 		Addr:    s.cfg.KvServiceHttpAddress,
 		Handler: m,
@@ -303,4 +308,22 @@ func (s *Server) startService() error {
 	} else {
 		return s.httpSrv.ListenAndServe()
 	}
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*") // Allow any origin
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Handle preflight requests
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Call the next handler
+		next.ServeHTTP(w, r)
+	})
 }

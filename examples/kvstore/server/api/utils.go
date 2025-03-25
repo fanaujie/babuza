@@ -30,11 +30,13 @@ func writeHttpResponse(w http.ResponseWriter, response any) error {
 }
 
 func convertRaftClusterPeersToResponse(babuza *raft.Raft, sessionId, sessionSeqNum uint64) *response.ClusterConfigurationResponse {
+	babuzaResponse := babuza.ClusterConfiguration()
 	res := &response.ClusterConfigurationResponse{
 		SessionID:      sessionId,
 		SequenceNumber: sessionSeqNum,
+		LeaderID:       babuzaResponse.LeaderID,
 	}
-	for _, peer := range babuza.ClusterConfiguration().Peers {
+	for _, peer := range babuzaResponse.Peers {
 		r := response.ClusterPeer{
 			Id:             peer.RaftPeerAttr.Id,
 			RaftListenAddr: peer.RaftPeerAttr.RaftListenAddr,
