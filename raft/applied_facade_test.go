@@ -166,7 +166,7 @@ func (m *mockApplyStatus) GetHardStateTerm() uint64 {
 	return m.hardStateTerm
 }
 
-func (m *mockApplyStatus) IsPublishServiceMarkDone() bool {
+func (m *mockApplyStatus) IsLocalPeerPublishServiceMarkDone() bool {
 	return m.pubServiceDone
 }
 

@@ -1,0 +1,731 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "A distributed key-value store using Babuza",
+        "title": "Babuza KV Store API",
+        "contact": {},
+        "license": {
+            "name": "Apache 2.0"
+        },
+        "version": "1.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/kv": {
+            "get": {
+                "description": "Retrieve a value from the key-value store by its key",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kv-store"
+                ],
+                "summary": "Get a value by key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Key to retrieve",
+                        "name": "key",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Key-value pair",
+                        "schema": {
+                            "$ref": "#/definitions/response.KvStoreResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing key",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Append content to an existing key's value",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kv-store"
+                ],
+                "summary": "Append to a key's value",
+                "parameters": [
+                    {
+                        "description": "Key-value append request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.KvStoreAppendRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result of the append operation",
+                        "schema": {
+                            "$ref": "#/definitions/response.KvStoreResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable - not leader",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Set or replace a key-value pair in the store",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kv-store"
+                ],
+                "summary": "Set a key-value pair",
+                "parameters": [
+                    {
+                        "description": "Key-value set request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.KvStoreSetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result of the set operation",
+                        "schema": {
+                            "$ref": "#/definitions/response.KvStoreResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable - not leader",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove a key-value pair from the store",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "kv-store"
+                ],
+                "summary": "Delete a key-value pair",
+                "parameters": [
+                    {
+                        "description": "Key to delete",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.KvStoreAppendRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result of the delete operation",
+                        "schema": {
+                            "$ref": "#/definitions/response.KvStoreResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable - not leader",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/peers": {
+            "get": {
+                "description": "Retrieve information about all peers in the Raft cluster",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "peers"
+                ],
+                "summary": "Get all cluster peers",
+                "responses": {
+                    "200": {
+                        "description": "Cluster configuration",
+                        "schema": {
+                            "$ref": "#/definitions/response.ClusterConfigurationResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an existing peer's configuration in the Raft cluster",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "peers"
+                ],
+                "summary": "Update peer configuration",
+                "parameters": [
+                    {
+                        "description": "Peer update request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.UpdatePeerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated cluster configuration",
+                        "schema": {
+                            "$ref": "#/definitions/response.ClusterConfigurationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable - not leader",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Join a new peer (voting or learner) to the Raft cluster",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "peers"
+                ],
+                "summary": "Add a new peer to the cluster",
+                "parameters": [
+                    {
+                        "description": "Peer join request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.JoinPeerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Current cluster configuration after join",
+                        "schema": {
+                            "$ref": "#/definitions/response.ClusterConfigurationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable - not leader",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove an existing peer from the Raft cluster",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "peers"
+                ],
+                "summary": "Remove a peer from the cluster",
+                "parameters": [
+                    {
+                        "description": "Peer removal request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.RemovePeerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated cluster configuration after removal",
+                        "schema": {
+                            "$ref": "#/definitions/response.ClusterConfigurationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable - not leader",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/promote-learner": {
+            "put": {
+                "description": "Promotes a learner node to a voting member in the Raft cluster",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "cluster-management"
+                ],
+                "summary": "Promote a learner to a voting member",
+                "parameters": [
+                    {
+                        "description": "Learner promotion request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.PromoteLearnerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated cluster configuration after promotion",
+                        "schema": {
+                            "$ref": "#/definitions/response.ClusterConfigurationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable - not leader",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions": {
+            "post": {
+                "description": "Create a new client session for the Raft cluster",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Register a new client session",
+                "responses": {
+                    "200": {
+                        "description": "Session successfully registered",
+                        "schema": {
+                            "$ref": "#/definitions/response.RegisterSessionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable - not leader",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/transfer-leader": {
+            "put": {
+                "description": "Transfers leadership from the current leader to another node",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "cluster-management"
+                ],
+                "summary": "Transfer Raft leadership",
+                "parameters": [
+                    {
+                        "description": "Leader transfer request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.TransferLeaderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Leadership transfer successful",
+                        "schema": {
+                            "$ref": "#/definitions/response.TransferLeaderResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "503": {
+                        "description": "Service unavailable - not leader",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "request.JoinPeerRequest": {
+            "type": "object",
+            "properties": {
+                "is_learner": {
+                    "type": "boolean"
+                },
+                "lowest_sequence_number_not_yet_replied": {
+                    "type": "integer"
+                },
+                "raft_listen_addr": {
+                    "type": "string"
+                },
+                "raft_peer_id": {
+                    "type": "integer"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "request.KvStoreAppendRequest": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "lowest_sequence_number_not_yet_replied": {
+                    "type": "integer"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "integer"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "request.KvStoreSetRequest": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "lowest_sequence_number_not_yet_replied": {
+                    "type": "integer"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "integer"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "request.PromoteLearnerRequest": {
+            "type": "object",
+            "properties": {
+                "lowest_sequence_number_not_yet_replied": {
+                    "type": "integer"
+                },
+                "raft_peer_id": {
+                    "type": "integer"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "request.RemovePeerRequest": {
+            "type": "object",
+            "properties": {
+                "lowest_sequence_number_not_yet_replied": {
+                    "type": "integer"
+                },
+                "raft_peer_id": {
+                    "type": "integer"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "request.TransferLeaderRequest": {
+            "type": "object",
+            "properties": {
+                "lowest_sequence_number_not_yet_replied": {
+                    "type": "integer"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "integer"
+                },
+                "transferee": {
+                    "type": "integer"
+                }
+            }
+        },
+        "request.UpdatePeerRequest": {
+            "type": "object",
+            "properties": {
+                "lowest_sequence_number_not_yet_replied": {
+                    "type": "integer"
+                },
+                "raft_listen_addr": {
+                    "type": "string"
+                },
+                "raft_peer_id": {
+                    "type": "integer"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "response.ClusterConfigurationResponse": {
+            "type": "object",
+            "properties": {
+                "leader_id": {
+                    "type": "integer"
+                },
+                "peers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.ClusterPeer"
+                    }
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "response.ClusterPeer": {
+            "type": "object",
+            "properties": {
+                "app_service_address": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_learner": {
+                    "type": "boolean"
+                },
+                "raft_listen_addr": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.KvStoreResponse": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "integer"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "sequence_number": {
+                    "type": "integer"
+                },
+                "session_id": {
+                    "type": "integer"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.RegisterSessionResponse": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "response.TransferLeaderResponse": {
+            "type": "object"
+        }
+    }
+}

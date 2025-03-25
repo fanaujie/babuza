@@ -101,7 +101,7 @@ type InternalStatus interface {
 	SetLeader(bool)
 	IsLeader() bool
 	MarkPublishServiceDone()
-	IsPublishServiceMarkDone() bool
+	IsLocalPeerPublishServiceMarkDone() bool
 }
 
 type InternalAppliedFacade interface {

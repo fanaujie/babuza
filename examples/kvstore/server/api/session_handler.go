@@ -14,6 +14,17 @@ func NewSessionResourceHandler(r *raft.Raft) *SessionResourceHandler {
 	return &SessionResourceHandler{r: r}
 }
 
+// ServeHTTP handles session registration requests
+// @Summary Register a new client session
+// @Description Create a new client session for the Raft cluster
+// @Tags sessions
+// @Accept json
+// @Produce json
+// @Success 200 {object} response.RegisterSessionResponse "Session successfully registered"
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Failure 503 {object} string "Service unavailable - not leader"
+// @Router /sessions [post]
 func (h *SessionResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

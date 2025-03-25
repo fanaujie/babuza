@@ -16,6 +16,18 @@ func NewPromoteLearnerHandler(r *raft.Raft) *PromoteLearnerHandler {
 	return &PromoteLearnerHandler{r: r}
 }
 
+// ServeHTTP handles learner promotion requests
+// @Summary Promote a learner to a voting member
+// @Description Promotes a learner node to a voting member in the Raft cluster
+// @Tags cluster-management
+// @Accept json
+// @Produce json
+// @Param request body request.PromoteLearnerRequest true "Learner promotion request"
+// @Success 200 {object} response.ClusterConfigurationResponse "Updated cluster configuration after promotion"
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Failure 503 {object} string "Service unavailable - not leader"
+// @Router /promote-learner [put]
 func (h *PromoteLearnerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

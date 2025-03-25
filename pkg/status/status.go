@@ -104,6 +104,6 @@ func (s *Status) MarkPublishServiceDone() {
 	atomic.StoreUint64(&s.publishServiceDone, 1)
 }
 
-func (s *Status) IsPublishServiceMarkDone() bool {
+func (s *Status) IsLocalPeerPublishServiceMarkDone() bool {
 	return atomic.LoadUint64(&s.publishServiceDone) == 1
 }

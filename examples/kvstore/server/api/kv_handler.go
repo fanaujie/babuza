@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/examples/kvstore/server/request"
 	"github.com/fanaujie/babuza/examples/kvstore/server/response"
@@ -45,6 +44,16 @@ func (h *KvStoreResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// readKvStoreFunc retrieves a value from the key-value store
+// @Summary Get a value by key
+// @Description Retrieve a value from the key-value store by its key
+// @Tags kv-store
+// @Produce json
+// @Param key query string true "Key to retrieve"
+// @Success 200 {object} response.KvStoreResponse "Key-value pair"
+// @Failure 400 {object} string "Bad request - missing key"
+// @Failure 500 {object} string "Internal server error"
+// @Router /kv [get]
 func (h *KvStoreResourceHandler) readKvStoreFunc(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("key")
 	if key == "" {
@@ -66,10 +75,6 @@ func (h *KvStoreResourceHandler) readKvStoreFunc(w http.ResponseWriter, r *http.
 	var err error
 	res.Value, err = h.store.Load(res.Key)
 	if err != nil {
-		if err == kverror.ErrKeyNotFound {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -78,6 +83,18 @@ func (h *KvStoreResourceHandler) readKvStoreFunc(w http.ResponseWriter, r *http.
 	}
 }
 
+// setKvStoreFunc sets a key-value pair
+// @Summary Set a key-value pair
+// @Description Set or replace a key-value pair in the store
+// @Tags kv-store
+// @Accept json
+// @Produce json
+// @Param request body request.KvStoreSetRequest true "Key-value set request"
+// @Success 200 {object} response.KvStoreResponse "Result of the set operation"
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Failure 503 {object} string "Service unavailable - not leader"
+// @Router /kv [post]
 func (h *KvStoreResourceHandler) setKvStoreFunc(w http.ResponseWriter, r *http.Request) {
 	var req request.KvStoreSetRequest
 	b, err := io.ReadAll(r.Body)
@@ -122,6 +139,18 @@ func (h *KvStoreResourceHandler) setKvStoreFunc(w http.ResponseWriter, r *http.R
 	}
 }
 
+// appendKvStoreFunc appends to a value for a given key
+// @Summary Append to a key's value
+// @Description Append content to an existing key's value
+// @Tags kv-store
+// @Accept json
+// @Produce json
+// @Param request body request.KvStoreAppendRequest true "Key-value append request"
+// @Success 200 {object} response.KvStoreResponse "Result of the append operation"
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Failure 503 {object} string "Service unavailable - not leader"
+// @Router /kv [put]
 func (h *KvStoreResourceHandler) appendKvStoreFunc(w http.ResponseWriter, r *http.Request) {
 	var req request.KvStoreAppendRequest
 	b, err := io.ReadAll(r.Body)
@@ -165,6 +194,18 @@ func (h *KvStoreResourceHandler) appendKvStoreFunc(w http.ResponseWriter, r *htt
 	}
 }
 
+// deleteKvStoreFunc deletes a key-value pair
+// @Summary Delete a key-value pair
+// @Description Remove a key-value pair from the store
+// @Tags kv-store
+// @Accept json
+// @Produce json
+// @Param request body request.KvStoreAppendRequest true "Key to delete"
+// @Success 200 {object} response.KvStoreResponse "Result of the delete operation"
+// @Failure 400 {object} string "Bad request"
+// @Failure 500 {object} string "Internal server error"
+// @Failure 503 {object} string "Service unavailable - not leader"
+// @Router /kv [delete]
 func (h *KvStoreResourceHandler) deleteKvStoreFunc(w http.ResponseWriter, r *http.Request) {
 	var req request.KvStoreAppendRequest
 	b, err := io.ReadAll(r.Body)

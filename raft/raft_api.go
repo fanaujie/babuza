@@ -32,6 +32,7 @@ type ClientSession struct {
 
 type ClusterConfiguration struct {
 	ClusterID uint64
+	LeaderID  uint64
 	Peers     []babuzapb.Peer
 }
 
@@ -343,6 +344,7 @@ func (r *Raft) ApplicationServiceStart(ctx context.Context, appServiceAddresses 
 func (r *Raft) ClusterConfiguration() ClusterConfiguration {
 	return ClusterConfiguration{
 		ClusterID: r.cluster.ClusterId(),
+		LeaderID:  r.getLeaderId(),
 		Peers:     r.cluster.Peers(),
 	}
 }

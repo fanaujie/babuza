@@ -1,4 +1,17 @@
 services:
+  # UI Service
+  kvstore-ui:
+    image: nginx:alpine
+    container_name: kvstore-ui
+    volumes:
+      - ../ui:/usr/share/nginx/html
+    ports:
+      - "8080:80"
+    depends_on:
+      - kvstore-node1
+      - kvstore-node2
+      - kvstore-node3
+
   # Node 1
   kvstore-node1:
     build:
