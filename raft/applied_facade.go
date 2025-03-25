@@ -19,7 +19,7 @@ type AppliedStatus interface {
 	SetAppliedTerm(uint64)
 	SetConfState(raftpb.ConfState)
 	GetHardStateTerm() uint64
-	IsPublishServiceMarkDone() bool
+	IsLocalPeerPublishServiceMarkDone() bool
 }
 
 type AppliedFirstCommitInTermNotifier interface {
@@ -138,7 +138,7 @@ func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry {
 		req.Context.SequenceNum,
 		reqTime,
 		req.StateMachineLog,
-		a.status.IsPublishServiceMarkDone(),
+		a.status.IsLocalPeerPublishServiceMarkDone(),
 		session,
 		a,
 	)
@@ -241,7 +241,7 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 		return false, res
 	}
 
-	pubServiceDone := a.status.IsPublishServiceMarkDone()
+	pubServiceDone := a.status.IsLocalPeerPublishServiceMarkDone()
 	a.status.SetConfState(*a.raftNode.ApplyConfChange(cc))
 
 	var removeSelf bool
@@ -261,8 +261,9 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 	case raftpb.ConfChangeRemoveNode:
 		if cc.NodeID == a.cluster.LocalPeerID() {
 			removeSelf = true
+		} else {
+			a.trans.RemovePeer(confReq.RaftPeerAttr.Id)
 		}
-		a.trans.RemovePeer(confReq.RaftPeerAttr.Id)
 		if pubServiceDone {
 			a.clusterMemberEventCh <- ClusterMemberEvent{
 				Event: MemberLeaveEvent,

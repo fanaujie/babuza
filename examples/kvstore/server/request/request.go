@@ -30,7 +30,10 @@ type RemovePeerRequest struct {
 type PromoteLearnerRequest RemovePeerRequest
 
 type TransferLeaderRequest struct {
-	Transferee uint64 `json:"transferee"`
+	SessionID                         uint64 `json:"session_id"`
+	SequenceNumber                    uint64 `json:"sequence_number"`
+	LowestSequenceNumberNotYetReplied uint64 `json:"lowest_sequence_number_not_yet_replied"`
+	Transferee                        uint64 `json:"transferee"`
 }
 
 type KvStoreSetRequest struct {

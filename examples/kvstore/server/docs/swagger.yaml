@@ -65,6 +65,12 @@ definitions:
     type: object
   request.TransferLeaderRequest:
     properties:
+      lowest_sequence_number_not_yet_replied:
+        type: integer
+      sequence_number:
+        type: integer
+      session_id:
+        type: integer
       transferee:
         type: integer
     type: object

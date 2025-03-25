@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Babuza KV-Store Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="position-fixed top-0 start-0 w-100 h-100 d-none" style="background-color: rgba(0,0,0,0.5); z-index: 9999;">
+        <div class="d-flex justify-content-center align-items-center h-100">
+            <div class="spinner-border text-light" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    </div>
+    <div class="container-fluid">
+        <header class="bg-dark text-white p-3 d-flex justify-content-between align-items-center">
+            <h1 class="mb-0">Babuza KV-Store Management</h1>
+            <div id="connectionStatus" class="d-flex align-items-center">
+                <span class="badge bg-success me-2">Connected</span>
+                <span>Session ID: <span id="sessionIdDisplay">-</span></span>
+            </div>
+        </header>
+
+        <div class="row mt-3">
+            <div class="col-md-3">
+                <div class="list-group">
+                    <a href="#" class="list-group-item list-group-item-action active" id="nav-cluster">Cluster Management</a>
+                    <a href="#" class="list-group-item list-group-item-action" id="nav-keyvalue">Key-Value Operations</a>
+                </div>
+            </div>
+            <div class="col-md-9">
+                <!-- Cluster Management Section -->
+                <div id="cluster-management" class="content-section active">
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h3 class="mb-0">Cluster Configuration</h3>
+                            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPeerModal">
+                                Add New Peer
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="clusterStatus" class="mb-4">
+                                <div class="alert alert-info" id="leaderInfo">Loading cluster information...</div>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-hover" id="clusterTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Peer ID</th>
+                                                <th>Role</th>
+                                                <th>Raft Address</th>
+                                                <th>Service Address</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td colspan="5" class="text-center">Loading peers...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Add Peer Modal -->
+                    <div class="modal fade" id="addPeerModal" tabindex="-1" aria-labelledby="addPeerModalLabel" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="addPeerModalLabel">Add New Peer</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <form id="addPeerForm">
+                                        <div class="mb-3">
+                                            <label for="peerID" class="form-label">Peer ID</label>
+                                            <input type="number" class="form-control" id="peerID" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="peerAddr" class="form-label">Raft Listen Address</label>
+                                            <input type="text" class="form-control" id="peerAddr" placeholder="host:port" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="peerServiceAddr" class="form-label">Service Address</label>
+                                            <input type="text" class="form-control" id="peerServiceAddr" placeholder="host:port">
+                                        </div>
+                                        <div class="mb-3 form-check">
+                                            <input type="checkbox" class="form-check-input" id="isLearner">
+                                            <label class="form-check-label" for="isLearner">Add as Learner</label>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" class="btn btn-primary" id="addPeerSubmit">Add Peer</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Update Peer Modal -->
+                    <div class="modal fade" id="updatePeerModal" tabindex="-1" aria-labelledby="updatePeerModalLabel" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="updatePeerModalLabel">Update Peer</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <form id="updatePeerForm">
+                                        <input type="hidden" id="updatePeerID">
+                                        <div class="mb-3">
+                                            <label for="updatePeerRaftAddr" class="form-label">Raft Listen Address</label>
+                                            <input type="text" class="form-control" id="updatePeerRaftAddr" placeholder="host:port" required>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" class="btn btn-primary" id="updatePeerSubmit">Update Peer</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Transfer Leadership Modal -->
+                    <div class="modal fade" id="transferLeaderModal" tabindex="-1" aria-labelledby="transferLeaderModalLabel" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="transferLeaderModalLabel">Transfer Leadership</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <form id="transferLeaderForm">
+                                        <div class="mb-3">
+                                            <label for="transfereePeerID" class="form-label">Transferee Peer ID</label>
+                                            <select class="form-select" id="transfereePeerID" required>
+                                                <option value="">Select a peer</option>
+                                            </select>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" class="btn btn-warning" id="transferLeaderSubmit">Transfer Leadership</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Key-Value Operations Section -->
+                <div id="key-value-operations" class="content-section">
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h3 class="mb-0">Key-Value Operations</h3>
+                            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addKeyValueModal">
+                                <i class="bi bi-plus-circle"></i> Add New Key-Value
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <div class="input-group">
+                                    <input type="text" class="form-control" placeholder="Enter a key" id="keySearchInput">
+                                    <button class="btn btn-outline-secondary" type="button" id="getKeyButton">
+                                        <i class="bi bi-search"></i> Get Value
+                                    </button>
+                                </div>
+                                <div class="form-text text-muted">API doesn't support listing all keys. You need to search for specific keys.</div>
+                            </div>
+                            
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-hover" id="kvTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th width="30%">Key</th>
+                                            <th width="50%">Value</th>
+                                            <th width="20%">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr id="noDataRow">
+                                            <td colspan="3" class="text-center">No data available. Use the search box to retrieve keys.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- Note about recently viewed keys -->
+                            <div class="alert alert-info mb-3">
+                                <i class="bi bi-info-circle me-2"></i>
+                                <small>The table below shows your recently viewed keys. Since the API doesn't support listing all keys, you'll only see keys you've searched for or created.</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Add Key-Value Modal -->
+                    <div class="modal fade" id="addKeyValueModal" tabindex="-1" aria-labelledby="addKeyValueModalLabel" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="addKeyValueModalLabel">Add New Key-Value</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <form id="addKeyValueForm">
+                                        <div class="mb-3">
+                                            <label for="newKey" class="form-label">Key</label>
+                                            <input type="text" class="form-control" id="newKey" required>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="newValue" class="form-label">Value</label>
+                                            <textarea class="form-control" id="newValue" rows="4" required></textarea>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" class="btn btn-primary" id="addKeyValueSubmit">Add</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Edit Key-Value Modal -->
+                    <div class="modal fade" id="editKeyValueModal" tabindex="-1" aria-labelledby="editKeyValueModalLabel" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="editKeyValueModalLabel">Edit Key-Value</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <form id="editKeyValueForm">
+                                        <input type="hidden" id="editKey">
+                                        <div class="mb-3">
+                                            <label for="editKeyDisplay" class="form-label">Key</label>
+                                            <input type="text" class="form-control" id="editKeyDisplay" disabled>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="editValue" class="form-label">Value</label>
+                                            <textarea class="form-control" id="editValue" rows="4" required></textarea>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" class="btn btn-primary" id="editKeyValueSubmit">Update</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Append Key-Value Modal -->
+                    <div class="modal fade" id="appendKeyValueModal" tabindex="-1" aria-labelledby="appendKeyValueModalLabel" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="appendKeyValueModalLabel">Append to Value</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <form id="appendKeyValueForm">
+                                        <input type="hidden" id="appendKey">
+                                        <div class="mb-3">
+                                            <label for="appendKeyDisplay" class="form-label">Key</label>
+                                            <input type="text" class="form-control" id="appendKeyDisplay" disabled>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="appendValue" class="form-label">Value to Append</label>
+                                            <textarea class="form-control" id="appendValue" rows="4" required></textarea>
+                                        </div>
+                                    </form>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="button" class="btn btn-primary" id="appendKeyValueSubmit">Append</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Messages -->
+        <div class="toast-container position-fixed bottom-0 end-0 p-3">
+            <div id="statusToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-header">
+                    <strong class="me-auto" id="toastTitle">Notification</strong>
+                    <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+                <div class="toast-body" id="toastMessage"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Modal -->
+    <div class="modal fade" id="connectionModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="connectionModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="connectionModalLabel">Connect to Babuza KV-Store Server</h5>
+                </div>
+                <div class="modal-body">
+                    <form id="connectionForm">
+                        <div class="mb-3">
+                            <label for="serverUrl" class="form-label">Leader Server URL</label>
+                            <input type="text" class="form-control" id="serverUrl" placeholder="http://localhost:8080" required>
+                            <div class="form-text">Enter the full URL of the leader server (e.g., http://localhost:8080)</div>
+                        </div>
+                        <div id="connectionAlert" class="alert alert-primary">
+                            <div class="d-flex align-items-center">
+                                <span class="me-2"><i class="bi bi-info-circle"></i></span>
+                                <span>Enter the server URL and click Connect</span>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="connectButton">Connect</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/client.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/cluster.js"></script>
+    <script src="js/kvstore.js"></script>
+</body>
+</html>
