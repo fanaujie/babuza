@@ -98,7 +98,7 @@ func (g *Grpc) Close() error {
 }
 
 func (g *Grpc) Dial(address string) (*grpc.ClientConn, error) {
-	grpcConn, err := g.network.DialWithTimeout(g.config.TLSConfig, 0, address, g.options.DialTimeout)
+	grpcConn, err := g.network.DialWithTimeout(g.config.TLSConfig, g.config.PeerId, address, g.options.DialTimeout)
 	if err != nil {
 		return nil, err
 	}

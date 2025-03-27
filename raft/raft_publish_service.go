@@ -38,6 +38,7 @@ func (r *Raft) applicationServiceStart(ctx context.Context,
 				pubDoneCh <- err
 				break
 			}
+			r.logger.Warningf("Failed to publish application service addresses error: %v", err)
 			// continue
 		} else {
 			r.status.MarkPublishServiceDone()
@@ -96,9 +97,6 @@ func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderId, reply
 		ProposalReplyId:     replyId,
 		AppServiceAddresses: appServiceAddresses,
 	})
-	if err != nil {
-		return err
-	}
 	if res.Status == babuzapb.SUCCESS {
 		select {
 		case <-r.closer.CloseCh():

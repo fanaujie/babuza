@@ -155,7 +155,7 @@ func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest)
 
 func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 
-	u, err := r.getUrl(request.ToId, raftClusterPeersPrefix)
+	u, err := r.getUrl(request.ToId, raftAppServiceUrlsPrefix)
 	if err != nil {
 		return babuzapb.PublishApplicationServiceResponse{
 			Status:  babuzapb.FAILED,
