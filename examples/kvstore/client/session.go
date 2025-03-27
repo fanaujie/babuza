@@ -8,7 +8,7 @@ import (
 )
 
 type ISession interface {
-	Register(lb *proxy, httpSessionPath string) error
+	Register(lb *leaderProxyClient, httpSessionPath string) error
 	ClientSession() Session
 	Response(sequenceNum uint64)
 }
@@ -27,7 +27,7 @@ func NewAutoIncrementSession() *AutoIncrementSession {
 	return &AutoIncrementSession{}
 }
 
-func (s *AutoIncrementSession) Register(lb *proxy, httpSessionPath string) error {
+func (s *AutoIncrementSession) Register(lb *leaderProxyClient, httpSessionPath string) error {
 	var res response.RegisterSessionResponse
 	if err := lb.SendRequest(context.Background(), func(reqCtx context.Context, leaderUrl url.URL) (*http.Request, error) {
 		leaderUrl.Path = httpSessionPath
@@ -55,7 +55,7 @@ func NewNoOpSession() *NoOpSession {
 	return &NoOpSession{}
 }
 
-func (s *NoOpSession) Register(*proxy, string) error {
+func (s *NoOpSession) Register(*leaderProxyClient, string) error {
 	return nil
 }
 
@@ -75,7 +75,7 @@ func NewManualIncrementSession() *ManualIncrementSession {
 	return &ManualIncrementSession{}
 }
 
-func (s *ManualIncrementSession) Register(lb *proxy, httpSessionPath string) error {
+func (s *ManualIncrementSession) Register(lb *leaderProxyClient, httpSessionPath string) error {
 	var res response.RegisterSessionResponse
 	if err := lb.SendRequest(context.Background(), func(reqCtx context.Context, leaderUrl url.URL) (*http.Request, error) {
 		leaderUrl.Path = httpSessionPath

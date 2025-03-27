@@ -1,4 +1,4 @@
-package test
+package embedapp
 
 import (
 	"context"
@@ -10,14 +10,14 @@ import (
 	"net/http"
 )
 
-type KvStoreEmbeddedAppConfig struct {
+type KvStoreAppConfig struct {
 	BubuzaConfig     babuza.BabuzaConfig
 	VotingPeersCfg   *babuza.VotingPeersConfiguration
 	ServiceAddress   string
 	LinearizableRead bool
 }
 
-type KvStoreEmbeddedApp struct {
+type KvStoreApp struct {
 	isLeader                  uint64 //must use atomic operations to access; keep 64-bit aligned
 	serviceAddress            string
 	disableProposalForwarding bool
@@ -28,8 +28,8 @@ type KvStoreEmbeddedApp struct {
 	httpSrv                   *http.Server
 }
 
-func CreateKvEmbeddedApp(appConfig KvStoreEmbeddedAppConfig, stateMachine ibabuza.BaseStateMachine, builder *babuza.BootstrapBuilder) (*KvStoreEmbeddedApp, error) {
-	app := &KvStoreEmbeddedApp{}
+func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMachine, builder *babuza.BootstrapBuilder) (*KvStoreApp, error) {
+	app := &KvStoreApp{}
 	app.stateMachine = stateMachine
 	builder.SetStateMachine(stateMachine)
 	bootstrap, err := builder.Build()
@@ -63,7 +63,7 @@ func CreateKvEmbeddedApp(appConfig KvStoreEmbeddedAppConfig, stateMachine ibabuz
 	return app, nil
 }
 
-func (k *KvStoreEmbeddedApp) StartService() error {
+func (k *KvStoreApp) StartService() error {
 	m := http.NewServeMux()
 	m.Handle(api.SessionsHttpPath, api.NewSessionResourceHandler(k.babuza))
 	m.Handle(api.ClusterPeersHttpPath, api.NewClusterPeerResourceHandler(k.babuza))
@@ -78,11 +78,11 @@ func (k *KvStoreEmbeddedApp) StartService() error {
 	return nil
 }
 
-func (k *KvStoreEmbeddedApp) PublishService(ctx context.Context) chan error {
+func (k *KvStoreApp) PublishService(ctx context.Context) chan error {
 	return k.babuza.ApplicationServiceStart(ctx, []string{k.serviceAddress})
 }
 
-func (k *KvStoreEmbeddedApp) Stop() error {
+func (k *KvStoreApp) Stop() error {
 	me := multierror.New()
 	me.Append(k.stateMachine.Close())
 	me.Append(k.httpSrv.Close())
@@ -95,10 +95,10 @@ func (k *KvStoreEmbeddedApp) Stop() error {
 	return me.Get()
 }
 
-func (k *KvStoreEmbeddedApp) Raft() *babuza.Raft {
+func (k *KvStoreApp) Raft() *babuza.Raft {
 	return k.babuza
 }
 
-func (k *KvStoreEmbeddedApp) StateMachineHash() uint32 {
+func (k *KvStoreApp) StateMachineHash() uint32 {
 	return k.stateMachine.(api.ReadKvStore).Hash()
 }

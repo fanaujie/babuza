@@ -24,7 +24,7 @@ var (
 	errNewLeaderUrlNil          = errors.New("new leader url is nil")
 )
 
-type proxy struct {
+type leaderProxyClient struct {
 	peers       []ClusterPeer
 	httpScheme  string
 	httpClient  *http.Client
@@ -32,12 +32,12 @@ type proxy struct {
 	mu          *sync.RWMutex
 }
 
-func newProxy(enableTLS bool, peers []ClusterPeer) *proxy {
+func newLeaderProxyClient(enableTLS bool, peers []ClusterPeer) *leaderProxyClient {
 	httpScheme := "http"
 	if enableTLS {
 		httpScheme = "https"
 	}
-	return &proxy{
+	return &leaderProxyClient{
 		peers:      peers,
 		httpScheme: httpScheme,
 		httpClient: newHttpClient(enableTLS),
@@ -45,13 +45,13 @@ func newProxy(enableTLS bool, peers []ClusterPeer) *proxy {
 	}
 }
 
-func (p *proxy) SetClusterPeers(peers []ClusterPeer) {
+func (p *leaderProxyClient) SetClusterPeers(peers []ClusterPeer) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.peers = peers
 }
 
-func (p *proxy) SendRequest(ctx context.Context, makeRequest func(reqCtx context.Context, leaderUrl url.URL) (*http.Request, error), result any) error {
+func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(reqCtx context.Context, leaderUrl url.URL) (*http.Request, error), result any) error {
 	for {
 		leaderUrl, err := p.currentLeaderUrl()
 		if err != nil {
@@ -105,7 +105,7 @@ func (p *proxy) SendRequest(ctx context.Context, makeRequest func(reqCtx context
 	}
 }
 
-func (p *proxy) SendRequestWithPeerId(peerId uint64, makeRequest func(leaderUrl url.URL) (*http.Request, error), result any) error {
+func (p *leaderProxyClient) SendRequestWithPeerId(peerId uint64, makeRequest func(leaderUrl url.URL) (*http.Request, error), result any) error {
 	var leaderUrl *url.URL
 	p.mu.RLock()
 	for _, peer := range p.peers {
@@ -143,7 +143,7 @@ func (p *proxy) SendRequestWithPeerId(peerId uint64, makeRequest func(leaderUrl 
 	}
 	return json.Unmarshal(b, result)
 }
-func (p *proxy) currentLeaderUrl() (url.URL, error) {
+func (p *leaderProxyClient) currentLeaderUrl() (url.URL, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if len(p.peers) == 0 {
@@ -158,7 +158,7 @@ func (p *proxy) currentLeaderUrl() (url.URL, error) {
 	}, nil
 }
 
-func (p *proxy) moveNextLeader() error {
+func (p *leaderProxyClient) moveNextLeader() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(p.peers) == 0 {
@@ -171,7 +171,7 @@ func (p *proxy) moveNextLeader() error {
 	return nil
 }
 
-func (p *proxy) updateLeaderIndex(leaderUrl *url.URL) error {
+func (p *leaderProxyClient) updateLeaderIndex(leaderUrl *url.URL) error {
 	if leaderUrl == nil {
 		return errNewLeaderUrlNil
 	}

@@ -40,7 +40,7 @@ type Config struct {
 type KvStoreClient struct {
 	config         Config
 	session        ISession
-	proxy          *proxy
+	proxy          *leaderProxyClient
 	closeCh        chan struct{}
 	autoSyncDoneCh chan struct{}
 	mu             sync.Mutex
@@ -54,7 +54,7 @@ func CreateKvStoreClient(cfg Config, session ISession) (*KvStoreClient, error) {
 		autoSyncDoneCh: make(chan struct{}, 1),
 	}
 	sort.Sort(clusterPeers(cfg.KvStoreClusterMembers))
-	c.proxy = newProxy(cfg.EnableTLS, cfg.KvStoreClusterMembers)
+	c.proxy = newLeaderProxyClient(cfg.EnableTLS, cfg.KvStoreClusterMembers)
 	if err = session.Register(c.proxy, api.SessionsHttpPath); err != nil {
 		return nil, err
 	}

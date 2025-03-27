@@ -6,18 +6,18 @@ import (
 	"testing"
 )
 
-func TestNewGateway(t *testing.T) {
-	gw := newProxy(false, nil)
+func TestNewLeaderProxyClient(t *testing.T) {
+	gw := newLeaderProxyClient(false, nil)
 	assert.Equal(t, "http", gw.httpScheme)
-	gw = newProxy(true, nil)
+	gw = newLeaderProxyClient(true, nil)
 	assert.Equal(t, "https", gw.httpScheme)
 	assert.Equal(t, 0, gw.leaderIndex)
 	assert.NotNil(t, gw.httpClient)
 }
 
-func TestGateway_CurrentLeaderUrl(t *testing.T) {
+func TestLeaderProxyClient_CurrentLeaderUrl(t *testing.T) {
 	t.Run("enable tls", func(t *testing.T) {
-		gw := newProxy(true, []ClusterPeer{
+		gw := newLeaderProxyClient(true, []ClusterPeer{
 			{
 				Id:               1,
 				KvServiceAddress: "localhost:1001",
@@ -33,7 +33,7 @@ func TestGateway_CurrentLeaderUrl(t *testing.T) {
 		assert.Equal(t, "https", leaderUrl.Scheme)
 	})
 	t.Run("disable tls", func(t *testing.T) {
-		gw := newProxy(false, []ClusterPeer{
+		gw := newLeaderProxyClient(false, []ClusterPeer{
 			{
 				Id:               1,
 				KvServiceAddress: "localhost:1001",
@@ -49,10 +49,10 @@ func TestGateway_CurrentLeaderUrl(t *testing.T) {
 		assert.Equal(t, "http", leaderUrl.Scheme)
 	})
 	t.Run("failure", func(t *testing.T) {
-		gw := newProxy(false, nil)
+		gw := newLeaderProxyClient(false, nil)
 		_, err := gw.currentLeaderUrl()
 		assert.ErrorIs(t, err, errNoPeers)
-		gw = newProxy(false, []ClusterPeer{
+		gw = newLeaderProxyClient(false, []ClusterPeer{
 			{
 				Id:               1,
 				KvServiceAddress: "localhost:1001",
@@ -71,9 +71,9 @@ func TestGateway_CurrentLeaderUrl(t *testing.T) {
 	})
 }
 
-func TestGateway_MoveNextLeader(t *testing.T) {
+func TestLeaderProxyClient_MoveNextLeader(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		gw := newProxy(false, []ClusterPeer{
+		gw := newLeaderProxyClient(false, []ClusterPeer{
 			{
 				Id:               1,
 				KvServiceAddress: "localhost:1001",
@@ -91,15 +91,15 @@ func TestGateway_MoveNextLeader(t *testing.T) {
 	})
 
 	t.Run("failure", func(t *testing.T) {
-		gw := newProxy(false, nil)
+		gw := newLeaderProxyClient(false, nil)
 		assert.ErrorIs(t, gw.moveNextLeader(), errNoPeers)
 	})
 
 }
 
-func TestGateway_UpdateLeaderIndex(t *testing.T) {
+func TestLeaderProxyClient_UpdateLeaderIndex(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		gw := newProxy(false, []ClusterPeer{
+		gw := newLeaderProxyClient(false, []ClusterPeer{
 			{
 				Id:               1,
 				KvServiceAddress: "localhost:1001",
@@ -125,7 +125,7 @@ func TestGateway_UpdateLeaderIndex(t *testing.T) {
 	})
 
 	t.Run("failure", func(t *testing.T) {
-		gw := newProxy(false, []ClusterPeer{
+		gw := newLeaderProxyClient(false, []ClusterPeer{
 			{
 				Id:               1,
 				KvServiceAddress: "localhost:1001",
