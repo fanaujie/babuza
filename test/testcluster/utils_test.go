@@ -1,4 +1,4 @@
-package test
+package testcluster
 
 import (
 	"archive/tar"

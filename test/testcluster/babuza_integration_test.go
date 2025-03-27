@@ -1,4 +1,4 @@
-package test
+package testcluster
 
 import (
 	"context"
@@ -129,7 +129,7 @@ func TestBabuza_Cluster_JoinVotingPeer(t *testing.T) {
 	assert.Nil(t, err)
 	defer c.Close()
 	connectGroup.Add(tp.Id)
-	assert.Nil(t, tc.JoinPeer(wait, c, tp, connectGroup.GetIds()))
+	assert.Nil(t, tc.JoinPeerToCluster(wait, c, tp, connectGroup.GetIds()))
 
 	assert.Nil(t, runFuncWithContextTimeout(time.Second*3, func(ctx context.Context) error {
 		return peerConfigExists(ctx, c, tp)
@@ -142,11 +142,11 @@ func TestBabuza_Cluster_JoinVotingPeer(t *testing.T) {
 
 	// failure
 	tp.ProxyListenAddr = "127.0.0.1:100"
-	assert.Equal(t, cluster.ErrPeerIDExists, tc.JoinPeer(wait, c, tp, connectGroup.GetIds()))
+	assert.Equal(t, cluster.ErrPeerIDExists, tc.JoinPeerToCluster(wait, c, tp, connectGroup.GetIds()))
 	leader := makeSinglePeer(leaderId, false)
 	tp = makeSinglePeer(5, false)
 	tp.ProxyListenAddr = leader.ProxyListenAddr
-	assert.Equal(t, cluster.ErrPeerRaftListenAddrExists, tc.JoinPeer(wait, c, tp, connectGroup.GetIds()))
+	assert.Equal(t, cluster.ErrPeerRaftListenAddrExists, tc.JoinPeerToCluster(wait, c, tp, connectGroup.GetIds()))
 }
 
 func TestBabuza_Cluster_JoinLearner(t *testing.T) {
@@ -180,7 +180,7 @@ func TestBabuza_Cluster_JoinLearner(t *testing.T) {
 	assert.Nil(t, err)
 	defer c.Close()
 	connectGroup.Add(tp.Id)
-	assert.Nil(t, tc.JoinPeer(wait, c, tp, connectGroup.GetIds()))
+	assert.Nil(t, tc.JoinPeerToCluster(wait, c, tp, connectGroup.GetIds()))
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
 		return peerConfigExists(ctx, c, tp)
 	}))
@@ -279,7 +279,7 @@ func TestBabuza_Cluster_RemoveFollower(t *testing.T) {
 	c, err := createEmbeddedAppClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
 	assert.Nil(t, err)
 	defer c.Close()
-	assert.Nil(t, tc.RemovePeer(wait, c, followerId))
+	assert.Nil(t, tc.RemovePeerFromCluster(wait, c, followerId))
 	connectGroup.Remove(followerId)
 	assert.Error(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
 		return peerConfigExists(ctx, c, makeSinglePeer(followerId, false))
@@ -291,8 +291,8 @@ func TestBabuza_Cluster_RemoveFollower(t *testing.T) {
 
 	// failure
 	connectGroup.Add(followerId)
-	assert.Equal(t, cluster.ErrPeerIDRemoved, tc.JoinPeer(wait, c, makeSinglePeer(followerId, false), connectGroup.GetIds()))
-	assert.Equal(t, cluster.ErrPeerIDNotFound, tc.RemovePeer(wait, c, 100))
+	assert.Equal(t, cluster.ErrPeerIDRemoved, tc.JoinPeerToCluster(wait, c, makeSinglePeer(followerId, false), connectGroup.GetIds()))
+	assert.Equal(t, cluster.ErrPeerIDNotFound, tc.RemovePeerFromCluster(wait, c, 100))
 }
 
 func TestBabuza_Cluster_RemoveLeader(t *testing.T) {
@@ -325,7 +325,7 @@ func TestBabuza_Cluster_RemoveLeader(t *testing.T) {
 	assert.Nil(t, err)
 	defer c.Close()
 
-	assert.Nil(t, tc.RemovePeer(wait, c, leaderId))
+	assert.Nil(t, tc.RemovePeerFromCluster(wait, c, leaderId))
 	connectGroup.Remove(leaderId)
 	assert.Error(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
 		return peerConfigExists(ctx, c, makeSinglePeer(leaderId, false))
@@ -375,7 +375,7 @@ func TestBabuza_Cluster_PromoteLearner(t *testing.T) {
 	}
 	learner := makeSinglePeer(4, true)
 	connectGroup.Add(learner.Id)
-	assert.Nil(t, tc.JoinPeer(wait, c, learner, connectGroup.GetIds()))
+	assert.Nil(t, tc.JoinPeerToCluster(wait, c, learner, connectGroup.GetIds()))
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
 		return peerConfigExists(ctx, c, learner)
 	}))
@@ -399,7 +399,7 @@ func TestBabuza_Cluster_PromoteLearner(t *testing.T) {
 
 	//TODO: delay sync
 	//learner = makeSinglePeer(5, true)
-	//assert.Nil(t, tc.JoinPeer(wait, c, learner))
+	//assert.Nil(t, tc.JoinPeerToCluster(wait, c, learner))
 	//assert.Equal(t, babuza.ErrLearnerNotReady, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
 	//	return c.PromoteLearner(ctx, 5)
 	//}))
@@ -447,7 +447,7 @@ func TestBabuza_Cluster_TransferLeader(t *testing.T) {
 
 	learner := makeSinglePeer(4, true)
 	connectGroup.Add(learner.Id)
-	assert.Nil(t, tc.JoinPeer(wait, c, learner, connectGroup.GetIds()))
+	assert.Nil(t, tc.JoinPeerToCluster(wait, c, learner, connectGroup.GetIds()))
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
 		return peerConfigExists(ctx, c, learner)
 	}))
@@ -468,7 +468,7 @@ func TestBabuza_Cluster_TransferLeader(t *testing.T) {
 
 	follower := makeSinglePeer(5, false)
 	connectGroup.Add(follower.Id)
-	assert.Nil(t, tc.JoinPeer(wait, c, follower, connectGroup.GetIds()))
+	assert.Nil(t, tc.JoinPeerToCluster(wait, c, follower, connectGroup.GetIds()))
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
 		return peerConfigExists(ctx, c, follower)
 	}))
@@ -1332,7 +1332,7 @@ func TestBabuza_Snapshot_ManualTrigger(t *testing.T) {
 //	tp := pn.GenClusterVotingPeer(newFollower)
 //	ctx, cancel := context.WithTimeout(context.Background(), wait)
 //	defer cancel()
-//	assert.Nil(t, tc.JoinPeer(ctx, leader, ClientSession{}, tp))
+//	assert.Nil(t, tc.JoinPeerToCluster(ctx, leader, ClientSession{}, tp))
 //	leaderId2, err := tc.CheckOneLeader(wait)
 //	assert.Nil(t, err)
 //	assert.Equal(t, leaderId, leaderId2)
@@ -1377,7 +1377,7 @@ func TestBabuza_Snapshot_ManualTrigger(t *testing.T) {
 //	tp := pn.GenClusterVotingPeer(newFollower)
 //	ctx, cancel := context.WithTimeout(context.Background(), wait)
 //	defer cancel()
-//	assert.Nil(t, tc.JoinPeer(ctx, leader, ClientSession{}, tp))
+//	assert.Nil(t, tc.JoinPeerToCluster(ctx, leader, ClientSession{}, tp))
 //	time.Sleep(tc.RaftElectionTimeout()) //waiting for election
 //	nf, err := tc.GetRaft(newFollower)
 //	assert.Nil(t, err)
