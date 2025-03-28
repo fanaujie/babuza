@@ -3,12 +3,13 @@ package testcase
 import (
 	"context"
 	"fmt"
+	"github.com/fanaujie/babuza/examples/kvstore/client"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
-	"github.com/fanaujie/babuza/pkg/utility/fileutil"
+	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
-	"path/filepath"
 	"time"
 )
 
@@ -41,32 +42,6 @@ func makeSinglePeer(peerId uint64, isLearner bool) testcluster.BabuzaPeer {
 	}
 }
 
-func createStorageDirectories(storageDir string) (*babuzaDirectory, error) {
-	dirs := &babuzaDirectory{
-		stateMachineDir: filepath.Join(storageDir, "stateMachine"),
-		walDir:          filepath.Join(storageDir, "wal"),
-		snapshotDir:     filepath.Join(storageDir, "snapshot"),
-	}
-
-	if !fileutil.Exist(dirs.stateMachineDir) {
-		if err := fileutil.CreateDirAndTouch(dirs.stateMachineDir); err != nil {
-			return nil, err
-		}
-	}
-	if !fileutil.Exist(dirs.walDir) {
-		if err := fileutil.CreateDirAndTouch(dirs.walDir); err != nil {
-			return nil, err
-		}
-	}
-	if !fileutil.Exist(dirs.snapshotDir) {
-		if err := fileutil.CreateDirAndTouch(dirs.snapshotDir); err != nil {
-			return nil, err
-		}
-	}
-
-	return dirs, nil
-}
-
 func customBabuzaComponent(sessionType, walType, snapshotType, transport string,
 	proxyNet ibabuza.ProxyNetwork) *builder.BabuzaComponentBuilder {
 	b := builder.NewBabuzaComponentBuilder(&builder.BabuzaComponentConfig{
@@ -85,4 +60,70 @@ func runWithCtxTimeout(timeout time.Duration, run func(ctx context.Context) erro
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return run(ctx)
+}
+
+func peerConfigExists(ctx context.Context, userProxyNetwork bool, c *client.KvStoreClient, peer testcluster.BabuzaPeer) error {
+	targetAddr := peer.RaftListenAddr
+	if userProxyNetwork {
+		targetAddr = peer.ProxyListenAddr
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+			ctx2, cancel := context.WithTimeout(context.Background(), time.Second)
+			clusterCfg, err := c.GetClusterConfiguration(ctx2)
+			cancel()
+			if err != nil {
+				return err
+			}
+			for _, p := range clusterCfg.Peers {
+				if p.Id == peer.Id && p.IsLearner == p.IsLearner && p.RaftListenAddr == targetAddr {
+					return nil
+				}
+			}
+		}
+	}
+}
+
+func basicClusterComponents() []BabuzaComponent {
+	return []BabuzaComponent{
+		{
+			CaseName:  "BasicTest: 3nodes-Tcp-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
+			ClusterId: 1,
+			CreateStateMachine: func(storeDir string) ibabuza.BaseStateMachine {
+				return kvstore.NewDisk(storeDir)
+			},
+			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
+					builder.TcpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
+			},
+			ProxyNetwork: nil,
+		},
+		{
+			CaseName:  "BasicTest: 3nodes-Http-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
+			ClusterId: 1,
+			CreateStateMachine: func(stateMachineDir string) ibabuza.BaseStateMachine {
+				return kvstore.NewDisk(stateMachineDir)
+			},
+			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
+					builder.HttpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
+			},
+			ProxyNetwork: nil,
+		},
+		{
+			CaseName:  "BasicTest: 3nodes-GRPC-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
+			ClusterId: 1,
+			CreateStateMachine: func(stateMachineDir string) ibabuza.BaseStateMachine {
+				return kvstore.NewDisk(stateMachineDir)
+			},
+			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
+					builder.GRPCTranspost, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
+			},
+			ProxyNetwork: nil,
+		},
+	}
 }

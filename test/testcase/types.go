@@ -24,7 +24,6 @@ type BabuzaComponent struct {
 	CreateStateMachine    func(storageDir string) ibabuza.BaseStateMachine
 	CreateCustomComponent func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent)
 	ProxyNetwork          ibabuza.ProxyNetwork
-	StorageRootDir        string
 }
 
 type TestCase struct {

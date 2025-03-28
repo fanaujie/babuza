@@ -94,6 +94,10 @@ func (c *BabuzaCluster) getPeerListenAddress(peer BabuzaPeer) string {
 	return peer.RaftListenAddr
 }
 
+func (c *BabuzaCluster) UseProxyNetwork() bool {
+	return c.useProxyNetwork
+}
+
 func (c *BabuzaCluster) RaftElectionTimeout() time.Duration {
 	return time.Duration(c.config.RaftConfig.LogicalTickMs*c.config.RaftConfig.ElectionTicks) * time.Millisecond
 }

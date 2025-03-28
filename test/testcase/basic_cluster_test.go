@@ -4,13 +4,8 @@ import (
 	"context"
 	"github.com/fanaujie/babuza/examples/kvstore/client"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
-	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
-	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/pkg/builder"
-	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
-	"os"
 	"strconv"
 	"testing"
 )
@@ -24,47 +19,7 @@ func (c *BasicCluster) Log(s string) {
 }
 
 func (c *BasicCluster) CreateTestComponents() []BabuzaComponent {
-	return []BabuzaComponent{
-		{
-			CaseName:  "BasicTest: 3nodes-Tcp-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
-			ClusterId: 1,
-			CreateStateMachine: func(storeDir string) ibabuza.BaseStateMachine {
-				return kvstore.NewDisk(storeDir)
-			},
-			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
-					builder.TcpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
-			},
-			StorageRootDir: os.TempDir(),
-			ProxyNetwork:   nil,
-		},
-		{
-			CaseName:  "BasicTest: 3nodes-Http-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
-			ClusterId: 1,
-			CreateStateMachine: func(stateMachineDir string) ibabuza.BaseStateMachine {
-				return kvstore.NewDisk(stateMachineDir)
-			},
-			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
-					builder.HttpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
-			},
-			StorageRootDir: os.TempDir(),
-			ProxyNetwork:   nil,
-		},
-		{
-			CaseName:  "BasicTest: 3nodes-GRPC-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
-			ClusterId: 1,
-			CreateStateMachine: func(stateMachineDir string) ibabuza.BaseStateMachine {
-				return kvstore.NewDisk(stateMachineDir)
-			},
-			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
-					builder.GRPCTranspost, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
-			},
-			StorageRootDir: os.TempDir(),
-			ProxyNetwork:   nil,
-		},
-	}
+	return basicClusterComponents()
 }
 
 func (c *BasicCluster) Run(tc *testcluster.BabuzaCluster) {

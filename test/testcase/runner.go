@@ -13,13 +13,14 @@ import (
 func RunTests(testCase ICase) {
 	for _, component := range testCase.CreateTestComponents() {
 		func() {
-			if err := os.MkdirAll(component.StorageRootDir, 0755); err != nil {
+			storageDir, err := os.MkdirTemp("", "babuza-test-")
+			if err != nil {
 				panic(err)
 			}
 			defer func() {
-				_ = os.RemoveAll(component.StorageRootDir)
+				_ = os.RemoveAll(storageDir)
 			}()
-			tc := testcluster.CreateTestCluster(component.ClusterId, component.StorageRootDir, component.ProxyNetwork,
+			tc := testcluster.CreateTestCluster(component.ClusterId, storageDir, component.ProxyNetwork,
 				func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool,
 					proxyNet ibabuza.ProxyNetwork, appDir string, appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
 					appConfig := embedapp.KvStoreAppConfig{
@@ -29,7 +30,7 @@ func RunTests(testCase ICase) {
 					}
 					var customComponents builder.BabuzaComponent
 					appConfig.BubuzaConfig, customComponents = component.CreateCustomComponent(&appConfig.BubuzaConfig,
-						component.StorageRootDir, proxyNet)
+						appDir, proxyNet)
 					return embedapp.NewKvStoreApp(appConfig,
 						component.CreateStateMachine(filepath.Join(appDir, "store")), customComponents)
 				})
