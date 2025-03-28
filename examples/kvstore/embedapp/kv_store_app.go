@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/fanaujie/babuza/examples/kvstore/server/api"
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/builder"
 	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	babuza "github.com/fanaujie/babuza/raft"
 	"net/http"
@@ -28,11 +29,13 @@ type KvStoreApp struct {
 	httpSrv                   *http.Server
 }
 
-func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMachine, builder *babuza.BootstrapBuilder) (*KvStoreApp, error) {
+func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMachine, customBuilder builder.BabuzaComponent) (*KvStoreApp, error) {
 	app := &KvStoreApp{}
 	app.stateMachine = stateMachine
-	builder.SetStateMachine(stateMachine)
-	bootstrap, err := builder.Build()
+	bootstrap, err := babuza.NewBootstrapRaftCluster(
+		appConfig.BubuzaConfig, *appConfig.VotingPeersCfg, stateMachine, customBuilder.Cluster,
+		customBuilder.RaftNode, customBuilder.SessionManager, customBuilder.SnapshotManager, customBuilder.WalManager,
+		customBuilder.Transport, customBuilder.Logger)
 	if err != nil {
 		return nil, err
 	}

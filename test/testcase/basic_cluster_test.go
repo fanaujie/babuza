@@ -6,16 +6,7 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/pkg/cluster"
-	"github.com/fanaujie/babuza/pkg/raftnode"
-	"github.com/fanaujie/babuza/pkg/session"
-	"github.com/fanaujie/babuza/pkg/snapshot"
-	"github.com/fanaujie/babuza/pkg/transport"
-	"github.com/fanaujie/babuza/pkg/transport/protocol"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio"
-	"github.com/fanaujie/babuza/pkg/utility/breaker"
-	"github.com/fanaujie/babuza/pkg/utility/limiter"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal"
+	"github.com/fanaujie/babuza/pkg/builder"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
@@ -37,26 +28,12 @@ func (c *BasicCluster) CreateTestComponents() []BabuzaComponent {
 		{
 			CaseName:  "BasicTest: 3nodes-Tcp-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
 			ClusterId: 1,
-			CreateStateMachine: func(stateMachineDir string) ibabuza.BaseStateMachine {
-				return kvstore.NewDisk(stateMachineDir)
+			CreateStateMachine: func(storeDir string) ibabuza.BaseStateMachine {
+				return kvstore.NewDisk(storeDir)
 			},
-			CreateBuilder: func(babuzaConfig *babuza.BabuzaConfig, walDir, snapshotDir string, votingPeersCfg *babuza.VotingPeersConfiguration,
-				pn ibabuza.ProxyNetwork) *babuza.BootstrapBuilder {
-				logger := createDefaultLogger()
-				return babuza.NewBootstrapBuilder().
-					SetConfig(babuzaConfig).
-					SetPeersConfig(votingPeersCfg).
-					SetCluster(cluster.NewCluster(logger)).
-					SetRaftNode(&raftnode.EtcdRaftNode{}).
-					SetSessionManager(session.NewNoOpManager(logger)).
-					SetSnapshotManager(snapshot.NewDurableSnapshotManager(snapshotDir, logger)).
-					SetWalManager(babuzawal.NewWalManager(walDir, logger)).
-					SetTransport(transport.New(
-						babuzaConfig.ClusterId,
-						transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
-						limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(),
-						protocol.NewTcp(networkio.NewTcpPhysicalIO(), logger), logger)).
-					SetLogger(logger)
+			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
+					builder.TcpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
 			},
 			StorageRootDir: os.TempDir(),
 			ProxyNetwork:   nil,
@@ -67,23 +44,9 @@ func (c *BasicCluster) CreateTestComponents() []BabuzaComponent {
 			CreateStateMachine: func(stateMachineDir string) ibabuza.BaseStateMachine {
 				return kvstore.NewDisk(stateMachineDir)
 			},
-			CreateBuilder: func(babuzaConfig *babuza.BabuzaConfig, walDir, snapshotDir string, votingPeersCfg *babuza.VotingPeersConfiguration,
-				pn ibabuza.ProxyNetwork) *babuza.BootstrapBuilder {
-				logger := createDefaultLogger()
-				return babuza.NewBootstrapBuilder().
-					SetConfig(babuzaConfig).
-					SetPeersConfig(votingPeersCfg).
-					SetCluster(cluster.NewCluster(logger)).
-					SetRaftNode(&raftnode.EtcdRaftNode{}).
-					SetSessionManager(session.NewNoOpManager(logger)).
-					SetSnapshotManager(snapshot.NewDurableSnapshotManager(snapshotDir, logger)).
-					SetWalManager(babuzawal.NewWalManager(walDir, logger)).
-					SetTransport(transport.New(
-						babuzaConfig.ClusterId,
-						transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
-						limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(),
-						protocol.NewHttp(logger), logger)).
-					SetLogger(logger)
+			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
+					builder.HttpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
 			},
 			StorageRootDir: os.TempDir(),
 			ProxyNetwork:   nil,
@@ -94,23 +57,9 @@ func (c *BasicCluster) CreateTestComponents() []BabuzaComponent {
 			CreateStateMachine: func(stateMachineDir string) ibabuza.BaseStateMachine {
 				return kvstore.NewDisk(stateMachineDir)
 			},
-			CreateBuilder: func(babuzaConfig *babuza.BabuzaConfig, walDir, snapshotDir string, votingPeersCfg *babuza.VotingPeersConfiguration,
-				pn ibabuza.ProxyNetwork) *babuza.BootstrapBuilder {
-				logger := createDefaultLogger()
-				return babuza.NewBootstrapBuilder().
-					SetConfig(babuzaConfig).
-					SetPeersConfig(votingPeersCfg).
-					SetCluster(cluster.NewCluster(logger)).
-					SetRaftNode(&raftnode.EtcdRaftNode{}).
-					SetSessionManager(session.NewNoOpManager(logger)).
-					SetSnapshotManager(snapshot.NewDurableSnapshotManager(snapshotDir, logger)).
-					SetWalManager(babuzawal.NewWalManager(walDir, logger)).
-					SetTransport(transport.New(
-						babuzaConfig.ClusterId,
-						transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
-						limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(),
-						protocol.NewGrpc(logger), logger)).
-					SetLogger(logger)
+			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
+					builder.GRPCTranspost, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
 			},
 			StorageRootDir: os.TempDir(),
 			ProxyNetwork:   nil,

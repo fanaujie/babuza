@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/fanaujie/babuza/examples/kvstore/server"
+	"github.com/fanaujie/babuza/pkg/builder"
 	"github.com/spf13/cobra"
 	"io"
 	"strconv"
@@ -74,34 +75,33 @@ You can configure various aspects of the KV store server including:
 		"Storage Directory: Root directory path for storing WAL logs, snapshots, and state machine data.")
 
 	// ==== Babuza Framework Component Selection ====
-	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaSession, "session-type", server.NoOpSession,
+	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaSession, "session-type", builder.NoOpSession,
 		`Session Management Implementation (for idempotency):
   "noop": No Operation Session - Default, no idempotency support
   "expire": Expire Session - Session management with simple expiration mechanism
   "lru": LRU Session - Session management based on Least Recently Used algorithm`)
 
-	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaTransportProtocol, "transport-protocol", server.TcpTransport,
+	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaTransportProtocol, "transport-protocol", builder.TcpTransport,
 		`Transport Protocol Implementation:
   "tcp": TCP Transport - Default, basic TCP protocol with physical network I/O, low latency
-  "tcp-memory": TCP Memory Transport - In-memory TCP implementation for testing
   "http": HTTP Transport - Based on HTTP protocol, works through proxies and firewalls
   "grpc": gRPC Transport - Based on gRPC protocol, supports bidirectional streaming and advanced features`)
 
-	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaWal, "wal-type", server.BabuzaWal,
+	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaWal, "wal-type", builder.BabuzaWal,
 		`Write-Ahead Log (WAL) Implementation:
   "babuza-wal": Babuza WAL - Default, Babuza native implementation
   "etcd-wal": ETCD WAL - Uses etcd's WAL implementation
   "lsmt-wal-disk": LSMT WAL Disk - Disk-based WAL implementation with LSMT
   "lsmt-wal-memory": LSMT WAL Memory - Memory-based WAL implementation with LSMT (for testing only)`)
 
-	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaSnapshot, "snapshot-type", server.DurableSnapshot,
+	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaSnapshot, "snapshot-type", builder.DurableSnapshot,
 		`Snapshot Implementation:
   "durable": Durable Snapshot - Default, stores snapshots on local disk
   "volatile": Volatile Snapshot - Stores snapshots in memory (for testing only)
   "minio": MinIO Snapshot - Stores snapshots using MinIO object storage service
 Note: When choosing "minio", you must provide MinIO configuration parameters.`)
 
-	serverCommand.Flags().StringVar(&kvStoreConfig.StateMachine, "state-machine", server.StateMachineMemory,
+	serverCommand.Flags().StringVar(&kvStoreConfig.StateMachine, "state-machine", builder.StateMachineMemory,
 		`State Machine Type:
   "memory": Memory State Machine - Default, all data stored in memory
   "memory-concurrent": Memory State Machine with Concurrent Snapshot - Doesn't block operations while creating snapshots
@@ -151,31 +151,31 @@ func parseAndValidateServerParams() error {
 	}
 
 	// Validate Session option
-	validSessionTypes := map[string]bool{server.NoOpSession: true, server.ExpireSession: true, server.LRUSession: true}
+	validSessionTypes := map[string]bool{builder.NoOpSession: true, builder.ExpireSession: true, builder.LRUSession: true}
 	if _, ok := validSessionTypes[kvStoreConfig.BabuzaSession]; !ok {
 		return fmt.Errorf("invalid session option: %s (must be 'noop', 'expire', or 'lru')", kvStoreConfig.BabuzaSession)
 	}
 
 	// Validate Transport option
-	validTransportTypes := map[string]bool{server.TcpTransport: true, server.TcpMemoryTransport: true, server.HttpTransport: true, server.GRPCTranspost: true}
+	validTransportTypes := map[string]bool{builder.TcpTransport: true, builder.HttpTransport: true, builder.GRPCTranspost: true}
 	if _, ok := validTransportTypes[kvStoreConfig.BabuzaTransportProtocol]; !ok {
-		return fmt.Errorf("invalid transport protocol option: %s (must be 'tcp', 'tcp-memory', 'http', or 'grpc')", kvStoreConfig.BabuzaTransportProtocol)
+		return fmt.Errorf("invalid transport protocol option: %s (must be 'tcp', 'http', or 'grpc')", kvStoreConfig.BabuzaTransportProtocol)
 	}
 
 	// Validate WAL option
-	validWalTypes := map[string]bool{server.BabuzaWal: true, server.ETCDWal: true, server.LsmtWalDisk: true, server.LsmtWalMemory: true}
+	validWalTypes := map[string]bool{builder.BabuzaWal: true, builder.ETCDWal: true, builder.LsmtWalDisk: true, builder.LsmtWalMemory: true}
 	if _, ok := validWalTypes[kvStoreConfig.BabuzaWal]; !ok {
 		return fmt.Errorf("invalid WAL option: %s (must be 'babuza-wal', 'etcd-wal', 'lsmt-wal-disk', or 'lsmt-wal-memory')", kvStoreConfig.BabuzaWal)
 	}
 
 	// Validate Snapshot option
-	validSnapshotTypes := map[string]bool{server.DurableSnapshot: true, server.VolatileSnapshot: true, server.MinIOSnapshot: true}
+	validSnapshotTypes := map[string]bool{builder.DurableSnapshot: true, builder.VolatileSnapshot: true, builder.MinIOSnapshot: true}
 	if _, ok := validSnapshotTypes[kvStoreConfig.BabuzaSnapshot]; !ok {
 		return fmt.Errorf("invalid snapshot option: %s (must be 'durable', 'volatile', or 'minio')", kvStoreConfig.BabuzaSnapshot)
 	}
 
 	// Validate State Machine option
-	validStateMachineTypes := map[string]bool{server.StateMachineMemory: true, server.StateMachineMemoryWithConcurrentSnapshotType: true, server.StateMachineDisk: true}
+	validStateMachineTypes := map[string]bool{builder.StateMachineMemory: true, builder.StateMachineMemoryWithConcurrentSnapshotType: true, builder.StateMachineDisk: true}
 	if _, ok := validStateMachineTypes[kvStoreConfig.StateMachine]; !ok {
 		return fmt.Errorf("invalid state machine option: %s (must be 'memory', 'memory-concurrent', or 'disk')", kvStoreConfig.StateMachine)
 	}
@@ -188,7 +188,7 @@ func parseAndValidateServerParams() error {
 	}
 
 	// Validate MinIO settings when MinIO snapshot is selected
-	if kvStoreConfig.BabuzaSnapshot == server.MinIOSnapshot {
+	if kvStoreConfig.BabuzaSnapshot == builder.MinIOSnapshot {
 		if kvStoreConfig.MinIOEndpoint == "" {
 			return fmt.Errorf("minio-endpoint is required when using MinIO snapshot storage")
 		}

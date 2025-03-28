@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/builder"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"github.com/fanaujie/babuza/test/testcluster"
-	"go.uber.org/zap/zapcore"
 	"path/filepath"
 	"time"
 )
@@ -67,10 +67,18 @@ func createStorageDirectories(storageDir string) (*babuzaDirectory, error) {
 	return dirs, nil
 }
 
-func createDefaultLogger() ibabuza.Logger {
-	var zapLogger = logger.NewZapLogger(
-		zapcore.DebugLevel, []string{"stdout"}, "")
-	return logger.NewRaftLogger(zapLogger.Sugar())
+func customBabuzaComponent(sessionType, walType, snapshotType, transport string,
+	proxyNet ibabuza.ProxyNetwork) *builder.BabuzaComponentBuilder {
+	b := builder.NewBabuzaComponentBuilder(&builder.BabuzaComponentConfig{
+		SessionType:   sessionType,
+		TransportType: transport,
+		WalType:       walType,
+		SnapshotType:  snapshotType,
+	})
+	if proxyNet != nil {
+		b.SetTransportTcpNetwork(proxyNet.(tcp.NetworkIO))
+	}
+	return b
 }
 
 func runWithCtxTimeout(timeout time.Duration, run func(ctx context.Context) error) error {

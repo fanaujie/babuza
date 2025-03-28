@@ -2,6 +2,7 @@ package testcase
 
 import (
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/builder"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 )
@@ -12,14 +13,18 @@ type ICase interface {
 	Log(string)
 }
 
+type CustomComponentConfig struct {
+	WalType, SnapshotType, TransportType, SessionType string
+	babuzaConfig                                      *babuza.BabuzaConfig
+}
+
 type BabuzaComponent struct {
-	CaseName           string
-	ClusterId          uint64
-	CreateStateMachine func(storageDir string) ibabuza.BaseStateMachine
-	CreateBuilder      func(babuzaConfig *babuza.BabuzaConfig, walDir, snapshotDir string,
-		votingPeersCfg *babuza.VotingPeersConfiguration, proxyNetwork ibabuza.ProxyNetwork) *babuza.BootstrapBuilder
-	ProxyNetwork   ibabuza.ProxyNetwork
-	StorageRootDir string
+	CaseName              string
+	ClusterId             uint64
+	CreateStateMachine    func(storageDir string) ibabuza.BaseStateMachine
+	CreateCustomComponent func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent)
+	ProxyNetwork          ibabuza.ProxyNetwork
+	StorageRootDir        string
 }
 
 type TestCase struct {
