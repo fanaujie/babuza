@@ -41,7 +41,7 @@ func (c *JoinLearner) Run(tc *testcluster.BabuzaCluster) {
 	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, learner, connectGroup.GetIds()))
 
 	assert.Nil(c.t, runWithCtxTimeout(time.Second*3, func(ctx context.Context) error {
-		return peerConfigExists(ctx, tc.UseProxyNetwork(), kvClient, learner)
+		return peerConfigExists(ctx, tc, kvClient, learner)
 	}))
 
 	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())

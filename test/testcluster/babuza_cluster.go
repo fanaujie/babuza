@@ -87,15 +87,11 @@ func CreateTestCluster(clusterId uint64, storageRootDir string, proxyNetwork iba
 }
 
 // Helper method to determine which address to use
-func (c *BabuzaCluster) getPeerListenAddress(peer BabuzaPeer) string {
+func (c *BabuzaCluster) GetPeerListenAddress(peer BabuzaPeer) string {
 	if c.useProxyNetwork {
 		return peer.ProxyListenAddr
 	}
 	return peer.RaftListenAddr
-}
-
-func (c *BabuzaCluster) UseProxyNetwork() bool {
-	return c.useProxyNetwork
 }
 
 func (c *BabuzaCluster) RaftElectionTimeout() time.Duration {
@@ -107,7 +103,7 @@ func (c *BabuzaCluster) MakeCluster(wait time.Duration, votingPeers []BabuzaPeer
 		if peer.IsLearner {
 			return fmt.Errorf("test cluster: failed to make cluster. found a learner peer id(%d)", peer.Id)
 		}
-		peerAddr := c.getPeerListenAddress(peer)
+		peerAddr := c.GetPeerListenAddress(peer)
 		if err := c.votingPeersCfg.AddPeer(peer.Id, peerAddr); err != nil {
 			return err
 		}
@@ -191,7 +187,7 @@ func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedCli
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
-	peerAddr := c.getPeerListenAddress(peer)
+	peerAddr := c.GetPeerListenAddress(peer)
 	if err := client.Join(ctx, peer.Id, peerAddr, peer.IsLearner); err != nil {
 		return err
 	}

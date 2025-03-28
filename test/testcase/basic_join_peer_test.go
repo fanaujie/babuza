@@ -39,7 +39,7 @@ func (c *JoinPeer) Run(tc *testcluster.BabuzaCluster) {
 	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIds()))
 
 	assert.Nil(c.t, runWithCtxTimeout(time.Second*3, func(ctx context.Context) error {
-		return peerConfigExists(ctx, tc.UseProxyNetwork(), kvClient, joinPeer)
+		return peerConfigExists(ctx, tc, kvClient, joinPeer)
 	}))
 
 	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
@@ -52,10 +52,9 @@ func (c *JoinPeer) Run(tc *testcluster.BabuzaCluster) {
 	assert.Equal(c.t, cluster.ErrPeerIDExists, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIds()))
 	leader := makeSinglePeer(leaderId, false)
 	joinPeer = makeSinglePeer(5, false)
-	if tc.UseProxyNetwork() {
-		joinPeer.ProxyListenAddr = leader.ProxyListenAddr
-	} else {
-		joinPeer.RaftListenAddr = leader.RaftListenAddr
-	}
+
+	joinPeer.ProxyListenAddr = leader.ProxyListenAddr
+	joinPeer.RaftListenAddr = leader.RaftListenAddr
+	
 	assert.Equal(c.t, cluster.ErrPeerRaftListenAddrExists, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIds()))
 }

@@ -62,11 +62,8 @@ func runWithCtxTimeout(timeout time.Duration, run func(ctx context.Context) erro
 	return run(ctx)
 }
 
-func peerConfigExists(ctx context.Context, userProxyNetwork bool, c *client.KvStoreClient, peer testcluster.BabuzaPeer) error {
-	targetAddr := peer.RaftListenAddr
-	if userProxyNetwork {
-		targetAddr = peer.ProxyListenAddr
-	}
+func peerConfigExists(ctx context.Context, tc *testcluster.BabuzaCluster, c *client.KvStoreClient, peer testcluster.BabuzaPeer) error {
+	targetAddr := tc.GetPeerListenAddress(peer)
 	for {
 		select {
 		case <-ctx.Done():

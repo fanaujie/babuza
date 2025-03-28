@@ -15,3 +15,7 @@ func TestJoinPeer(t *testing.T) {
 func TestJoinLearner(t *testing.T) {
 	RunTests(&JoinLearner{t: t})
 }
+
+func TestUpdatePeer(t *testing.T) {
+	RunTests(&UpdatePeer{t: t})
+}
