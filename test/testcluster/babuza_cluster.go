@@ -11,16 +11,6 @@ import (
 	"time"
 )
 
-type BabuzaPeer struct {
-	Id                  uint64
-	RaftListenAddr      string
-	TLSConfig           ibabuza.TLSConfig
-	ProxyListenAddr     string
-	ProxyTLSConfig      ibabuza.TLSConfig
-	AppServiceAddresses []string
-	IsLearner           bool
-}
-
 type EmbeddedApp interface {
 	PublishService(context.Context) chan error
 	StartService() error
@@ -86,58 +76,53 @@ func CreateTestCluster(clusterId uint64, storageRootDir string, proxyNetwork iba
 	}
 }
 
-// Helper method to determine which address to use
-func (c *BabuzaCluster) GetPeerListenAddress(peer BabuzaPeer) string {
-	if c.useProxyNetwork {
-		return peer.ProxyListenAddr
-	}
-	return peer.RaftListenAddr
-}
-
 func (c *BabuzaCluster) RaftElectionTimeout() time.Duration {
 	return time.Duration(c.config.RaftConfig.LogicalTickMs*c.config.RaftConfig.ElectionTicks) * time.Millisecond
 }
 
-func (c *BabuzaCluster) MakeCluster(wait time.Duration, votingPeers []BabuzaPeer) error {
+func (c *BabuzaCluster) IsUseProxyNetwork() bool {
+	return c.useProxyNetwork
+}
+
+func (c *BabuzaCluster) MakeCluster(wait time.Duration, votingPeers []Peer) error {
 	for _, peer := range votingPeers {
-		if peer.IsLearner {
-			return fmt.Errorf("test cluster: failed to make cluster. found a learner peer id(%d)", peer.Id)
+		if peer.IsPeerLearner() {
+			return fmt.Errorf("test cluster: failed to make cluster. found a learner peer id(%d)", peer.ID())
 		}
-		peerAddr := c.GetPeerListenAddress(peer)
-		if err := c.votingPeersCfg.AddPeer(peer.Id, peerAddr); err != nil {
+		raftListenAddr := peer.RaftListenAddress(c.useProxyNetwork)
+		if err := c.votingPeersCfg.AddPeer(peer.ID(), raftListenAddr); err != nil {
 			return err
 		}
 	}
 	connectedGroup := make([]uint64, 0, len(votingPeers))
 	for _, peer := range votingPeers {
 		cfg, peerRootDir, err := c.genPeerConfig(peer, false)
-		connectedGroup = append(connectedGroup, peer.Id)
-		app, err := c.createEmbeddedApp(c.votingPeersCfg.Clone(), cfg, false, c.proxyNetwork, peerRootDir, peer.AppServiceAddresses)
+		connectedGroup = append(connectedGroup, peer.ID())
+		app, err := c.createEmbeddedApp(c.votingPeersCfg.Clone(), cfg, false, c.proxyNetwork, peerRootDir, peer.ApplicationServiceAddresses())
 		if err != nil {
 			return fmt.Errorf("test cluster: failed to create embedded app. peer(%v) restart(false) join(false). err=%s", peer, err)
 		}
 
 		if c.useProxyNetwork {
-			if err = c.proxyNetwork.AddProxy(ibabuza.ProxyConfig{
-				Id:        peer.Id,
-				InAddr:    peer.ProxyListenAddr,
-				OutAddr:   peer.RaftListenAddr,
-				TLSConfig: peer.ProxyTLSConfig,
-			}); err != nil {
+			proxyPeer, ok := peer.(ProxyPeer)
+			if !ok {
+				return fmt.Errorf("test cluster: failed to cast peer to ProxyPeer. peer(%v)", peer)
+			}
+			if err = c.proxyNetwork.AddProxy(proxyPeer.ProxyConfig()); err != nil {
 				return err
 			}
 
-			if err = c.proxyNetwork.ConnectProxy(peer.Id); err != nil {
+			if err = c.proxyNetwork.ConnectProxy(peer.ID()); err != nil {
 				return err
 			}
 		}
 
 		controller := &appController{
 			app:                  app,
-			appsServiceAddresses: peer.AppServiceAddresses,
+			appsServiceAddresses: peer.ApplicationServiceAddresses(),
 			appStopCh:            make(chan error, 1),
 		}
-		c.appControllers[peer.Id] = controller
+		c.appControllers[peer.ID()] = controller
 	}
 
 	if c.useProxyNetwork {
@@ -183,34 +168,33 @@ func (c *BabuzaCluster) Teardown() error {
 	return mu.Get()
 }
 
-func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedClient, peer BabuzaPeer, connectedGroup []uint64) error {
+func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedClient, peer Peer, connectedGroup []uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
-	peerAddr := c.GetPeerListenAddress(peer)
-	if err := client.Join(ctx, peer.Id, peerAddr, peer.IsLearner); err != nil {
+	raftListenAddr := peer.RaftListenAddress(c.useProxyNetwork)
+	if err := client.Join(ctx, peer.ID(), raftListenAddr, peer.IsPeerLearner()); err != nil {
 		return err
 	}
 
 	cfg, appStorageDir, err := c.genPeerConfig(peer, true)
-	if !peer.IsLearner {
-		if err = c.votingPeersCfg.AddPeer(peer.Id, peerAddr); err != nil {
+	if !peer.IsPeerLearner() {
+		if err = c.votingPeersCfg.AddPeer(peer.ID(), raftListenAddr); err != nil {
 			return fmt.Errorf("test cluster: failed to add peer to votingPeersCfg (peerId=%d) (endpoint=%s). err=%s",
-				peer.Id, peerAddr, err)
+				peer.ID(), raftListenAddr, err)
 		}
 	}
 
 	if c.useProxyNetwork {
-		if err = c.proxyNetwork.AddProxy(ibabuza.ProxyConfig{
-			Id:        peer.Id,
-			InAddr:    peer.ProxyListenAddr,
-			OutAddr:   peer.RaftListenAddr,
-			TLSConfig: peer.ProxyTLSConfig,
-		}); err != nil {
+		proxyPeer, ok := peer.(ProxyPeer)
+		if !ok {
+			return fmt.Errorf("test cluster: failed to cast peer to ProxyPeer. peer(%v)", peer)
+		}
+		if err = c.proxyNetwork.AddProxy(proxyPeer.ProxyConfig()); err != nil {
 			return err
 		}
 
-		if err = c.proxyNetwork.ConnectProxy(peer.Id); err != nil {
+		if err = c.proxyNetwork.ConnectProxy(peer.ID()); err != nil {
 			return err
 		}
 
@@ -219,17 +203,17 @@ func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedCli
 		}
 	}
 
-	app, err := c.createEmbeddedApp(c.votingPeersCfg.Clone(), cfg, false, c.proxyNetwork, appStorageDir, peer.AppServiceAddresses)
+	app, err := c.createEmbeddedApp(c.votingPeersCfg.Clone(), cfg, false, c.proxyNetwork, appStorageDir, peer.ApplicationServiceAddresses())
 	if err != nil {
 		return fmt.Errorf("test cluster: failed to create embedded app. peer(%v) restart(false) join(true). err=%s", peer, err)
 	}
 
 	controller := &appController{
 		app:                  app,
-		appsServiceAddresses: peer.AppServiceAddresses,
+		appsServiceAddresses: peer.ApplicationServiceAddresses(),
 		appStopCh:            make(chan error, 1),
 	}
-	c.appControllers[peer.Id] = controller
+	c.appControllers[peer.ID()] = controller
 	if err = <-app.PublishService(ctx); err != nil {
 		return err
 	}
@@ -281,30 +265,29 @@ func (c *BabuzaCluster) ShutdownPeer(peerId uint64) error {
 	return me.Get()
 }
 
-func (c *BabuzaCluster) RestartPeer(wait time.Duration, peer BabuzaPeer, connectedGroup []uint64) error {
+func (c *BabuzaCluster) RestartPeer(wait time.Duration, peer Peer, connectedGroup []uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
-	if _, ok := c.appControllers[peer.Id]; ok {
-		return fmt.Errorf("test cluster: found app (id=%d)", peer.Id)
+	if _, ok := c.appControllers[peer.ID()]; ok {
+		return fmt.Errorf("test cluster: found app (id=%d)", peer.ID())
 	}
 
 	cfg, storageDir, err := c.genPeerConfig(peer, false)
-	app, err := c.createEmbeddedApp(c.votingPeersCfg, cfg, true, c.proxyNetwork, storageDir, peer.AppServiceAddresses)
+	app, err := c.createEmbeddedApp(c.votingPeersCfg, cfg, true, c.proxyNetwork, storageDir, peer.ApplicationServiceAddresses())
 	if err != nil {
 		return fmt.Errorf("test cluster: failed to create embedded app. peer(%v) restart(true) join(false). err=%s", peer, err)
 	}
 
 	if c.useProxyNetwork {
-		if err = c.proxyNetwork.AddProxy(ibabuza.ProxyConfig{
-			Id:        peer.Id,
-			InAddr:    peer.ProxyListenAddr,
-			OutAddr:   peer.RaftListenAddr,
-			TLSConfig: peer.ProxyTLSConfig,
-		}); err != nil {
+		proxyPeer, ok := peer.(ProxyPeer)
+		if !ok {
+			return fmt.Errorf("test cluster: failed to cast peer to ProxyPeer. peer(%v)", peer)
+		}
+		if err = c.proxyNetwork.AddProxy(proxyPeer.ProxyConfig()); err != nil {
 			return err
 		}
 
-		if err = c.proxyNetwork.ConnectProxy(peer.Id); err != nil {
+		if err = c.proxyNetwork.ConnectProxy(peer.ID()); err != nil {
 			return err
 		}
 
@@ -315,10 +298,10 @@ func (c *BabuzaCluster) RestartPeer(wait time.Duration, peer BabuzaPeer, connect
 
 	controller := &appController{
 		app:                  app,
-		appsServiceAddresses: peer.AppServiceAddresses,
+		appsServiceAddresses: peer.ApplicationServiceAddresses(),
 		appStopCh:            make(chan error, 1),
 	}
-	c.appControllers[peer.Id] = controller
+	c.appControllers[peer.ID()] = controller
 	if err = <-controller.app.PublishService(ctx); err != nil {
 		return err
 	}
@@ -346,6 +329,32 @@ func (c *BabuzaCluster) ConnectPeer(peerId uint64) error {
 		return c.proxyNetwork.ConnectProxy(peerId)
 	}
 	return nil // No operation needed in direct connection mode
+}
+
+func (c *BabuzaCluster) CheckPeerExists(ctx context.Context, leaderID uint64, peer Peer) error {
+	raftListenAddr := peer.RaftListenAddress(c.useProxyNetwork)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+
+			controller, ok := c.appControllers[leaderID]
+			if !ok {
+				return fmt.Errorf("test cluster: not found leader (id=%d)", leaderID)
+			}
+			clusterCfg := controller.app.Raft().ClusterConfiguration()
+			if clusterCfg.LeaderID != leaderID {
+				return fmt.Errorf("test cluster: leader id mismatch. expected=%d, actual=%d", leaderID, clusterCfg.LeaderID)
+			}
+			for _, p := range clusterCfg.Peers {
+				if p.RaftPeerAttr.Id == peer.ID() && p.RaftPeerAttr.IsLearner == peer.IsPeerLearner() &&
+					p.RaftPeerAttr.RaftListenAddr == raftListenAddr {
+					return nil
+				}
+			}
+		}
+	}
 }
 
 func (c *BabuzaCluster) CheckOneLeader(wait time.Duration, connectedGroup []uint64) (uint64, error) {
@@ -430,14 +439,14 @@ func (c *BabuzaCluster) getCheckTimeout() time.Duration {
 	return c.RaftElectionTimeout() + time.Duration(rand.Int63n(int64(c.RaftElectionTimeout()/10)))
 }
 
-func (c *BabuzaCluster) genPeerConfig(peer BabuzaPeer, join bool) (babuza.BabuzaConfig, string, error) {
+func (c *BabuzaCluster) genPeerConfig(peer Peer, join bool) (babuza.BabuzaConfig, string, error) {
 	cfg := c.config
 	cfg.ClusterId = c.clusterId
-	cfg.LocalPeerId = peer.Id
-	cfg.RaftListenAddress = peer.RaftListenAddr
-	cfg.TLSConfig = peer.TLSConfig
+	cfg.LocalPeerId = peer.ID()
+	cfg.RaftListenAddress = peer.RaftListenAddress(false)
+	cfg.TLSConfig = peer.RaftTLSConfig()
 	cfg.Join = join
-	peerDir := filepath.Join(c.storageRootDir, fmt.Sprintf("%d", peer.Id))
+	peerDir := filepath.Join(c.storageRootDir, fmt.Sprintf("%d", peer.ID()))
 	return cfg, peerDir, nil
 }
 

@@ -9,13 +9,13 @@ func TestBasicCluster(t *testing.T) {
 }
 
 func TestJoinPeer(t *testing.T) {
-	RunTests(&JoinPeer{t: t})
+	RunTests(&BasicJoinPeer{t: t})
 }
 
 func TestJoinLearner(t *testing.T) {
-	RunTests(&JoinLearner{t: t})
+	RunTests(&BasicJoinLearner{t: t})
 }
 
 func TestUpdatePeer(t *testing.T) {
-	RunTests(&UpdatePeer{t: t})
+	RunTests(&BasicUpdatePeer{t: t})
 }

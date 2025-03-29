@@ -24,7 +24,7 @@ func (c *BasicCluster) CreateTestComponents() []BabuzaComponent {
 
 func (c *BasicCluster) Run(tc *testcluster.BabuzaCluster) {
 	wait := tc.RaftElectionTimeout() * 3
-	peers, connectGroup := makeVotingPeers(3)
+	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
 	assert.Nil(c.t, err)

@@ -128,11 +128,11 @@ func TestBabuza_Cluster_JoinVotingPeer(t *testing.T) {
 	c, err := createEmbeddedAppClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
 	assert.Nil(t, err)
 	defer c.Close()
-	connectGroup.Add(tp.Id)
+	connectGroup.Add(tp.ID())
 	assert.Nil(t, tc.JoinPeerToCluster(wait, c, tp, connectGroup.GetIds()))
 
 	assert.Nil(t, runFuncWithContextTimeout(time.Second*3, func(ctx context.Context) error {
-		return peerConfigExists(ctx, c, tp)
+		return tc.CheckPeerExists(ctx, leaderId, tp)
 	}))
 
 	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
@@ -141,11 +141,11 @@ func TestBabuza_Cluster_JoinVotingPeer(t *testing.T) {
 	assert.Nil(t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
 
 	// failure
-	tp.ProxyListenAddr = "127.0.0.1:100"
+	tp.(ProxyPeer).SetProxyListenAddress("127.0.0.1:100")
 	assert.Equal(t, cluster.ErrPeerIDExists, tc.JoinPeerToCluster(wait, c, tp, connectGroup.GetIds()))
 	leader := makeSinglePeer(leaderId, false)
 	tp = makeSinglePeer(5, false)
-	tp.ProxyListenAddr = leader.ProxyListenAddr
+	tp.(ProxyPeer).SetProxyListenAddress(leader.(ProxyPeer).ProxyListenAddress())
 	assert.Equal(t, cluster.ErrPeerRaftListenAddrExists, tc.JoinPeerToCluster(wait, c, tp, connectGroup.GetIds()))
 }
 
@@ -179,10 +179,10 @@ func TestBabuza_Cluster_JoinLearner(t *testing.T) {
 	c, err := createEmbeddedAppClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
 	assert.Nil(t, err)
 	defer c.Close()
-	connectGroup.Add(tp.Id)
+	connectGroup.Add(tp.ID())
 	assert.Nil(t, tc.JoinPeerToCluster(wait, c, tp, connectGroup.GetIds()))
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return peerConfigExists(ctx, c, tp)
+		return tc.CheckPeerExists(ctx, leaderId, tp)
 	}))
 	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
 	assert.Nil(t, err)
@@ -218,21 +218,20 @@ func TestBabuza_Cluster_UpdatePeer_RaftListenAddr(t *testing.T) {
 	assert.Nil(t, err)
 
 	updateRaftPeer := makeSinglePeer((leaderId%3)+1, false)
-	updateRaftPeer.RaftListenAddr = fmt.Sprintf("127.0.0.1:%d", 10000+updateRaftPeer.Id)
-	updateRaftPeer.ProxyListenAddr = fmt.Sprintf("127.0.0.1:%d", 14200+updateRaftPeer.Id)
-	updateRaftPeer.AppServiceAddresses = []string{fmt.Sprintf("127.0.0.1:%d", 24200+updateRaftPeer.Id)}
+	updateRaftPeer.(ProxyPeer).SetProxyListenAddress(fmt.Sprintf("127.0.0.1:%d", 34200+updateRaftPeer.ID()))
+	updateRaftPeer.SetAppServiceAddresses([]string{fmt.Sprintf("127.0.0.1:%d", 24200+updateRaftPeer.ID())})
 	c, err := createEmbeddedAppClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
 	assert.Nil(t, err)
 	defer c.Close()
 
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return c.Update(ctx, updateRaftPeer.Id, updateRaftPeer.ProxyListenAddr)
+		return c.Update(ctx, updateRaftPeer.ID(), updateRaftPeer.(ProxyPeer).ProxyListenAddress())
 	}))
 
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return peerConfigExists(ctx, c, updateRaftPeer)
+		return tc.CheckPeerExists(ctx, leaderId, updateRaftPeer)
 	}))
-	assert.Nil(t, tc.ShutdownPeer(updateRaftPeer.Id))
+	assert.Nil(t, tc.ShutdownPeer(updateRaftPeer.ID()))
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
 		_, err = c.Set(ctx, "foo", "bar")
 		return err
@@ -245,7 +244,7 @@ func TestBabuza_Cluster_UpdatePeer_RaftListenAddr(t *testing.T) {
 
 	// failure
 	assert.Equal(t, cluster.ErrPeerIDNotFound, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return c.Update(ctx, 100, updateRaftPeer.ProxyListenAddr)
+		return c.Update(ctx, 100, updateRaftPeer.(ProxyPeer).ProxyListenAddress())
 	}))
 }
 
@@ -282,7 +281,7 @@ func TestBabuza_Cluster_RemoveFollower(t *testing.T) {
 	assert.Nil(t, tc.RemovePeerFromCluster(wait, c, followerId))
 	connectGroup.Remove(followerId)
 	assert.Error(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return peerConfigExists(ctx, c, makeSinglePeer(followerId, false))
+		return tc.CheckPeerExists(ctx, leaderId, makeSinglePeer(followerId, false))
 	}))
 
 	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
@@ -328,7 +327,7 @@ func TestBabuza_Cluster_RemoveLeader(t *testing.T) {
 	assert.Nil(t, tc.RemovePeerFromCluster(wait, c, leaderId))
 	connectGroup.Remove(leaderId)
 	assert.Error(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return peerConfigExists(ctx, c, makeSinglePeer(leaderId, false))
+		return tc.CheckPeerExists(ctx, leaderId, makeSinglePeer(leaderId, false))
 	}))
 	time.Sleep(tc.RaftElectionTimeout())
 	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
@@ -374,10 +373,10 @@ func TestBabuza_Cluster_PromoteLearner(t *testing.T) {
 		}))
 	}
 	learner := makeSinglePeer(4, true)
-	connectGroup.Add(learner.Id)
+	connectGroup.Add(learner.ID())
 	assert.Nil(t, tc.JoinPeerToCluster(wait, c, learner, connectGroup.GetIds()))
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return peerConfigExists(ctx, c, learner)
+		return tc.CheckPeerExists(ctx, leaderId, learner)
 	}))
 
 	time.Sleep(time.Second) //wait for replication
@@ -386,7 +385,7 @@ func TestBabuza_Cluster_PromoteLearner(t *testing.T) {
 	}))
 
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return peerConfigExists(ctx, c, makeSinglePeer(4, false))
+		return tc.CheckPeerExists(ctx, leaderId, makeSinglePeer(4, false))
 	}))
 
 	// failure
@@ -446,10 +445,10 @@ func TestBabuza_Cluster_TransferLeader(t *testing.T) {
 	assert.Equal(t, transferLeaderId, leaderId2)
 
 	learner := makeSinglePeer(4, true)
-	connectGroup.Add(learner.Id)
+	connectGroup.Add(learner.ID())
 	assert.Nil(t, tc.JoinPeerToCluster(wait, c, learner, connectGroup.GetIds()))
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return peerConfigExists(ctx, c, learner)
+		return tc.CheckPeerExists(ctx, leaderId2, learner)
 	}))
 	func() {
 		ctx, cancel := context.WithTimeout(context.Background(), wait)
@@ -467,10 +466,10 @@ func TestBabuza_Cluster_TransferLeader(t *testing.T) {
 	}
 
 	follower := makeSinglePeer(5, false)
-	connectGroup.Add(follower.Id)
+	connectGroup.Add(follower.ID())
 	assert.Nil(t, tc.JoinPeerToCluster(wait, c, follower, connectGroup.GetIds()))
 	assert.Nil(t, runFuncWithContextTimeout(wait, func(ctx context.Context) error {
-		return peerConfigExists(ctx, c, follower)
+		return tc.CheckPeerExists(ctx, leaderId2, follower)
 	}))
 	// follower waits for replication then to be leader
 	func() {
