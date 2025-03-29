@@ -453,7 +453,7 @@ func TestBabuza_Cluster_TransferLeader(t *testing.T) {
 	func() {
 		ctx, cancel := context.WithTimeout(context.Background(), wait)
 		defer cancel()
-		assert.Equal(t, babuza.ErrLearnerCanNotSwitchLeaderShip, c.TransferLeader(ctx, 4))
+		assert.Equal(t, babuza.ErrLearnerCanNotSwitchLeadership, c.TransferLeader(ctx, 4))
 	}()
 	for i := 0; i < 64; i++ {
 		func(v int) {

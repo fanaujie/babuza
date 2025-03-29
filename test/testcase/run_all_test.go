@@ -19,3 +19,31 @@ func TestJoinLearner(t *testing.T) {
 func TestUpdatePeer(t *testing.T) {
 	RunTests(&BasicUpdatePeer{t: t})
 }
+
+func TestRemoveFollower(t *testing.T) {
+	RunTests(&BasicRemoveFollower{t: t})
+}
+
+func TestRemoveLeader(t *testing.T) {
+	RunTests(&BasicRemoveLeader{t: t})
+}
+
+func TestPromoteLearner(t *testing.T) {
+	RunTests(&BasicPromoteLearner{t: t})
+}
+
+func TestTransferLeader(t *testing.T) {
+	RunTests(&BasicTransferLeader{t: t})
+}
+
+func TestFollowerForwardProposal(t *testing.T) {
+	RunTests(&BasicFollowerForwardProposal{t: t})
+}
+
+func TestMultiClientProposal(t *testing.T) {
+	RunTests(&BasicMultiClientProposal{t: t})
+}
+
+func TestMultiClientFollowerForwardProposal(t *testing.T) {
+	RunTests(&BasicMultiClientFollowerForwardProposal{t: t})
+}

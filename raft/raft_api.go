@@ -251,7 +251,7 @@ func (r *Raft) TransferLeader(ctx context.Context, transferee uint64) TransferLe
 		return newErrorResult(err)
 	}
 	if toPeer.RaftPeerAttr.IsLearner {
-		return newErrorResult(ErrLearnerCanNotSwitchLeaderShip)
+		return newErrorResult(ErrLearnerCanNotSwitchLeadership)
 	}
 	r.raftNode.TransferLeadership(ctx, r.config.LocalPeerId, transferee)
 	res := newTransferLeaderResult(ctx, transferee, r.closer, time.Second,

@@ -196,8 +196,8 @@ func convertError(errString string) error {
 		return raft.ErrStopped
 	case raft.ErrLearnerNotReady.Error():
 		return raft.ErrLearnerNotReady
-	case raft.ErrLearnerCanNotSwitchLeaderShip.Error():
-		return raft.ErrLearnerCanNotSwitchLeaderShip
+	case raft.ErrLearnerCanNotSwitchLeadership.Error():
+		return raft.ErrLearnerCanNotSwitchLeadership
 	case raft.ErrLearnerCanNotVote.Error():
 		return raft.ErrLearnerCanNotVote
 	case raft.ErrVotingMemberCanNotPromote.Error():

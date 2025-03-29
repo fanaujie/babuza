@@ -21,7 +21,7 @@ func (c *BasicJoinPeer) Log(s string) {
 }
 
 func (c *BasicJoinPeer) CreateTestComponents() []BabuzaComponent {
-	return basicClusterComponents()
+	return basicClusterComponents(true)
 }
 
 func (c *BasicJoinPeer) Run(tc *testcluster.BabuzaCluster) {

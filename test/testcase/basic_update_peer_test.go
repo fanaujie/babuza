@@ -20,7 +20,7 @@ func (c *BasicUpdatePeer) Log(s string) {
 }
 
 func (c *BasicUpdatePeer) CreateTestComponents() []BabuzaComponent {
-	return basicClusterComponents()
+	return basicClusterComponents(true)
 }
 
 func (c *BasicUpdatePeer) Run(tc *testcluster.BabuzaCluster) {

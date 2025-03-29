@@ -20,7 +20,7 @@ func (c *BasicJoinLearner) Log(s string) {
 }
 
 func (c *BasicJoinLearner) CreateTestComponents() []BabuzaComponent {
-	return basicClusterComponents()
+	return basicClusterComponents(true)
 }
 
 func (c *BasicJoinLearner) Run(tc *testcluster.BabuzaCluster) {

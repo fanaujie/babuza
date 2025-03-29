@@ -55,7 +55,7 @@ func runWithCtxTimeout(timeout time.Duration, run func(ctx context.Context) erro
 	return run(ctx)
 }
 
-func basicClusterComponents() []BabuzaComponent {
+func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
 	return []BabuzaComponent{
 		{
 			CaseName:  "BasicTest: 3nodes-Tcp-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
@@ -64,6 +64,7 @@ func basicClusterComponents() []BabuzaComponent {
 				return kvstore.NewDisk(storeDir)
 			},
 			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				config.DisableProposalForwarding = disableProposalForwarding
 				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
 					builder.TcpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
 			},
@@ -76,6 +77,7 @@ func basicClusterComponents() []BabuzaComponent {
 				return kvstore.NewDisk(stateMachineDir)
 			},
 			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				config.DisableProposalForwarding = disableProposalForwarding
 				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
 					builder.HttpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
 			},
@@ -88,6 +90,7 @@ func basicClusterComponents() []BabuzaComponent {
 				return kvstore.NewDisk(stateMachineDir)
 			},
 			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				config.DisableProposalForwarding = disableProposalForwarding
 				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
 					builder.GRPCTranspost, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
 			},

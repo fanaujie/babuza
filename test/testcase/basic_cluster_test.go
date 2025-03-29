@@ -19,7 +19,7 @@ func (c *BasicCluster) Log(s string) {
 }
 
 func (c *BasicCluster) CreateTestComponents() []BabuzaComponent {
-	return basicClusterComponents()
+	return basicClusterComponents(true)
 }
 
 func (c *BasicCluster) Run(tc *testcluster.BabuzaCluster) {
