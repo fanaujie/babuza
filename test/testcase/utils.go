@@ -56,45 +56,26 @@ func runWithCtxTimeout(timeout time.Duration, run func(ctx context.Context) erro
 }
 
 func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
-	return []BabuzaComponent{
-		{
-			CaseName:  "BasicTest: 3nodes-Tcp-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
+	var components []BabuzaComponent
+	for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
+		components = append(components, BabuzaComponent{
+			CaseName:  "BasicTest: 3nodes-" + transportType + "DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
 			ClusterId: 1,
 			CreateStateMachine: func(storeDir string) ibabuza.BaseStateMachine {
 				return kvstore.NewDisk(storeDir)
 			},
-			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-				config.DisableProposalForwarding = disableProposalForwarding
-				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
-					builder.TcpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
-			},
+			CreateCustomComponent: func(transport string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+					config.DisableProposalForwarding = disableProposalForwarding
+					b := customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
+						transport, proxyNet).
+						SetClusterId(config.ClusterId).
+						SetStorageRootDir(storageDir)
+					return *config, *b.Build()
+				}
+			}(transportType),
 			ProxyNetwork: nil,
-		},
-		{
-			CaseName:  "BasicTest: 3nodes-Http-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
-			ClusterId: 1,
-			CreateStateMachine: func(stateMachineDir string) ibabuza.BaseStateMachine {
-				return kvstore.NewDisk(stateMachineDir)
-			},
-			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-				config.DisableProposalForwarding = disableProposalForwarding
-				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
-					builder.HttpTransport, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
-			},
-			ProxyNetwork: nil,
-		},
-		{
-			CaseName:  "BasicTest: 3nodes-GRPC-DiskStateMachine-BabuzaWal-DurableSnapshot-NoOpSession",
-			ClusterId: 1,
-			CreateStateMachine: func(stateMachineDir string) ibabuza.BaseStateMachine {
-				return kvstore.NewDisk(stateMachineDir)
-			},
-			CreateCustomComponent: func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-				config.DisableProposalForwarding = disableProposalForwarding
-				return *config, *customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
-					builder.GRPCTranspost, proxyNet).SetClusterId(config.ClusterId).SetStorageRootDir(storageDir).Build()
-			},
-			ProxyNetwork: nil,
-		},
+		})
 	}
+	return components
 }

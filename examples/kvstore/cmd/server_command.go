@@ -157,7 +157,7 @@ func parseAndValidateServerParams() error {
 	}
 
 	// Validate Transport option
-	validTransportTypes := map[string]bool{builder.TcpTransport: true, builder.HttpTransport: true, builder.GRPCTranspost: true}
+	validTransportTypes := map[string]bool{builder.TcpTransport: true, builder.HttpTransport: true, builder.GRPCTransport: true}
 	if _, ok := validTransportTypes[kvStoreConfig.BabuzaTransportProtocol]; !ok {
 		return fmt.Errorf("invalid transport protocol option: %s (must be 'tcp', 'http', or 'grpc')", kvStoreConfig.BabuzaTransportProtocol)
 	}

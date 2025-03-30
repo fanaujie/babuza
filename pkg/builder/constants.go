@@ -11,7 +11,7 @@ const (
 	TcpTransport       = "tcp"
 	TcpMemoryTransport = "tcp-memory"
 	HttpTransport      = "http"
-	GRPCTranspost      = "grpc"
+	GRPCTransport      = "grpc"
 
 	// WAL implementations
 	BabuzaWal     = "babuza-wal"
