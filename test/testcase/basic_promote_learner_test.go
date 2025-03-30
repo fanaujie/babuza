@@ -82,3 +82,7 @@ func (c *BasicPromoteLearner) Run(tc *testcluster.BabuzaCluster) {
 		return kvClient.PromoteLearner(ctx, leaderId)
 	}))
 }
+
+func TestPromoteLearner(t *testing.T) {
+	RunTests(&BasicPromoteLearner{t: t})
+}

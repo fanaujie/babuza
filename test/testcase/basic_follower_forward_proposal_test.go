@@ -65,3 +65,7 @@ func (c *BasicFollowerForwardProposal) Run(tc *testcluster.BabuzaCluster) {
 	// Verify that all nodes have consistent state
 	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
 }
+
+func TestFollowerForwardProposal(t *testing.T) {
+	RunTests(&BasicFollowerForwardProposal{t: t})
+}

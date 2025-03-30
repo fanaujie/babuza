@@ -57,3 +57,7 @@ func (c *BasicRemoveFollower) Run(tc *testcluster.BabuzaCluster) {
 	// Try to remove a non-existent peer
 	assert.Equal(c.t, cluster.ErrPeerIDNotFound, tc.RemovePeerFromCluster(wait, kvClient, 100))
 }
+
+func TestRemoveFollower(t *testing.T) {
+	RunTests(&BasicRemoveFollower{t: t})
+}

@@ -49,3 +49,7 @@ func (c *BasicRemoveLeader) Run(tc *testcluster.BabuzaCluster) {
 	assert.Nil(c.t, err)
 	assert.NotEqual(c.t, leaderId, leaderId2)
 }
+
+func TestRemoveLeader(t *testing.T) {
+	RunTests(&BasicRemoveLeader{t: t})
+}

@@ -63,3 +63,7 @@ func (c *BasicJoinPeer) Run(tc *testcluster.BabuzaCluster) {
 	joinPeer.SetRaftListenAddress(leader.RaftListenAddress(false))
 	assert.Equal(c.t, cluster.ErrPeerRaftListenAddrExists, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIds()))
 }
+
+func TestJoinPeer(t *testing.T) {
+	RunTests(&BasicJoinPeer{t: t})
+}

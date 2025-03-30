@@ -67,3 +67,7 @@ func (c *BasicUpdatePeer) Run(tc *testcluster.BabuzaCluster) {
 	assert.Equal(c.t, leaderId, leaderId2)
 	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
 }
+
+func TestUpdatePeer(t *testing.T) {
+	RunTests(&BasicUpdatePeer{t: t})
+}

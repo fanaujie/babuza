@@ -42,3 +42,7 @@ func (c *BasicCluster) Run(tc *testcluster.BabuzaCluster) {
 	}
 	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
 }
+
+func TestBasicCluster(t *testing.T) {
+	RunTests(&BasicCluster{t: t})
+}

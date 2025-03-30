@@ -56,3 +56,7 @@ func (c *BasicJoinLearner) Run(tc *testcluster.BabuzaCluster) {
 	assert.Equal(c.t, leaderId, leaderId2)
 	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
 }
+
+func TestJoinLearner(t *testing.T) {
+	RunTests(&BasicJoinLearner{t: t})
+}

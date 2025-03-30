@@ -105,3 +105,7 @@ func (c *BasicTransferLeader) Run(tc *testcluster.BabuzaCluster) {
 	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
 
 }
+
+func TestTransferLeader(t *testing.T) {
+	RunTests(&BasicTransferLeader{t: t})
+}
