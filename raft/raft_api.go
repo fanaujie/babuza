@@ -392,8 +392,8 @@ func (r *Raft) Status() Status {
 
 func (r *Raft) stop() {
 	r.closeRaftOnce.Do(func() {
-		r.trans.Stop()
 		r.raftNode.Stop()
+		r.trans.Stop()
 		r.closer.Close()
 		r.storage.Close()
 	})

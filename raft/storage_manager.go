@@ -321,6 +321,7 @@ func (s *storageManager) EntryStorageInfo() (lastIndex uint64, lastTerm uint64, 
 
 func (s *storageManager) Close() error {
 	me := multierror.New()
+	me.Append(s.stateMachine.Close())
 	me.Append(s.wal.Close())
 	me.Append(s.snapshotManager.Close())
 	return me.Get()

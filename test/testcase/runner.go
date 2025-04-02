@@ -37,6 +37,7 @@ func RunTests(testCase ICase) {
 			defer func() {
 				_ = tc.Teardown()
 			}()
+			testCase.Log(component.CaseName)
 			testCase.Run(tc)
 		}()
 	}

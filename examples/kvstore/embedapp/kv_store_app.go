@@ -87,7 +87,6 @@ func (k *KvStoreApp) PublishService(ctx context.Context) chan error {
 
 func (k *KvStoreApp) Stop() error {
 	me := multierror.New()
-	me.Append(k.stateMachine.Close())
 	me.Append(k.httpSrv.Close())
 	if err := k.babuza.Shutdown().Wait(); err != nil {
 		if !errors.Is(err, babuza.ErrStopped) {

@@ -6,6 +6,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
+	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
@@ -14,12 +15,16 @@ type peerFactory struct {
 }
 
 func (p *peerFactory) CreatePeer(peerId uint64) peer.Peer {
-	return peer.New(p.t.clusterId, peerId, peer.RaftPeerConfig{
+	c, err := p.t.protocol.CreateClient(p.t.peerMgr)
+	if err != nil {
+		p.t.logger.Panicf("transport[local id=%d] failed to create client for peerId=%d err=%s", p.t.localPeerId, peerId, err.Error())
+	}
+	return peer.New(p.t.clusterId, p.t.localPeerId, peerId, peer.RaftPeerConfig{
 		LimiterMaxBatchMessageSize: p.t.options.PeerLimiterMaxBatchMessageSize,
 		SnapshotChunkSize:          p.t.options.PeerSnapshotChunkSize,
 		RaftMsgQueueSize:           p.t.options.PeerQueueSize,
 		DialTimeout:                p.t.options.DialTimeout},
-		p.t.raftProcessor, p.t.memoryLimiter, p.t.chunkRateLimiter, p.t.breaker, p.t, p.t.logger)
+		p.t.raftProcessor, p.t.memoryLimiter, p.t.chunkRateLimiter, p.t.breaker, c, p.t.logger)
 }
 
 type Transport struct {
@@ -64,11 +69,11 @@ func (t *Transport) Start() error {
 }
 
 func (t *Transport) Stop() error {
-	if err := t.server.Stop(); err != nil {
-		return err
-	}
+	me := multierror.MultiError{}
+	me.Append(t.server.Stop())
 	t.peerMgr.RemoveAllPeers()
-	return t.protocol.Close()
+	me.Append(t.protocol.Close())
+	return me.Get()
 }
 
 func (t *Transport) Send(msg raftpb.Message) {

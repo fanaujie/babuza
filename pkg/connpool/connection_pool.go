@@ -39,9 +39,10 @@ func NewConnectionPool[T ComparableConnection](connCreator ConnectionDialer[T], 
 }
 
 func (p *ConnectionPool[T]) Get(address string) (T, error) {
-	p.mu.RLock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	conns, exists := p.connections[address]
-	p.mu.RUnlock()
 
 	if exists {
 		for _, c := range conns {
@@ -73,22 +74,19 @@ func (p *ConnectionPool[T]) Get(address string) (T, error) {
 		lastUsed: time.Now(),
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	connsList, exists := p.connections[address]
 	if !exists {
 		p.connections[address] = []*connectionWrapper[T]{wrapper}
 	} else {
-		p.connections[address] = append(connsList, wrapper)
+		p.connections[address] = append(p.connections[address], wrapper)
 	}
 
 	return conn, nil
 }
 
 func (p *ConnectionPool[T]) Put(conn T) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	for _, conns := range p.connections {
 		for _, c := range conns {
 			c.mu.Lock()
@@ -199,7 +197,11 @@ func (p *ConnectionPool[T]) startCleanup() {
 				var remaining []*connectionWrapper[T]
 
 				for _, conn := range conns {
-					if !conn.inUse && now.Sub(conn.lastUsed) > p.config.IdleTimeout {
+					conn.mu.RLock()
+					isIdle := !conn.inUse && now.Sub(conn.lastUsed) > p.config.IdleTimeout
+					conn.mu.RUnlock()
+
+					if isIdle {
 						_ = conn.conn.Close()
 					} else {
 						remaining = append(remaining, conn)
@@ -214,5 +216,4 @@ func (p *ConnectionPool[T]) startCleanup() {
 			p.mu.Unlock()
 		}
 	}
-
 }
