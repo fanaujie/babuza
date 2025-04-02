@@ -107,7 +107,7 @@ func (c *BasicValidClientSessionLeaderShutdown) CreateTestComponents() []BabuzaC
 	return leadershipSessionTestComponents()
 }
 
-func (c *BasicValidClientSessionLeaderShutdown) Run(tc *testcluster.BabuzaCluster) {
+func (c *BasicValidClientSessionLeaderShutdown) Run(tc *testcluster.BabuzaCluster, a any) {
 	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))

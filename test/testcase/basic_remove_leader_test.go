@@ -22,7 +22,7 @@ func (c *BasicRemoveLeader) CreateTestComponents() []BabuzaComponent {
 	return basicClusterComponents(true)
 }
 
-func (c *BasicRemoveLeader) Run(tc *testcluster.BabuzaCluster) {
+func (c *BasicRemoveLeader) Run(tc *testcluster.BabuzaCluster, a any) {
 	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))

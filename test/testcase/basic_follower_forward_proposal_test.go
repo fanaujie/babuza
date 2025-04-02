@@ -22,7 +22,7 @@ func (c *BasicFollowerForwardProposal) CreateTestComponents() []BabuzaComponent 
 	return basicClusterComponents(false)
 }
 
-func (c *BasicFollowerForwardProposal) Run(tc *testcluster.BabuzaCluster) {
+func (c *BasicFollowerForwardProposal) Run(tc *testcluster.BabuzaCluster, a any) {
 	totalPeers := 3
 	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(totalPeers)

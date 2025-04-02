@@ -23,7 +23,7 @@ func (c *BasicMultiClientFollowerForwardProposal) CreateTestComponents() []Babuz
 	return basicClusterComponents(false)
 }
 
-func (c *BasicMultiClientFollowerForwardProposal) Run(tc *testcluster.BabuzaCluster) {
+func (c *BasicMultiClientFollowerForwardProposal) Run(tc *testcluster.BabuzaCluster, a any) {
 	wait := tc.RaftElectionTimeout() * 3
 	totalPeers := 3
 	peers, connectGroup := makeVotingStandardPeers(totalPeers)

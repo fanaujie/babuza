@@ -9,7 +9,7 @@ import (
 
 type ICase interface {
 	CreateTestComponents() []BabuzaComponent
-	Run(*testcluster.BabuzaCluster)
+	Run(*testcluster.BabuzaCluster, any)
 	Log(string)
 }
 
@@ -24,6 +24,7 @@ type BabuzaComponent struct {
 	CreateStateMachine    func(storageDir string) ibabuza.BaseStateMachine
 	CreateCustomComponent func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent)
 	ProxyNetwork          ibabuza.ProxyNetwork
+	TestParams            any
 }
 
 type TestCase struct {

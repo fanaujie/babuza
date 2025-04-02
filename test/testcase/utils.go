@@ -2,6 +2,8 @@ package testcase
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
@@ -9,6 +11,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
+	"io"
 	"time"
 )
 
@@ -78,4 +81,33 @@ func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
 		})
 	}
 	return components
+}
+
+func newKvOperationOrderMap(reader io.Reader) (*kvstore.KvOperationOrderMap, error) {
+	buf := make([]byte, 8)
+	store := kvstore.NewKvOperationOrderMap()
+
+	var batchKv kvstore.BatchKVPair
+	for {
+		if _, err := io.ReadFull(reader, buf); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+
+		batchKvSize := binary.LittleEndian.Uint64(buf)
+		data := make([]byte, batchKvSize)
+		if _, err := io.ReadFull(reader, data); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(data, &batchKv); err != nil {
+			return nil, err
+		}
+		for _, pair := range batchKv {
+			store.Set(string(pair.Key), string(pair.Value))
+		}
+		batchKv = batchKv[:0]
+	}
+	return store, nil
 }

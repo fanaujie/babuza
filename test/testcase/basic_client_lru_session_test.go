@@ -54,7 +54,7 @@ func (c *BasicClientLRUSession) CreateTestComponents() []BabuzaComponent {
 	return lruSessionComponents(5) // Max 5 sessions
 }
 
-func (c *BasicClientLRUSession) Run(tc *testcluster.BabuzaCluster) {
+func (c *BasicClientLRUSession) Run(tc *testcluster.BabuzaCluster, a any) {
 	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))

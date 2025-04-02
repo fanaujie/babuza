@@ -38,7 +38,7 @@ func RunTests(testCase ICase) {
 				_ = tc.Teardown()
 			}()
 			testCase.Log(component.CaseName)
-			testCase.Run(tc)
+			testCase.Run(tc, component.TestParams)
 		}()
 	}
 }

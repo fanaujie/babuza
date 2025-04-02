@@ -25,7 +25,7 @@ func (c *BasicPromoteLearner) CreateTestComponents() []BabuzaComponent {
 	return basicClusterComponents(true)
 }
 
-func (c *BasicPromoteLearner) Run(tc *testcluster.BabuzaCluster) {
+func (c *BasicPromoteLearner) Run(tc *testcluster.BabuzaCluster, a any) {
 	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))

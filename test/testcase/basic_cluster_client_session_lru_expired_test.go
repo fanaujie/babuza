@@ -84,7 +84,7 @@ func (c *BasicClientSessionLruExpiredResponse) CreateTestComponents() []BabuzaCo
 	return sessionLruExpirationTestComponents()
 }
 
-func (c *BasicClientSessionLruExpiredResponse) Run(tc *testcluster.BabuzaCluster) {
+func (c *BasicClientSessionLruExpiredResponse) Run(tc *testcluster.BabuzaCluster, a any) {
 	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
