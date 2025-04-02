@@ -17,7 +17,7 @@ import (
 )
 
 // Expired session component with specified duration
-func expiredSessionComponents(sessionExpiredNaoSec int64) []BabuzaComponent {
+func expiredSessionComponents(sessionExpiredNaoSec time.Duration) []BabuzaComponent {
 	var components []BabuzaComponent
 	for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
 		components = append(components, BabuzaComponent{
@@ -32,7 +32,7 @@ func expiredSessionComponents(sessionExpiredNaoSec int64) []BabuzaComponent {
 						transport, proxyNet).
 						SetClusterId(config.ClusterId).
 						SetStorageRootDir(storageDir).AddExpireSessionOptions(
-						session.SetExpiredMgrOptionsWithExpiredNanoseconds(sessionExpiredNaoSec),
+						session.SetExpiredMgrOptionsWithExpiredTime(sessionExpiredNaoSec),
 						session.SetExpiredMgrOptionsWithSnapshotCompressionType(babuzapb.SnapshotFileCompression_Snappy))
 					return *config, *b.Build()
 				}
@@ -52,7 +52,7 @@ func (c *BasicClientExpiredSession) Log(s string) {
 }
 
 func (c *BasicClientExpiredSession) CreateTestComponents() []BabuzaComponent {
-	return expiredSessionComponents(int64(time.Second)) // 1 second expiry
+	return expiredSessionComponents(time.Second) // 1 second expiry
 }
 
 func (c *BasicClientExpiredSession) Run(tc *testcluster.BabuzaCluster) {

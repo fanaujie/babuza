@@ -1,0 +1,122 @@
+package testcase
+
+import (
+	"context"
+	"github.com/fanaujie/babuza/examples/kvstore/client"
+	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
+	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/builder"
+	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/session"
+	babuza "github.com/fanaujie/babuza/raft"
+	"github.com/fanaujie/babuza/test/testcluster"
+	"github.com/stretchr/testify/assert"
+	"testing"
+	"time"
+)
+
+// Component factory for session expiration testing
+func sessionTimeExpirationTestComponents() []BabuzaComponent {
+	// Create components for all combinations we want to test
+	var components []BabuzaComponent
+
+	// Test cases to test session expiration responses
+	testCases := []struct {
+		caseName            string
+		sessionType         string
+		stateMachineCreator func(string) ibabuza.BaseStateMachine
+	}{
+		{
+			caseName:    "memory store with time expired session",
+			sessionType: builder.ExpireSession,
+			stateMachineCreator: func(s string) ibabuza.BaseStateMachine {
+				return kvstore.NewMemoryStoreWithSession()
+			},
+		},
+		{
+			caseName:    "memory store with time expired session and concurrent snapshot",
+			sessionType: builder.ExpireSession,
+			stateMachineCreator: func(s string) ibabuza.BaseStateMachine {
+				return kvstore.NewMemoryStoreWithConcurrentSnapshotAndSession()
+			},
+		},
+		{
+			caseName:    "disk store with time expired session",
+			sessionType: builder.ExpireSession,
+			stateMachineCreator: func(s string) ibabuza.BaseStateMachine {
+				return kvstore.NewDiskStoreWithSession(s)
+			},
+		},
+	}
+
+	// Create a BabuzaComponent for each test case
+	for _, tc := range testCases {
+		components = append(components, BabuzaComponent{
+			CaseName:           "SessionExpirationTest: " + tc.caseName,
+			ClusterId:          1,
+			CreateStateMachine: tc.stateMachineCreator,
+			CreateCustomComponent: func(sessionType string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+					b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
+						builder.TcpTransport, proxyNet).
+						SetClusterId(config.ClusterId).
+						SetStorageRootDir(storageDir).
+						SetCustomLogger(&logger.Mock{}).
+						AddExpireSessionOptions(session.SetExpiredMgrOptionsWithExpiredTime(time.Second * 2))
+					return *config, *b.Build()
+				}
+			}(tc.sessionType),
+			ProxyNetwork: nil,
+		})
+	}
+
+	return components
+}
+
+type BasicClientSessionTimeExpiredResponse struct {
+	t *testing.T
+}
+
+func (c *BasicClientSessionTimeExpiredResponse) Log(s string) {
+	c.t.Log(s)
+}
+
+func (c *BasicClientSessionTimeExpiredResponse) CreateTestComponents() []BabuzaComponent {
+	return sessionTimeExpirationTestComponents()
+}
+
+func (c *BasicClientSessionTimeExpiredResponse) Run(tc *testcluster.BabuzaCluster) {
+	wait := tc.RaftElectionTimeout() * 3
+	peers, connectGroup := makeVotingStandardPeers(3)
+	assert.Nil(c.t, tc.MakeCluster(wait, peers))
+
+	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	assert.Nil(c.t, err)
+
+	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewAutoIncrementSession())
+	assert.Nil(c.t, err)
+	defer func() {
+		_ = kvClient.Close()
+	}()
+	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
+		_, err = kvClient.Set(ctx, "test-key", "test-value")
+		return err
+	})
+	assert.Nil(c.t, err)
+
+	// Wait for the session to expire
+	time.Sleep(2 * time.Second)
+
+	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
+		_, err = kvClient.Set(ctx, "key-after-expiration", "value")
+		return err
+	})
+
+	assert.Error(c.t, err)
+	assert.ErrorIs(c.t, err, session.ErrSessionExpired)
+}
+
+func TestClientSessionExpiredResponse(t *testing.T) {
+	RunTests(&BasicClientSessionTimeExpiredResponse{t: t})
+}
