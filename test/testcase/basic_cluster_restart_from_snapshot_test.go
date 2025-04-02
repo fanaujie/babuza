@@ -2,18 +2,44 @@ package testcase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/examples/kvstore/client"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
+	"github.com/testcontainers/testcontainers-go/modules/minio"
 	"testing"
 	"time"
 )
+
+type minioContainer struct {
+	minioContainer *minio.MinioContainer
+	setupFunc      func() (*minio.MinioContainer, error)
+	deferFunc      func()
+}
+
+func (m *minioContainer) Setup() error {
+	c, err := minio.Run(context.Background(), "minio/minio:latest",
+		minio.WithUsername("minioroot"), minio.WithPassword("miniopassword"))
+	if err != nil {
+		return err
+	}
+	m.minioContainer = c
+	return nil
+}
+
+func (m *minioContainer) Defer() error {
+	if m.minioContainer != nil {
+		return m.minioContainer.Terminate(context.Background())
+	}
+	return errors.New("minio container is nil")
+}
 
 func restartFromSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 	// Create components for all combinations we want to test
@@ -71,24 +97,55 @@ func restartFromSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 
 	// Create a BabuzaComponent for each test case
 	for _, tc := range testCases {
-		for _, transport := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
-
-			components = append(components, BabuzaComponent{
-				CaseName:           "BasicTest: 3nodes-" + transport + "-BabuzaWal-DurableSnapshot-" + tc.caseName,
-				ClusterId:          1,
-				CreateStateMachine: tc.stateMachineCreator,
-				CreateCustomComponent: func(sessionType, transport string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-					return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-						config.SnapshotCount = snapshotCount
-						b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
-							transport, proxyNet).
-							SetClusterId(config.ClusterId).
-							SetStorageRootDir(storageDir)
-						return *config, *b.Build()
-					}
-				}(tc.sessionType, transport),
-				ProxyNetwork: nil,
-			})
+		for _, snapshotType := range []string{builder.DurableSnapshot, builder.MinIOSnapshot} {
+			for _, transport := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
+				var mc *minioContainer
+				if snapshotType == builder.MinIOSnapshot {
+					mc = &minioContainer{}
+				}
+				components = append(components, BabuzaComponent{
+					InitFunc: func() error {
+						if mc == nil {
+							return nil
+						}
+						return mc.Setup()
+					},
+					DeferFunc: func() error {
+						if mc == nil {
+							return nil
+						}
+						return mc.Defer()
+					},
+					CaseName:           "BasicTest: 3nodes-" + transport + "-BabuzaWal-" + snapshotType + "-" + tc.caseName,
+					ClusterId:          1,
+					CreateStateMachine: tc.stateMachineCreator,
+					CreateCustomComponent: func(snapshotType, sessionType, transport string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+						return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+							config.SnapshotCount = snapshotCount
+							b := customBabuzaComponent(sessionType, builder.BabuzaWal, snapshotType,
+								transport, proxyNet).
+								SetClusterId(config.ClusterId).
+								SetStorageRootDir(storageDir)
+							if snapshotType == builder.MinIOSnapshot {
+								endpoint, err := mc.minioContainer.ConnectionString(context.Background())
+								if err != nil {
+									panic(err)
+								}
+								b.SetMinIOConfig(&cloudstorage.Config{
+									Endpoint:        endpoint,
+									AccessKeyID:     mc.minioContainer.Username,
+									SecretAccessKey: mc.minioContainer.Password,
+									UseSSL:          false,
+									Bucket:          "test-bucket",
+									Prefix:          "snapshot",
+								})
+							}
+							return *config, *b.Build()
+						}
+					}(snapshotType, tc.sessionType, transport),
+					ProxyNetwork: nil,
+				})
+			}
 		}
 
 	}
@@ -109,7 +166,7 @@ func (c *BasicRestartFromSnapshot) CreateTestComponents() []BabuzaComponent {
 	return restartFromSnapshotTestComponents(c.snapshotCount)
 }
 
-func (c *BasicRestartFromSnapshot) Run(tc *testcluster.BabuzaCluster, a any) {
+func (c *BasicRestartFromSnapshot) Run(tc *testcluster.BabuzaCluster, testParams any) {
 	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))

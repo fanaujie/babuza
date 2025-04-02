@@ -19,6 +19,8 @@ type CustomComponentConfig struct {
 }
 
 type BabuzaComponent struct {
+	InitFunc              func() error
+	DeferFunc             func() error
 	CaseName              string
 	ClusterId             uint64
 	CreateStateMachine    func(storageDir string) ibabuza.BaseStateMachine

@@ -190,6 +190,14 @@ func (b *BabuzaComponentBuilder) AddExpireSessionOptions(options ...session.SetE
 	return b
 }
 
+func (b *BabuzaComponentBuilder) SetMinIOConfig(config *cloudstorage.Config) *BabuzaComponentBuilder {
+	if b.built {
+		panic("Builder has already been used to build a component, cannot modify configuration")
+	}
+	b.config.MinIOConfig = config
+	return b
+}
+
 func (b *BabuzaComponentBuilder) Build() *BabuzaComponent {
 	if b.built {
 		panic("Builder has already been used to build a component")
@@ -266,7 +274,7 @@ func (b *BabuzaComponentBuilder) createSnapshotManager(logger ibabuza.Logger) ib
 		if b.config.MinIOConfig == nil {
 			panic("MinIOConfig cannot be nil when using MinIOSnapshot")
 		}
-		return snapshot.NewMinIOSnapshotManager("/snap", *b.config.MinIOConfig, logger)
+		return snapshot.NewMinIOSnapshotManager(snapDir, *b.config.MinIOConfig, logger)
 	default:
 		return snapshot.NewDurableSnapshotManager(snapDir, logger)
 	}
@@ -306,7 +314,6 @@ func (b *BabuzaComponentBuilder) createTransport(logger ibabuza.Logger) ibabuza.
 	case GRPCTransport:
 		proto = protocol.NewGrpc(logger)
 	default:
-		// 默認使用 TCP
 		proto = protocol.NewTcp(networkio.NewTcpPhysicalIO(), logger)
 	}
 

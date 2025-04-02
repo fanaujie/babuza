@@ -446,7 +446,7 @@ func (c *BabuzaCluster) genPeerConfig(peer Peer, join bool) (babuza.BabuzaConfig
 	cfg.RaftListenAddress = peer.RaftListenAddress(false)
 	cfg.TLSConfig = peer.RaftTLSConfig()
 	cfg.Join = join
-	peerDir := filepath.Join(c.storageRootDir, fmt.Sprintf("%d", peer.ID()))
+	peerDir := filepath.Join(c.storageRootDir, fmt.Sprintf("%d-%d", c.clusterId, peer.ID()))
 	return cfg, peerDir, nil
 }
 

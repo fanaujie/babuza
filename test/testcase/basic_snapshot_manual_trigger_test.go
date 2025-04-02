@@ -9,6 +9,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/builder"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
@@ -44,23 +45,55 @@ func snapshotManualTriggerTestComponents() []BabuzaComponent {
 
 	// Create a BabuzaComponent for each test case
 	for _, tc := range testCases {
-		for _, transport := range []string{builder.TcpTransport} {
-			components = append(components, BabuzaComponent{
-				CaseName:           "SnapshotManualTrigger: 3nodes-" + transport + "-BabuzaWal-DurableSnapshot-" + tc.caseName,
-				ClusterId:          1,
-				CreateStateMachine: tc.stateMachineCreator,
-				CreateCustomComponent: func(transport string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-					return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-						b := customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, builder.DurableSnapshot,
-							transport, proxyNet).
-							SetClusterId(config.ClusterId).
-							SetStorageRootDir(storageDir)
-						return *config, *b.Build()
-					}
-				}(transport),
-				ProxyNetwork: nil,
-				TestParams:   tc.fileTag,
-			})
+		for _, snapshotType := range []string{builder.DurableSnapshot, builder.MinIOSnapshot} {
+			for _, transport := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
+				var mc *minioContainer
+				if snapshotType == builder.MinIOSnapshot {
+					mc = &minioContainer{}
+				}
+				components = append(components, BabuzaComponent{
+					InitFunc: func() error {
+						if mc == nil {
+							return nil
+						}
+						return mc.Setup()
+					},
+					DeferFunc: func() error {
+						if mc == nil {
+							return nil
+						}
+						return mc.Defer()
+					},
+					CaseName:           "SnapshotManualTrigger: 3nodes-" + transport + "-BabuzaWal-" + snapshotType + "-" + tc.caseName,
+					ClusterId:          1,
+					CreateStateMachine: tc.stateMachineCreator,
+					CreateCustomComponent: func(snapshotType, transport string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+						return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+							b := customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, snapshotType,
+								transport, proxyNet).
+								SetClusterId(config.ClusterId).
+								SetStorageRootDir(storageDir)
+							if snapshotType == builder.MinIOSnapshot {
+								endpoint, err := mc.minioContainer.ConnectionString(context.Background())
+								if err != nil {
+									panic(err)
+								}
+								b.SetMinIOConfig(&cloudstorage.Config{
+									Endpoint:        endpoint,
+									AccessKeyID:     mc.minioContainer.Username,
+									SecretAccessKey: mc.minioContainer.Password,
+									UseSSL:          false,
+									Bucket:          "test-bucket",
+									Prefix:          "snapshot",
+								})
+							}
+							return *config, *b.Build()
+						}
+					}(snapshotType, transport),
+					ProxyNetwork: nil,
+					TestParams:   tc.fileTag,
+				})
+			}
 		}
 	}
 
@@ -80,7 +113,11 @@ func (c *SnapshotManualTrigger) CreateTestComponents() []BabuzaComponent {
 }
 
 func (c *SnapshotManualTrigger) Run(tc *testcluster.BabuzaCluster, testParams any) {
-	wait := tc.RaftElectionTimeout() * 4
+	fileFlag, ok := testParams.(string)
+	if !ok {
+		c.t.Fatalf("Invalid test parameter: %v", testParams)
+	}
+	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 	// Identify the current leader
@@ -130,7 +167,7 @@ func (c *SnapshotManualTrigger) Run(tc *testcluster.BabuzaCluster, testParams an
 		// Check snapshot file content
 		snapReader, err := result.SnapshotFileReader()
 		assert.Nil(c.t, err)
-		fs, _, err := snapReader.Open(testParams.(string))
+		fs, _, err := snapReader.Open(fileFlag)
 		assert.Nil(c.t, err)
 		om, err := newKvOperationOrderMap(fs)
 		assert.Nil(c.t, err)

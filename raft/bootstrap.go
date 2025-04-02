@@ -252,7 +252,7 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 		return nil, err
 	}
 	if snap != nil {
-		if err := storage.RestoreFromSnapshot(snap.Metadata.Index, false, cluster, sessions); err != nil {
+		if err = storage.RestoreFromSnapshot(snap.Metadata.Index, false, cluster, sessions); err != nil {
 			return nil, err
 		}
 		if cluster.ClusterId() != cfg.ClusterId || cluster.LocalPeerID() != cfg.LocalPeerId {

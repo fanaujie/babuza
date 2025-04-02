@@ -38,6 +38,20 @@ func RunTests(testCase ICase) {
 				_ = tc.Teardown()
 			}()
 			testCase.Log(component.CaseName)
+			if component.InitFunc != nil {
+				err = component.InitFunc()
+				if err != nil {
+					panic(err)
+				}
+				if component.DeferFunc != nil {
+					defer func() {
+						err = component.DeferFunc()
+						if err != nil {
+							panic(err)
+						}
+					}()
+				}
+			}
 			testCase.Run(tc, component.TestParams)
 		}()
 	}
