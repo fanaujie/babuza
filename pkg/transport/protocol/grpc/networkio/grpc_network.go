@@ -1,7 +1,6 @@
 package networkio
 
 import (
-	"context"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/utility/netutil"
@@ -36,19 +35,7 @@ func (g *GrpcNetworkIO) DialWithTimeout(config ibabuza.TLSConfig, fromPeerId uin
 	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
-
-	ctx := context.Background()
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-		opts = append(opts, grpc.WithBlock())
-	}
-	conn, err := grpc.DialContext(ctx, toEndPoint, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
+	return grpc.NewClient(toEndPoint, opts...)
 }
 
 func (g *GrpcNetworkIO) NewServer(config ibabuza.TLSConfig) (*grpc.Server, error) {

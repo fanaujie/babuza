@@ -725,7 +725,7 @@ func TestBabuza_Cluster_ClientRegisterSession(t *testing.T) {
 				bootstrap, err := defaultBootstrapBuilder(&appConfig.BubuzaConfig, babuzaDirs,
 					appConfig.VotingPeersCfg, pn, babuzaLogger)
 				assert.Nil(t, err)
-				bootstrap.SetSessionManager(session.NewExpiredManager(babuzaLogger, session.SetExpiredMgrOptionsWithExpiredTime(int64(sessionExpiredDuration))))
+				bootstrap.SetSessionManager(session.NewExpiredManager(babuzaLogger, session.SetExpiredMgrOptionsWithExpiredTime(sessionExpiredDuration)))
 				return CreateKvEmbeddedApp(appConfig, kvstore.NewMemoryStoreWithSession(), bootstrap)
 			})
 		wait := tc.RaftElectionTimeout() * 3

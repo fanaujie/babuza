@@ -92,7 +92,6 @@ type Raft struct {
 	readIndexCh               chan struct{}
 	shutdownCh                chan struct{}
 	removeSelfCh              chan struct{}
-	concurrentSnapResultCh    chan snapshotResult
 	leaderCh                  chan bool
 	clusterMemberEventCh      chan ClusterMemberEvent
 	closeRaftOnce             sync.Once
@@ -123,7 +122,6 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		readIndexCh:               make(chan struct{}),
 		shutdownCh:                make(chan struct{}),
 		removeSelfCh:              make(chan struct{}),
-		concurrentSnapResultCh:    make(chan snapshotResult),
 		leaderCh:                  make(chan bool, 1),
 		clusterMemberEventCh:      make(chan ClusterMemberEvent, 3),
 		linearizeReqNotifier:      syncutil.NewErrNotifier(),

@@ -8,7 +8,6 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
-	"github.com/fanaujie/babuza/pkg/logger"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
@@ -84,7 +83,7 @@ func leadershipSessionTestComponents() []BabuzaComponent {
 						b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
 							transport, proxyNet).
 							SetClusterId(config.ClusterId).
-							SetStorageRootDir(storageDir).SetCustomLogger(&logger.Mock{})
+							SetStorageRootDir(storageDir)
 						return *config, *b.Build()
 					}
 				}(tc.sessionType, transport),

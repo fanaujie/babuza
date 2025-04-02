@@ -7,7 +7,6 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
-	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/session"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
@@ -62,7 +61,6 @@ func sessionTimeExpirationTestComponents() []BabuzaComponent {
 						builder.TcpTransport, proxyNet).
 						SetClusterId(config.ClusterId).
 						SetStorageRootDir(storageDir).
-						SetCustomLogger(&logger.Mock{}).
 						AddExpireSessionOptions(session.SetExpiredMgrOptionsWithExpiredTime(time.Second * 2))
 					return *config, *b.Build()
 				}
