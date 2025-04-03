@@ -334,8 +334,10 @@ func (r *Raft) Shutdown() ShutdownResult {
 }
 
 func (r *Raft) ApplicationServiceStart(ctx context.Context, appServiceAddresses []string) chan error {
-	doneCh := make(chan error)
-	go r.applicationServiceStart(ctx, time.Millisecond*500, appServiceAddresses, doneCh)
+	doneCh := make(chan error, 1)
+	r.closer.Run(func() {
+		r.applicationServiceStart(ctx, time.Millisecond*500, appServiceAddresses, doneCh)
+	})
 	return doneCh
 }
 

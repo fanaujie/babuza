@@ -12,6 +12,15 @@ func (r *Raft) applicationServiceStart(ctx context.Context,
 	checkLeaderTimeout time.Duration, appServiceAddresses []string, pubDoneCh chan error) {
 
 	for {
+		select {
+		case <-r.closer.CloseCh():
+			pubDoneCh <- ErrStopped
+			return
+		case <-ctx.Done():
+			pubDoneCh <- ctx.Err()
+			return
+		default:
+		}
 		if err := func() error {
 			replyId := r.idGenerator.Next()
 			if r.config.DisableProposalForwarding {

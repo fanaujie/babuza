@@ -9,6 +9,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"io"
@@ -21,11 +22,7 @@ func makeVotingStandardPeers(totalPeers int) ([]testcluster.Peer, *testcluster.C
 	for i := 0; i < totalPeers; i++ {
 		peerId := uint64(i + 1)
 		peerIDs = append(peerIDs, peerId)
-		peers = append(peers, &testcluster.StandardPeer{
-			Id:                  peerId,
-			RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerId),
-			AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerId)},
-		})
+		peers = append(peers, makeSingleStandardPeer(peerId, false))
 	}
 	return peers, testcluster.NewConnectedGroup(peerIDs)
 }
@@ -33,6 +30,27 @@ func makeSingleStandardPeer(peerId uint64, isLearner bool) testcluster.Peer {
 	return &testcluster.StandardPeer{
 		Id:                  peerId,
 		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerId),
+		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerId)},
+		IsLearner:           isLearner,
+	}
+}
+
+func makeVotingProxyPeers(count int) ([]testcluster.Peer, *testcluster.ConnectedGroup) {
+	var peers []testcluster.Peer
+	var peerIDs []uint64
+	for i := 0; i < count; i++ {
+		peerId := uint64(i + 1)
+		peerIDs = append(peerIDs, peerId)
+		peers = append(peers, makeSingleProxyPeer(peerId, false))
+	}
+	return peers, testcluster.NewConnectedGroup(peerIDs)
+}
+
+func makeSingleProxyPeer(peerId uint64, isLearner bool) testcluster.Peer {
+	return &testcluster.BabuzaPeer{
+		Id:                  peerId,
+		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerId),
+		ProxyListenAddr:     fmt.Sprintf("127.0.0.1:%d", 24200+peerId),
 		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerId)},
 		IsLearner:           isLearner,
 	}
@@ -79,6 +97,34 @@ func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
 			}(transportType),
 			ProxyNetwork: nil,
 		})
+	}
+	return components
+}
+
+func proxyClusterComponents() []BabuzaComponent {
+	var components []BabuzaComponent
+	for _, walType := range []string{builder.BabuzaWal, builder.ETCDWal, builder.LsmtWalDisk} {
+		for _, transportType := range []string{builder.TcpTransport} {
+			pn := proxynetwork.New()
+			components = append(components, BabuzaComponent{
+				CaseName:  "ProxyTest: 3nodes-" + transportType + "-MemoryStateMachine-" + walType + "-DurableSnapshot-NoOpSession",
+				ClusterId: 1,
+				CreateStateMachine: func(storeDir string) ibabuza.BaseStateMachine {
+					return kvstore.NewMemoryStore()
+				},
+				CreateCustomComponent: func(walType, transportType string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+					return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+						b := customBabuzaComponent(builder.NoOpSession, walType, builder.DurableSnapshot,
+							transportType, proxyNet).
+							SetClusterId(config.ClusterId).
+							SetStorageRootDir(storageDir).
+							SetTransportTcpNetwork(pn)
+						return *config, *b.Build()
+					}
+				}(walType, transportType),
+				ProxyNetwork: pn,
+			})
+		}
 	}
 	return components
 }

@@ -173,6 +173,10 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 	es := &storage.EntryStorage{
 		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
 	}
+	if snapshot != nil {
+		es.ApplySnapshot(*snapshot)
+	}
+	es.SetHardState(result.HardState())
 	if err = es.Append(entries); err != nil {
 		return nil, nil, nil, err
 	}
