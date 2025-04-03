@@ -86,6 +86,7 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) error {
 	if err := r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.sessionMgr); err != nil {
 		return err
 	}
+
 	r.trans.RemovePeers()
 	for _, p := range r.cluster.Peers() {
 		if p.RaftPeerAttr.Id == r.config.LocalPeerId {

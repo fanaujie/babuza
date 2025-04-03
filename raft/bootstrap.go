@@ -234,9 +234,15 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 	if err != nil {
 		return nil, err
 	}
-	if _, err = storage.OpenWalAndReplay(snap, false); err != nil {
+	walReplayResult, err := storage.OpenWalAndReplay(snap, false)
+	if err != nil {
 		return nil, err
 	}
+	var metadata babuzapb.WalMetadata
+	if err = metadata.Unmarshal(walReplayResult.Metadata()); err != nil {
+		return nil, err
+	}
+	cluster.SetLocalPeerId(metadata.LocalPeerId)
 	entryStorage, err := storage.GetEntryStorage()
 	if err != nil {
 		return nil, err

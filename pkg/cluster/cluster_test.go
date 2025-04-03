@@ -149,6 +149,7 @@ func TestCluster_SnapshotRestore(t *testing.T) {
 	defer p.Close()
 	resCl := NewCluster(l)
 	assert.Nil(t, resCl.Restore(p))
+	resCl.SetLocalPeerId(cl.LocalPeerID())
 	assert.Equal(t, cl, resCl)
 
 }

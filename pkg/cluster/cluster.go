@@ -71,9 +71,7 @@ func (c *Cluster) Snapshot(w io.Writer) error {
 	if err = fileutil.FileWriteUint64(w, buf, c.clusterId); err != nil {
 		return err
 	}
-	if err = fileutil.FileWriteUint64(w, buf, c.localPeerId); err != nil {
-		return err
-	}
+	// skip localPeerId
 	if err = fileutil.FileWriteUint64(w, buf, uint64(len(storeData))); err != nil {
 		return err
 	}
@@ -97,11 +95,7 @@ func (c *Cluster) Restore(r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	c.localPeerId, err = fileutil.FileReadUint64(r, buf)
-	if err != nil {
-		return err
-	}
-
+	// skip localPeerId
 	dataSize, err := fileutil.FileReadUint64(r, buf)
 	if err != nil {
 		return err

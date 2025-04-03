@@ -55,6 +55,11 @@ type BabuzaComponentConfig struct {
 	peerCircuitBreaker       breaker.Breaker
 	tcpNetwork               tcp.NetworkIO
 
+	// tcp protocol configurations
+	tcpOptions  []protocol.SetTcpOptions
+	httpOptions []protocol.SetHttpOptions
+	grpcOptions []protocol.SetGrpcOptions
+
 	// Session configurations
 	lruSessionOptions    []session.SetLruMgrOptions
 	expireSessionOptions []session.SetExpiredMgrOptions
@@ -198,6 +203,30 @@ func (b *BabuzaComponentBuilder) SetMinIOConfig(config *cloudstorage.Config) *Ba
 	return b
 }
 
+func (b *BabuzaComponentBuilder) AddTcpOptions(options ...protocol.SetTcpOptions) *BabuzaComponentBuilder {
+	if b.built {
+		panic("Builder has already been used to build a component, cannot modify configuration")
+	}
+	b.config.tcpOptions = append(b.config.tcpOptions, options...)
+	return b
+}
+
+func (b *BabuzaComponentBuilder) AddHttpOptions(options ...protocol.SetHttpOptions) *BabuzaComponentBuilder {
+	if b.built {
+		panic("Builder has already been used to build a component, cannot modify configuration")
+	}
+	b.config.httpOptions = append(b.config.httpOptions, options...)
+	return b
+}
+
+func (b *BabuzaComponentBuilder) AddGrpcOptions(options ...protocol.SetGrpcOptions) *BabuzaComponentBuilder {
+	if b.built {
+		panic("Builder has already been used to build a component, cannot modify configuration")
+	}
+	b.config.grpcOptions = append(b.config.grpcOptions, options...)
+	return b
+}
+
 func (b *BabuzaComponentBuilder) Build() *BabuzaComponent {
 	if b.built {
 		panic("Builder has already been used to build a component")
@@ -308,15 +337,14 @@ func (b *BabuzaComponentBuilder) createTransport(logger ibabuza.Logger) ibabuza.
 	case TcpTransport:
 		fallthrough
 	case TcpMemoryTransport:
-		proto = protocol.NewTcp(tcpNetwork, logger)
+		proto = protocol.NewTcp(tcpNetwork, logger, b.config.tcpOptions...)
 	case HttpTransport:
-		proto = protocol.NewHttp(logger)
+		proto = protocol.NewHttp(logger, b.config.httpOptions...)
 	case GRPCTransport:
-		proto = protocol.NewGrpc(logger)
+		proto = protocol.NewGrpc(logger, b.config.grpcOptions...)
 	default:
 		proto = protocol.NewTcp(networkio.NewTcpPhysicalIO(), logger)
 	}
-
 	return transport.New(
 		b.config.ClusterId,
 		peerManager,

@@ -9,7 +9,10 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
+	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
+	"github.com/fanaujie/babuza/pkg/transport"
+	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
@@ -41,7 +44,7 @@ func (m *minioContainer) Defer() error {
 	return errors.New("minio container is nil")
 }
 
-func restartFromSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
+func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 	// Create components for all combinations we want to test
 	var components []BabuzaComponent
 
@@ -98,7 +101,7 @@ func restartFromSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 	// Create a BabuzaComponent for each test case
 	for _, tc := range testCases {
 		for _, snapshotType := range []string{builder.DurableSnapshot, builder.MinIOSnapshot} {
-			for _, transport := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
+			for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
 				var mc *minioContainer
 				if snapshotType == builder.MinIOSnapshot {
 					mc = &minioContainer{}
@@ -116,17 +119,27 @@ func restartFromSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 						}
 						return mc.Defer()
 					},
-					CaseName:           "BasicTest: 3nodes-" + transport + "-BabuzaWal-" + snapshotType + "-" + tc.caseName,
+					CaseName:           "BasicTest: 3nodes-" + transportType + "-BabuzaWal-" + snapshotType + "-" + tc.caseName,
 					ClusterId:          1,
 					CreateStateMachine: tc.stateMachineCreator,
-					CreateCustomComponent: func(snapshotType, sessionType, transport string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+					CreateCustomComponent: func(snapshotType, sessionType, transportType string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
 						return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
 							config.SnapshotCount = snapshotCount
+							chunkSize := 5 * 1024 * 1024
 							b := customBabuzaComponent(sessionType, builder.BabuzaWal, snapshotType,
-								transport, proxyNet).
+								transportType, proxyNet).
 								SetClusterId(config.ClusterId).
-								SetStorageRootDir(storageDir)
+								SetStorageRootDir(storageDir).
+								AddTransportOptions(transport.SetTransportOptionsWithPeerSnapshotChunkSize(
+									int64(chunkSize))).SetCustomLogger(&logger.Mock{})
 							if snapshotType == builder.MinIOSnapshot {
+								// If using MinIO and gRPC, the chunk size must be greater than 5MB.
+								// If the number of chunks is greater than 1, the chunk size must be greater than 5MB.
+								// This is a limitation of MinIO's compose functionality.
+								if transportType == builder.GRPCTransport {
+									b.AddGrpcOptions(protocol.SetGrpcOptsWithRecvMsgMaxSize(
+										int(float32(chunkSize) * 1.2)))
+								}
 								endpoint, err := mc.minioContainer.ConnectionString(context.Background())
 								if err != nil {
 									panic(err)
@@ -142,7 +155,7 @@ func restartFromSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 							}
 							return *config, *b.Build()
 						}
-					}(snapshotType, tc.sessionType, transport),
+					}(snapshotType, tc.sessionType, transportType),
 					ProxyNetwork: nil,
 				})
 			}
@@ -163,7 +176,7 @@ func (c *BasicRestartFromSnapshot) Log(s string) {
 }
 
 func (c *BasicRestartFromSnapshot) CreateTestComponents() []BabuzaComponent {
-	return restartFromSnapshotTestComponents(c.snapshotCount)
+	return basicSnapshotTestComponents(c.snapshotCount)
 }
 
 func (c *BasicRestartFromSnapshot) Run(tc *testcluster.BabuzaCluster, testParams any) {

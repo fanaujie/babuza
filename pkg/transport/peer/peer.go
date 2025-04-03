@@ -235,10 +235,11 @@ func (p *RaftPeer) sendSnapshotMessageLoop(snapMsg *raftpb.Message,
 	}
 
 	m := babuzapb.SnapshotMessage{
-		From:  snapMsg.From,
-		To:    snapMsg.To,
-		Term:  snapMsg.Snapshot.Metadata.Term,
-		Index: snapMsg.Snapshot.Metadata.Index,
+		ClusterId: p.clusterId,
+		From:      snapMsg.From,
+		To:        snapMsg.To,
+		Term:      snapMsg.Snapshot.Metadata.Term,
+		Index:     snapMsg.Snapshot.Metadata.Index,
 	}
 	crcTable := crc32.MakeTable(crc32.Castagnoli)
 

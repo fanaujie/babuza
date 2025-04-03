@@ -78,8 +78,7 @@ func NewMinIOSnapshotManager(snapshotDir string, config cloudstorage.Config, log
 	}
 	fs, err := cloudstorage.NewMinioSnapshotFS(config)
 	if err != nil {
-		logger.Errorf("failed to create minio snapshot fs: %v", err)
-		return nil
+		panic("failed to create minio snapshot fs: " + err.Error())
 	}
 	logger.Infof("volatile snapshot manager: creating volatile snapshot manager with snapshotDir=%s", snapshotDir)
 	return New(Config{

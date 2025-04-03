@@ -17,7 +17,7 @@ func NewObjectReader(object *minio.Object) *ObjectReader {
 
 func (o *ObjectReader) Read(p []byte) (int, error) {
 	n, err := o.Object.Read(p)
-	if err == io.EOF && n == len(p) {
+	if err == io.EOF && n > 0 && n <= len(p) {
 		return n, nil
 	}
 	return n, err

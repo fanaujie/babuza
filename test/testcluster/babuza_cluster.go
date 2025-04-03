@@ -405,7 +405,7 @@ func (c *BabuzaCluster) CheckPeersConsistency(wait time.Duration, connectedGroup
 	for {
 		select {
 		case <-checkT.C:
-			if c.areStateMachinesConsistent(connectedGroup) {
+			if c.areStateMachinesInSync(connectedGroup) {
 				return nil
 			}
 		case <-ctx.Done():
@@ -492,7 +492,7 @@ func (c *BabuzaCluster) hasLeader(peerIds []uint64) bool {
 	return true
 }
 
-func (c *BabuzaCluster) areStateMachinesConsistent(peerIds []uint64) bool {
+func (c *BabuzaCluster) areStateMachinesInSync(peerIds []uint64) bool {
 	hashMap := c.collectStateMachineHashes(peerIds)
 	if len(hashMap) == 0 {
 		return false

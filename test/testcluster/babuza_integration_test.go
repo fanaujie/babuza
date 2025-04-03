@@ -1295,6 +1295,7 @@ func TestBabuza_Snapshot_ManualTrigger(t *testing.T) {
 	}
 }
 
+//
 //func TestBabuza_SendSnapshotToFollower(t *testing.T) {
 //
 //	dir, _ := os.MkdirTemp("", "babuzawal")
@@ -1344,7 +1345,7 @@ func TestBabuza_Snapshot_ManualTrigger(t *testing.T) {
 //			s.LastSnapshotTerm == status.LastSnapshotTerm
 //	}))
 //}
-//
+
 //func TestBabuza_LinearizableRead(t *testing.T) {
 //	dir, _ := os.MkdirTemp("", "babuzawal")
 //	defer os.RemoveAll(dir)

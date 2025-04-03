@@ -248,21 +248,20 @@ func (s *storageManager) RestoreFromSnapshot(snapShotIndex uint64, restoreStateM
 }
 
 func (s *storageManager) ReceiveSnapshotMessage(msg babuzapb.SnapshotMessage) (bool, error) {
-	//TODO:如果已經有receiver需要比較之前的receiver的snapshot index 是多少，還有term是否一樣，有可能腦裂，不符合的刪除之前的receiver
 	if msg.Metadata != nil {
+		if s.snapshotReceiver != nil {
+			if err := s.snapshotReceiver.DeleteDir(); err != nil {
+				return false, err
+			}
+		}
 		snapshotReceiver, err := s.snapshotManager.CreateAtomicSnapshotReceiver(*msg.Metadata)
 		if err != nil {
 			return false, err
 		}
-		if s.snapshotReceiver != nil {
-			if err = s.snapshotReceiver.DeleteDir(); err != nil {
-				return false, err
-			}
-		}
 		s.snapshotReceiver = snapshotReceiver
 		return false, nil
 	}
-	if s.snapshotReceiver != nil {
+	if s.snapshotReceiver == nil {
 		return false, fmt.Errorf("storage: received chunk message but snapshot receiver is nil (index=%d)", msg.Index)
 	}
 	if msg.ChunkMessage != nil {
