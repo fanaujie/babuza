@@ -16,7 +16,7 @@ func (c *LeaderRestartReElectionCluster) Log(s string) {
 }
 
 func (c *LeaderRestartReElectionCluster) CreateTestComponents() []BabuzaComponent {
-	return proxyClusterComponents()
+	return proxyClusterComponents(true, true)
 }
 
 func (c *LeaderRestartReElectionCluster) Run(tc *testcluster.BabuzaCluster, a any) {

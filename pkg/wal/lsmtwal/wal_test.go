@@ -40,7 +40,7 @@ func TestNewBadgerWal(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 	defer wal.Close()
 
 	assert.NotNil(t, wal)
@@ -54,7 +54,7 @@ func TestBadgerWal_SetUnsafeNoFsync(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 	defer wal.Close()
 
 	assert.False(t, wal.noFsync)
@@ -67,7 +67,7 @@ func TestBadgerWal_Save(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 	defer wal.Close()
 
 	// Create test data
@@ -142,7 +142,7 @@ func TestBadgerWal_SaveEmptyHardState(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 	defer wal.Close()
 
 	// Create empty hardState
@@ -171,7 +171,7 @@ func TestBadgerWal_SaveSnapshot(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 	defer wal.Close()
 
 	// Create a test snapshot
@@ -217,7 +217,7 @@ func TestBadgerWal_SaveEmptySnapshot(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 	defer wal.Close()
 
 	// Create an empty snapshot
@@ -252,7 +252,7 @@ func TestBadgerWal_Purge(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 	defer wal.Close()
 
 	// Add some entries to purge later
@@ -321,7 +321,7 @@ func TestBadgerWal_PurgeEmptySnapshot(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 	defer wal.Close()
 
 	// Add some entries
@@ -374,7 +374,7 @@ func TestBadgerWal_Sync(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 	defer wal.Close()
 
 	// Test normal sync
@@ -392,7 +392,7 @@ func TestBadgerWal_Close(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer os.RemoveAll(dir) // We'll close the DB in the test
 
-	wal := NewBadgerWal(db)
+	wal := NewBadgerWal(db, nil)
 
 	// Close should succeed
 	err := wal.Close()

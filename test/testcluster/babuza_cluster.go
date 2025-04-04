@@ -153,6 +153,22 @@ func (c *BabuzaCluster) GetAllAppServiceAddresses() map[uint64][]string {
 	return result
 }
 
+func (c *BabuzaCluster) GetAppServiceAddresses(peerIds []uint64) map[uint64][]string {
+	result := make(map[uint64][]string)
+	for _, id := range peerIds {
+		controller, ok := c.appControllers[id]
+		if !ok {
+			continue
+		}
+		if controller.appsServiceAddresses != nil {
+			result[id] = controller.appsServiceAddresses
+		} else {
+			panic(fmt.Errorf("test cluster: app service address not found (id=%d)", id))
+		}
+	}
+	return result
+}
+
 func (c *BabuzaCluster) Teardown() error {
 	mu := multierror.New()
 	if c.useProxyNetwork {
@@ -331,6 +347,13 @@ func (c *BabuzaCluster) ConnectPeer(peerId uint64) error {
 	return nil // No operation needed in direct connection mode
 }
 
+func (c *BabuzaCluster) SetPartition(peerIds []uint64) error {
+	if c.useProxyNetwork {
+		return c.proxyNetwork.SetPartition(peerIds)
+	}
+	return nil // No operation needed in direct connection mode
+}
+
 func (c *BabuzaCluster) CheckPeerExists(ctx context.Context, leaderID uint64, peer Peer) error {
 	raftListenAddr := peer.RaftListenAddress(c.useProxyNetwork)
 	for {
@@ -358,6 +381,7 @@ func (c *BabuzaCluster) CheckPeerExists(ctx context.Context, leaderID uint64, pe
 }
 
 func (c *BabuzaCluster) CheckOneLeader(wait time.Duration, connectedGroup []uint64) (uint64, error) {
+
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
@@ -474,8 +498,12 @@ func (c *BabuzaCluster) findConsensusLeader(peerIds []uint64) (uint64, uint64, b
 			return 0, 0, false
 		}
 	}
-
-	return leaderId, term, true
+	for _, id := range peerIds {
+		if id == leaderId {
+			return leaderId, term, true
+		}
+	}
+	return 0, 0, false
 }
 
 func (c *BabuzaCluster) hasLeader(peerIds []uint64) bool {
@@ -486,10 +514,14 @@ func (c *BabuzaCluster) hasLeader(peerIds []uint64) bool {
 		}
 		status := controller.app.Raft().Status()
 		if status.LeaderId != babuza.None {
-			return false
+			for _, id = range peerIds {
+				if id == status.LeaderId {
+					return true
+				}
+			}
 		}
 	}
-	return true
+	return false
 }
 
 func (c *BabuzaCluster) areStateMachinesInSync(peerIds []uint64) bool {
