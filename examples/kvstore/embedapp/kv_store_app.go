@@ -5,34 +5,35 @@ import (
 	"errors"
 	"github.com/fanaujie/babuza/examples/kvstore/server/api"
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/builder"
 	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	babuza "github.com/fanaujie/babuza/raft"
 	"net/http"
 )
 
 type KvStoreAppConfig struct {
-	BubuzaConfig     babuza.BabuzaConfig
-	VotingPeersCfg   *babuza.VotingPeersConfiguration
-	ServiceAddress   string
-	LinearizableRead bool
+	BubuzaConfig   babuza.BabuzaConfig
+	VotingPeersCfg *babuza.VotingPeersConfiguration
+	ServiceAddress string
 }
 
 type KvStoreApp struct {
 	isLeader                  uint64 //must use atomic operations to access; keep 64-bit aligned
 	serviceAddress            string
 	disableProposalForwarding bool
-	enableLinearizableRead    bool
 	stopCh                    chan struct{}
 	stateMachine              ibabuza.BaseStateMachine
 	babuza                    *babuza.Raft
 	httpSrv                   *http.Server
 }
 
-func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMachine, builder *babuza.BootstrapBuilder) (*KvStoreApp, error) {
+func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMachine, customBuilder builder.BabuzaComponent) (*KvStoreApp, error) {
 	app := &KvStoreApp{}
 	app.stateMachine = stateMachine
-	builder.SetStateMachine(stateMachine)
-	bootstrap, err := builder.Build()
+	bootstrap, err := babuza.NewBootstrapRaftCluster(
+		appConfig.BubuzaConfig, *appConfig.VotingPeersCfg, stateMachine, customBuilder.Cluster,
+		customBuilder.RaftNode, customBuilder.SessionManager, customBuilder.SnapshotManager, customBuilder.WalManager,
+		customBuilder.Transport, customBuilder.Logger)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +43,6 @@ func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMac
 	}
 	app.serviceAddress = appConfig.ServiceAddress
 	app.disableProposalForwarding = appConfig.BubuzaConfig.DisableProposalForwarding
-	app.enableLinearizableRead = appConfig.LinearizableRead
 	app.stopCh = make(chan struct{})
 	app.babuza = r
 	go func() {
@@ -69,7 +69,7 @@ func (k *KvStoreApp) StartService() error {
 	m.Handle(api.ClusterPeersHttpPath, api.NewClusterPeerResourceHandler(k.babuza))
 	m.Handle(api.PromoteLearnerHttpPath, api.NewPromoteLearnerHandler(k.babuza))
 	m.Handle(api.TransferLeaderHttpPath, api.NewTransferLeaderHandler(k.babuza))
-	m.Handle(api.KvHttpPath, api.NewKvStoreResourceHandler(k.enableLinearizableRead, k.babuza, k.stateMachine.(api.ReadKvStore)))
+	m.Handle(api.KvHttpPath, api.NewKvStoreResourceHandler(k.babuza, k.stateMachine.(api.ReadKvStore)))
 	k.httpSrv = &http.Server{
 		Addr:    k.serviceAddress,
 		Handler: m,
@@ -84,7 +84,6 @@ func (k *KvStoreApp) PublishService(ctx context.Context) chan error {
 
 func (k *KvStoreApp) Stop() error {
 	me := multierror.New()
-	me.Append(k.stateMachine.Close())
 	me.Append(k.httpSrv.Close())
 	if err := k.babuza.Shutdown().Wait(); err != nil {
 		if !errors.Is(err, babuza.ErrStopped) {

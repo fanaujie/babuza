@@ -6,55 +6,13 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/server/api"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/pkg/cluster"
-	"github.com/fanaujie/babuza/pkg/logger"
-	"github.com/fanaujie/babuza/pkg/raftnode"
-	"github.com/fanaujie/babuza/pkg/session"
-	"github.com/fanaujie/babuza/pkg/snapshot"
+	"github.com/fanaujie/babuza/pkg/builder"
+
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
-	"github.com/fanaujie/babuza/pkg/transport"
-	"github.com/fanaujie/babuza/pkg/transport/protocol"
-	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio"
-	"github.com/fanaujie/babuza/pkg/utility/breaker"
-	"github.com/fanaujie/babuza/pkg/utility/limiter"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal"
-	"github.com/fanaujie/babuza/pkg/wal/etcdwal"
-	"github.com/fanaujie/babuza/pkg/wal/lsmtwal"
 	babuza "github.com/fanaujie/babuza/raft"
-	"go.uber.org/zap/zapcore"
 	"net/http"
 	"path/filepath"
-)
-
-// Constants for component types, using descriptive string values
-const (
-	// Session types
-	NoOpSession   = "noop"
-	ExpireSession = "expire"
-	LRUSession    = "lru"
-
-	// Transport protocols
-	TcpTransport       = "tcp"
-	TcpMemoryTransport = "tcp-memory"
-	HttpTransport      = "http"
-	GRPCTranspost      = "grpc"
-
-	// WAL implementations
-	BabuzaWal     = "babuza-wal"
-	ETCDWal       = "etcd-wal"
-	LsmtWalDisk   = "lsmt-wal"
-	LsmtWalMemory = "lsmt-wal-memory"
-
-	// Snapshot implementations
-	DurableSnapshot  = "durable"
-	VolatileSnapshot = "volatile"
-	MinIOSnapshot    = "minio"
-
-	// State machine types
-	StateMachineMemory                           = "memory"
-	StateMachineMemoryWithConcurrentSnapshotType = "memory-concurrent"
-	StateMachineDisk                             = "disk"
 )
 
 type Config struct {
@@ -133,41 +91,23 @@ func (s *Server) Start() error {
 		}
 	}
 
-	// Create logger
-	var zapLogger = logger.NewZapLogger(
-		zapcore.DebugLevel, []string{"stdout"}, "")
-	raftLogger := logger.NewRaftLogger(zapLogger.Sugar())
-
-	// Set up Session manager
-	var sessionMgr ibabuza.SessionManager
-	switch s.cfg.BabuzaSession {
-	case NoOpSession:
-		sessionMgr = session.NewNoOpManager(raftLogger)
-	case ExpireSession:
-		sessionMgr = session.NewExpiredManager(raftLogger)
-	case LRUSession:
-		sessionMgr = session.NewLruManager(raftLogger)
-	default:
-		return fmt.Errorf("unsupported session type: %s", s.cfg.BabuzaSession)
-	}
-
 	// Set up State machine
 	switch s.cfg.StateMachine {
-	case StateMachineMemory:
-		if s.cfg.BabuzaSession == NoOpSession {
+	case builder.StateMachineMemory:
+		if s.cfg.BabuzaSession == builder.NoOpSession {
 			s.stateMachine = kvstore.NewMemoryStore()
 		} else {
 			s.stateMachine = kvstore.NewMemoryStoreWithSession()
 		}
-	case StateMachineMemoryWithConcurrentSnapshotType:
-		if s.cfg.BabuzaSession == NoOpSession {
+	case builder.StateMachineMemoryWithConcurrentSnapshotType:
+		if s.cfg.BabuzaSession == builder.NoOpSession {
 			s.stateMachine = kvstore.NewMemoryStoreWithConcurrentSnapshot()
 		} else {
 			s.stateMachine = kvstore.NewMemoryStoreWithConcurrentSnapshotAndSession()
 		}
-	case StateMachineDisk:
+	case builder.StateMachineDisk:
 		dataDir := filepath.Join(s.cfg.RaftStorageDir, "StateMachine")
-		if s.cfg.BabuzaSession == NoOpSession {
+		if s.cfg.BabuzaSession == builder.NoOpSession {
 			s.stateMachine = kvstore.NewDisk(dataDir)
 		} else {
 			s.stateMachine = kvstore.NewDiskStoreWithSession(dataDir)
@@ -176,78 +116,27 @@ func (s *Server) Start() error {
 		return fmt.Errorf("unsupported state machine type: %s", s.cfg.StateMachine)
 	}
 
-	// Set up Transport layer
-	var trans ibabuza.Transport
-	switch s.cfg.BabuzaTransportProtocol {
-	case TcpTransport:
-		trans = transport.New(s.cfg.RaftClusterId, transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
-			limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(), protocol.NewTcp(networkio.NewTcpPhysicalIO(),
-				raftLogger), raftLogger)
-	case TcpMemoryTransport:
-		trans = transport.New(s.cfg.RaftClusterId, transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
-			limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(), protocol.NewTcp(networkio.NewTcpMemoryIO(),
-				raftLogger), raftLogger)
-	case HttpTransport:
-		trans = transport.New(s.cfg.RaftClusterId, transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
-			limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(), protocol.NewHttp(raftLogger), raftLogger)
-	case GRPCTranspost:
-		trans = transport.New(s.cfg.RaftClusterId, transport.NewPeerManager(), limiter.NewNoResourceLimiter(),
-			limiter.NewNoOpRateLimiter(), breaker.NewNoOpBreaker(), protocol.NewGrpc(raftLogger), raftLogger)
-	default:
-		return fmt.Errorf("unsupported transport protocol: %s", s.cfg.BabuzaTransportProtocol)
-	}
-
-	// Set up WAL manager
-	var walManager ibabuza.WalManager
-	walDir := filepath.Join(s.cfg.RaftStorageDir, "wal")
-	switch s.cfg.BabuzaWal {
-	case BabuzaWal:
-		walManager = babuzawal.NewWalManager(walDir, raftLogger)
-	case ETCDWal:
-		walManager = etcdwal.NewWalManager(walDir, zapLogger)
-	case LsmtWalDisk:
-		walManager = lsmtwal.NewBadgerWalManager(lsmtwal.Config{
-			WalDir: walDir,
-		}, raftLogger)
-	case LsmtWalMemory:
-		walManager = lsmtwal.NewBadgerWalManager(lsmtwal.Config{
-			InMemory: true,
-		}, raftLogger)
-	default:
-		return fmt.Errorf("unsupported WAL type: %s", s.cfg.BabuzaWal)
-	}
-
-	// Set up Snapshot manager
-	var snapshotManager ibabuza.SnapshotManager
-	snapDir := filepath.Join(s.cfg.RaftStorageDir, "snap")
-	switch s.cfg.BabuzaSnapshot {
-	case DurableSnapshot:
-		snapshotManager = snapshot.NewDurableSnapshotManager(snapDir, raftLogger)
-	case VolatileSnapshot:
-		snapshotManager = snapshot.NewVolatileSnapshotManager(snapDir, raftLogger)
-	case MinIOSnapshot:
-		// Use MinIO configuration from settings
-		snapshotManager = snapshot.NewMinIOSnapshotManager("/snap", cloudstorage.Config{
+	babuzaComponets := builder.NewBabuzaComponentBuilder(&builder.BabuzaComponentConfig{
+		ClusterId:      s.cfg.RaftClusterId,
+		StorageRootDir: s.cfg.RaftStorageDir,
+		SessionType:    s.cfg.BabuzaSession,
+		TransportType:  s.cfg.BabuzaTransportProtocol,
+		WalType:        s.cfg.BabuzaWal,
+		SnapshotType:   s.cfg.BabuzaSnapshot,
+		MinIOConfig: &cloudstorage.Config{
 			Endpoint:        s.cfg.MinIOEndpoint,
 			AccessKeyID:     s.cfg.MinIOAccessKeyID,
 			SecretAccessKey: s.cfg.MinIOSecretAccessKey,
 			UseSSL:          s.cfg.MinIOUseSSL,
 			Bucket:          s.cfg.MinIOBucket,
 			Prefix:          s.cfg.MinIOPrefix,
-		}, raftLogger)
-	default:
-		return fmt.Errorf("unsupported snapshot type: %s", s.cfg.BabuzaSnapshot)
-	}
-
-	// Set up Raft node
-	var raftNode ibabuza.RaftNode = raftnode.NewEtcdRaftNode()
-
-	// Set up cluster
-	var cls ibabuza.Cluster = cluster.NewCluster(raftLogger)
+		},
+	}).Build()
 
 	// Initialize Raft cluster using BootstrapBuilder
-	bootstrap, err := babuza.NewBootstrapRaftCluster(babuzaCfg, *peersConfiguration, s.stateMachine, cls,
-		raftNode, sessionMgr, snapshotManager, walManager, trans, raftLogger)
+	bootstrap, err := babuza.NewBootstrapRaftCluster(babuzaCfg, *peersConfiguration, s.stateMachine, babuzaComponets.Cluster,
+		babuzaComponets.RaftNode, babuzaComponets.SessionManager, babuzaComponets.SnapshotManager, babuzaComponets.WalManager,
+		babuzaComponets.Transport, babuzaComponets.Logger)
 	if err != nil {
 		return err
 	}
@@ -277,7 +166,7 @@ func (s *Server) Start() error {
 	})
 
 	s.raft = r
-	s.logger = raftLogger
+	s.logger = babuzaComponets.Logger
 
 	// Start application service
 	if err = <-s.raft.ApplicationServiceStart(context.Background(), []string{s.cfg.KvServiceHttpAddress}); err != nil {
@@ -298,7 +187,7 @@ func (s *Server) startService() error {
 	m.Handle(api.ClusterPeersHttpPath, corsMiddleware(api.NewClusterPeerResourceHandler(s.raft)))
 	m.Handle(api.PromoteLearnerHttpPath, corsMiddleware(api.NewPromoteLearnerHandler(s.raft)))
 	m.Handle(api.TransferLeaderHttpPath, corsMiddleware(api.NewTransferLeaderHandler(s.raft)))
-	m.Handle(api.KvHttpPath, corsMiddleware(api.NewKvStoreResourceHandler(true, s.raft, s.stateMachine.(api.ReadKvStore))))
+	m.Handle(api.KvHttpPath, corsMiddleware(api.NewKvStoreResourceHandler(s.raft, s.stateMachine.(api.ReadKvStore))))
 	s.httpSrv = &http.Server{
 		Addr:    s.cfg.KvServiceHttpAddress,
 		Handler: m,

@@ -58,28 +58,31 @@ func (m *ManagerImpl) UpdatePeer(peerId uint64, peerAddress string) error {
 
 func (m *ManagerImpl) RemovePeer(peerId uint64) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	p, ok := m.peers[peerId]
 	if !ok {
+		m.mu.Unlock()
 		return fmt.Errorf("peer with id %d not found", peerId)
 	}
-	p.Stop()
 	delete(m.peers, peerId)
 	delete(m.addresses, peerId)
+	m.mu.Unlock()
+	p.Stop()
 	return nil
 }
 
 func (m *ManagerImpl) RemoveAllPeers() {
+	var peers []peer.Peer
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	for nodeId, p := range m.peers {
-		p.Stop()
+		peers = append(peers, p)
 		delete(m.peers, nodeId)
 	}
 	for id := range m.addresses {
 		delete(m.addresses, id)
+	}
+	m.mu.Unlock()
+	for _, p := range peers {
+		p.Stop()
 	}
 }
 

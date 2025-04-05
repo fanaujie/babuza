@@ -24,7 +24,7 @@ type ExpiredManager struct {
 
 func NewExpiredManager(logger ibabuza.Logger, setOpts ...SetExpiredMgrOptions) *ExpiredManager {
 	opts := ExpiredMgrOptions{
-		expiredNanoseconds:  (time.Minute * 30).Nanoseconds(),
+		expiredTime:         time.Minute * 30,
 		snapshotCompression: babuzapb.SnapshotFileCompression_None,
 	}
 	for _, s := range setOpts {
@@ -76,7 +76,7 @@ func (m *ExpiredManager) ExpireSession(currentNanoseconds int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for sid, s := range m.sessions {
-		if s.LastActiveNanoseconds()+m.opts.expiredNanoseconds <= currentNanoseconds {
+		if s.LastActiveNanoseconds()+m.opts.expiredTime.Nanoseconds() <= currentNanoseconds {
 			delete(m.sessions, sid)
 		}
 	}

@@ -12,11 +12,11 @@ import (
 	"time"
 )
 
-func genSessionManager(expiredNanoseconds int64, lruMaxSize int64, sessionCompression babuzapb.SnapshotFileCompressionType) []ibabuza.SessionManager {
+func genSessionManager(expiredNanoseconds time.Duration, lruMaxSize int64, sessionCompression babuzapb.SnapshotFileCompressionType) []ibabuza.SessionManager {
 	var managers []ibabuza.SessionManager
 	var mgr ibabuza.SessionManager
 	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	mgr = NewExpiredManager(l, SetExpiredMgrOptionsWithExpiredNanoseconds(expiredNanoseconds),
+	mgr = NewExpiredManager(l, SetExpiredMgrOptionsWithExpiredTime(expiredNanoseconds),
 		SetExpiredMgrOptionsWithSnapshotCompressionType(sessionCompression))
 	mgr.SetResponseSerializer(&mockJsonResultSerializer{})
 	managers = append(managers, mgr)
@@ -27,14 +27,14 @@ func genSessionManager(expiredNanoseconds int64, lruMaxSize int64, sessionCompre
 }
 
 func TestNewSessionManager(t *testing.T) {
-	manager := genSessionManager(int64(time.Second), 128, babuzapb.SnapshotFileCompression_Snappy)
+	manager := genSessionManager(time.Second, 128, babuzapb.SnapshotFileCompression_Snappy)
 	assert.Equal(t, 2, len(manager))
 	for _, mgr := range manager {
 		if lru, ok := mgr.(*LruManager); ok {
 			assert.Equal(t, int64(128), lru.opts.maxSessions)
 			assert.Equal(t, babuzapb.SnapshotFileCompression_Snappy, lru.opts.snapshotCompression)
 		} else if expired, ok := mgr.(*ExpiredManager); ok {
-			assert.Equal(t, int64(time.Second), expired.opts.expiredNanoseconds)
+			assert.Equal(t, time.Second, expired.opts.expiredTime)
 			assert.Equal(t, babuzapb.SnapshotFileCompression_Snappy, expired.opts.snapshotCompression)
 		}
 	}
@@ -42,7 +42,7 @@ func TestNewSessionManager(t *testing.T) {
 
 func TestRegister(t *testing.T) {
 	lruMaxSize := int64(128)
-	manager := genSessionManager(int64(time.Second), lruMaxSize, babuzapb.SnapshotFileCompression_None)
+	manager := genSessionManager(time.Second, lruMaxSize, babuzapb.SnapshotFileCompression_None)
 	assert.Equal(t, 2, len(manager))
 	sessionCount := uint64(lruMaxSize + 1)
 	for _, mgr := range manager {
@@ -63,7 +63,7 @@ func TestRegister(t *testing.T) {
 
 func TestGetSession(t *testing.T) {
 	lruMaxSize := int64(128)
-	manager := genSessionManager(int64(time.Second), lruMaxSize, babuzapb.SnapshotFileCompression_None)
+	manager := genSessionManager(time.Second, lruMaxSize, babuzapb.SnapshotFileCompression_None)
 	assert.Equal(t, 2, len(manager))
 	sessionCount := uint64(lruMaxSize + 1)
 	for _, mgr := range manager {
@@ -85,7 +85,7 @@ func TestGetSession(t *testing.T) {
 
 func TestExpireSession(t *testing.T) {
 	lruMaxSize := int64(128)
-	manager := genSessionManager(int64(time.Second), lruMaxSize, babuzapb.SnapshotFileCompression_None)
+	manager := genSessionManager(time.Second, lruMaxSize, babuzapb.SnapshotFileCompression_None)
 	assert.Equal(t, 2, len(manager))
 	sessionCount := uint64(lruMaxSize + 1)
 	for _, mgr := range manager {
@@ -112,8 +112,8 @@ func TestExpireSession(t *testing.T) {
 
 func TestSnapshotRestore(t *testing.T) {
 	lruMaxSize := int64(64)
-	manager := genSessionManager(int64(time.Second), lruMaxSize, babuzapb.SnapshotFileCompression_None)
-	restoreMgr := genSessionManager(int64(time.Second), lruMaxSize, babuzapb.SnapshotFileCompression_None)
+	manager := genSessionManager(time.Second, lruMaxSize, babuzapb.SnapshotFileCompression_None)
+	restoreMgr := genSessionManager(time.Second, lruMaxSize, babuzapb.SnapshotFileCompression_None)
 
 	assert.Equal(t, 2, len(manager))
 	for index, mgr := range manager {
@@ -166,7 +166,7 @@ func TestSnapshotRestore(t *testing.T) {
 				restore, ok := restoreMgr[index].(*ExpiredManager)
 				assert.Equal(t, true, ok)
 				assert.Equal(t, len(expired.sessions), len(restore.sessions))
-				assert.Equal(t, expired.opts.expiredNanoseconds, restore.opts.expiredNanoseconds)
+				assert.Equal(t, expired.opts.expiredTime, restore.opts.expiredTime)
 				assert.Equal(t, expired.opts.snapshotCompression, restore.opts.snapshotCompression)
 				for sid, session := range expired.sessions {
 					resSession, ok := restore.sessions[sid]

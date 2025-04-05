@@ -16,13 +16,13 @@ type Connection struct {
 }
 
 func (c *Connection) Read(b []byte) (n int, err error) {
-	if err := c.SetReadDeadline(time.Now().Add(c.readTimeout)); err != nil {
+	if err = c.SetReadDeadline(time.Now().Add(c.readTimeout)); err != nil {
 		return 0, err
 	}
 	return c.Conn.Read(b)
 }
 func (c *Connection) Write(b []byte) (n int, err error) {
-	if err := c.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+	if err = c.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
 		return 0, err
 	}
 	return c.Conn.Write(b)

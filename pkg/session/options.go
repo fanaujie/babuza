@@ -2,6 +2,7 @@ package session
 
 import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"time"
 )
 
 type LruMgrOptions struct {
@@ -23,15 +24,15 @@ func SetLruMgrOptionsWithSnapshotCompressionType(d babuzapb.SnapshotFileCompress
 }
 
 type ExpiredMgrOptions struct {
-	expiredNanoseconds  int64
+	expiredTime         time.Duration
 	snapshotCompression babuzapb.SnapshotFileCompressionType
 }
 
 type SetExpiredMgrOptions func(opt *ExpiredMgrOptions)
 
-func SetExpiredMgrOptionsWithExpiredNanoseconds(d int64) SetExpiredMgrOptions {
+func SetExpiredMgrOptionsWithExpiredTime(d time.Duration) SetExpiredMgrOptions {
 	return func(opt *ExpiredMgrOptions) {
-		opt.expiredNanoseconds = d
+		opt.expiredTime = d
 	}
 }
 

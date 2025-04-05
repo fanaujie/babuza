@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/examples/kvstore/server/request"
 	"github.com/fanaujie/babuza/examples/kvstore/server/response"
 	"github.com/fanaujie/babuza/raft"
 	"io"
 	"net/http"
+	"time"
 )
 
 type ReadKvStore interface {
@@ -16,16 +20,14 @@ type ReadKvStore interface {
 }
 
 type KvStoreResourceHandler struct {
-	enableLinearizableRead bool
-	r                      *raft.Raft
-	store                  ReadKvStore
+	r     *raft.Raft
+	store ReadKvStore
 }
 
-func NewKvStoreResourceHandler(enableLinearizableRead bool, r *raft.Raft, kvStore ReadKvStore) *KvStoreResourceHandler {
+func NewKvStoreResourceHandler(r *raft.Raft, kvStore ReadKvStore) *KvStoreResourceHandler {
 	return &KvStoreResourceHandler{
-		enableLinearizableRead: enableLinearizableRead,
-		r:                      r,
-		store:                  kvStore,
+		r:     r,
+		store: kvStore,
 	}
 }
 
@@ -60,9 +62,17 @@ func (h *KvStoreResourceHandler) readKvStoreFunc(w http.ResponseWriter, r *http.
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
-	if h.enableLinearizableRead {
-		if err := h.r.LinearizableRead(r.Context()); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+	linearized := r.Header.Get(LinearizableHeader)
+	isLinearized := len(linearized) > 0 && linearized == "true"
+	if isLinearized && h.r.Status().IsLeader() {
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second*2)
+		defer cancel()
+		if err := h.r.LinearizableRead(ctx); err != nil {
+			if errors.Is(err, raft.ErrLeaderChange) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -75,6 +85,10 @@ func (h *KvStoreResourceHandler) readKvStoreFunc(w http.ResponseWriter, r *http.
 	var err error
 	res.Value, err = h.store.Load(res.Key)
 	if err != nil {
+		if errors.Is(err, kverror.ErrKeyNotFound) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

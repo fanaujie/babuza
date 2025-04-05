@@ -74,7 +74,10 @@ func (m *BadgerWalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.Ent
 	if err != nil {
 		return nil, nil, err
 	}
-	w := NewBadgerWal(m.db)
+	es := &storage.EntryStorage{
+		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
+	}
+	w := NewBadgerWal(m.db, es)
 	// write empty snapshot and metadata to the database
 	if err = m.db.Update(func(txn *badger.Txn) error {
 		snapshot := walpb.Snapshot{}
@@ -92,9 +95,6 @@ func (m *BadgerWalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.Ent
 		return txn.Set([]byte(keyMetadata), data)
 	}); err != nil {
 		return nil, nil, err
-	}
-	es := &storage.EntryStorage{
-		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
 	}
 	return es, w, nil
 }
@@ -173,10 +173,14 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 	es := &storage.EntryStorage{
 		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
 	}
+	if snapshot != nil {
+		es.ApplySnapshot(*snapshot)
+	}
+	es.SetHardState(result.HardState())
 	if err = es.Append(entries); err != nil {
 		return nil, nil, nil, err
 	}
-	return es, NewBadgerWal(m.db), result, nil
+	return es, NewBadgerWal(m.db, es), result, nil
 }
 
 func (m *BadgerWalManager) HasExistingWals() (bool, error) {

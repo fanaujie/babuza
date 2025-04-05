@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	errLeaderChange            = errors.New("errLeaderChange")
+	ErrLeaderChange            = errors.New("ErrLeaderChange")
 	errReadIndexRequestTimeout = errors.New("errReadIndexRequestTimeout")
 )
 
@@ -82,7 +82,7 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 			}
 			return
 		case <-leaderChangedCh:
-			err = errLeaderChange
+			err = ErrLeaderChange
 			return
 		case <-firstCommitNotifier:
 			firstCommitNotifier = r.firstCommitInTermNotifier.Get()

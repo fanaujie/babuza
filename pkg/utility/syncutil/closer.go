@@ -41,6 +41,11 @@ func (c *Closer) Count() uint64 {
 }
 
 func (c *Closer) Run(f func()) {
+	select {
+	case <-c.ctx.Done():
+		return
+	default:
+	}
 	c.addOne()
 	go func() {
 		defer c.done()

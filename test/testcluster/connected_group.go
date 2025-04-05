@@ -1,4 +1,4 @@
-package test
+package testcluster
 
 import (
 	"sync"
@@ -9,12 +9,12 @@ type ConnectedGroup struct {
 	mu  sync.RWMutex
 }
 
-func NewConnectedGroup(peers []BabuzaPeer) *ConnectedGroup {
+func NewConnectedGroup(peerIDs []uint64) *ConnectedGroup {
 	g := &ConnectedGroup{
 		ids: make(map[uint64]struct{}),
 	}
-	for _, cfg := range peers {
-		g.Add(cfg.Id)
+	for _, id := range peerIDs {
+		g.Add(id)
 	}
 	return g
 }

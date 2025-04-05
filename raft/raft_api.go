@@ -62,6 +62,8 @@ const (
 
 type Status struct {
 	State              RaftState
+	ClusterId          uint64
+	LocalPeerId        uint64
 	LeaderId           uint64
 	RaftTerm           uint64
 	RaftCommittedIndex uint64
@@ -70,6 +72,13 @@ type Status struct {
 	LastLogIndex       uint64
 	LastSnapshotTerm   uint64
 	LastSnapshotIndex  uint64
+}
+
+func (s Status) IsLeader() bool {
+	if s.State == LeaderState {
+		return true
+	}
+	return false
 }
 
 type Raft struct {
@@ -92,7 +101,6 @@ type Raft struct {
 	readIndexCh               chan struct{}
 	shutdownCh                chan struct{}
 	removeSelfCh              chan struct{}
-	concurrentSnapResultCh    chan snapshotResult
 	leaderCh                  chan bool
 	clusterMemberEventCh      chan ClusterMemberEvent
 	closeRaftOnce             sync.Once
@@ -123,7 +131,6 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		readIndexCh:               make(chan struct{}),
 		shutdownCh:                make(chan struct{}),
 		removeSelfCh:              make(chan struct{}),
-		concurrentSnapResultCh:    make(chan snapshotResult),
 		leaderCh:                  make(chan bool, 1),
 		clusterMemberEventCh:      make(chan ClusterMemberEvent, 3),
 		linearizeReqNotifier:      syncutil.NewErrNotifier(),
@@ -251,7 +258,7 @@ func (r *Raft) TransferLeader(ctx context.Context, transferee uint64) TransferLe
 		return newErrorResult(err)
 	}
 	if toPeer.RaftPeerAttr.IsLearner {
-		return newErrorResult(ErrLearnerCanNotSwitchLeaderShip)
+		return newErrorResult(ErrLearnerCanNotSwitchLeadership)
 	}
 	r.raftNode.TransferLeadership(ctx, r.config.LocalPeerId, transferee)
 	res := newTransferLeaderResult(ctx, transferee, r.closer, time.Second,
@@ -336,8 +343,10 @@ func (r *Raft) Shutdown() ShutdownResult {
 }
 
 func (r *Raft) ApplicationServiceStart(ctx context.Context, appServiceAddresses []string) chan error {
-	doneCh := make(chan error)
-	go r.applicationServiceStart(ctx, time.Millisecond*500, appServiceAddresses, doneCh)
+	doneCh := make(chan error, 1)
+	r.closer.Run(func() {
+		r.applicationServiceStart(ctx, time.Millisecond*500, appServiceAddresses, doneCh)
+	})
 	return doneCh
 }
 
@@ -379,6 +388,8 @@ func (r *Raft) Status() Status {
 
 	return Status{
 		State:              raftState,
+		ClusterId:          r.cluster.ClusterId(),
+		LocalPeerId:        r.cluster.LocalPeerID(),
 		LeaderId:           leaderId,
 		RaftTerm:           r.status.GetHardStateTerm(),
 		RaftCommittedIndex: r.status.GetCommittedIndex(),
@@ -390,10 +401,15 @@ func (r *Raft) Status() Status {
 	}
 }
 
+func (r *Raft) GetStateMachine() ibabuza.BaseStateMachine {
+	return r.storage.GetStateMachine()
+
+}
+
 func (r *Raft) stop() {
 	r.closeRaftOnce.Do(func() {
-		r.trans.Stop()
 		r.raftNode.Stop()
+		r.trans.Stop()
 		r.closer.Close()
 		r.storage.Close()
 	})

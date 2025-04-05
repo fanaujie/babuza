@@ -7,4 +7,5 @@ type Options struct {
 	DialTimeout           time.Duration
 	IdleConnTimeout       time.Duration
 	GrpcDeadline          time.Duration
+	RecvMsgMaxSize        int
 }
