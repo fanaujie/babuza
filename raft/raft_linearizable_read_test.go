@@ -41,7 +41,7 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 			Lead:      localPeerId,
 			RaftState: raft.StateLeader,
 		})
-		assert.ErrorIs(t, <-resultCh, errLeaderChange)
+		assert.ErrorIs(t, <-resultCh, ErrLeaderChange)
 	})
 
 	t.Run("internal request timeout", func(t *testing.T) {
@@ -131,7 +131,7 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 			RaftState: raft.StateLeader,
 		})
 		<-n.GetCh()
-		assert.ErrorIs(t, n.GetError(), errLeaderChange)
+		assert.ErrorIs(t, n.GetError(), ErrLeaderChange)
 	})
 }
 

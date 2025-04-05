@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
 )
 
 var (
@@ -69,7 +68,6 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 			if err = p.moveNextLeader(); err != nil {
 				return err
 			}
-			time.Sleep(time.Millisecond * 500)
 			continue
 		}
 		b, err := io.ReadAll(res.Body)
@@ -83,7 +81,6 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 			if err = p.moveNextLeader(); err != nil {
 				return err
 			}
-			time.Sleep(time.Millisecond * 500)
 			continue
 		} else if res.StatusCode == http.StatusMovedPermanently {
 			newLeaderUrl, _ := url.Parse(res.Header["Location"][0])
@@ -95,7 +92,6 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 			if err = p.moveNextLeader(); err != nil {
 				return err
 			}
-			time.Sleep(time.Millisecond * 500)
 			continue
 		}
 		if res.StatusCode != http.StatusOK {

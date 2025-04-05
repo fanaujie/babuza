@@ -187,7 +187,7 @@ func (s *Server) startService() error {
 	m.Handle(api.ClusterPeersHttpPath, corsMiddleware(api.NewClusterPeerResourceHandler(s.raft)))
 	m.Handle(api.PromoteLearnerHttpPath, corsMiddleware(api.NewPromoteLearnerHandler(s.raft)))
 	m.Handle(api.TransferLeaderHttpPath, corsMiddleware(api.NewTransferLeaderHandler(s.raft)))
-	m.Handle(api.KvHttpPath, corsMiddleware(api.NewKvStoreResourceHandler(true, s.raft, s.stateMachine.(api.ReadKvStore))))
+	m.Handle(api.KvHttpPath, corsMiddleware(api.NewKvStoreResourceHandler(s.raft, s.stateMachine.(api.ReadKvStore))))
 	s.httpSrv = &http.Server{
 		Addr:    s.cfg.KvServiceHttpAddress,
 		Handler: m,

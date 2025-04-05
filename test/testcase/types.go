@@ -1,6 +1,7 @@
 package testcase
 
 import (
+	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
 	babuza "github.com/fanaujie/babuza/raft"
@@ -24,7 +25,7 @@ type BabuzaComponent struct {
 	CaseName              string
 	ClusterId             uint64
 	CreateStateMachine    func(storageDir string) ibabuza.BaseStateMachine
-	CreateCustomComponent func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent)
+	CreateCustomComponent func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent)
 	ProxyNetwork          ibabuza.ProxyNetwork
 	TestParams            any
 }

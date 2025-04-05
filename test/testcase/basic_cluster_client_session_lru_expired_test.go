@@ -8,7 +8,6 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
 	"github.com/fanaujie/babuza/pkg/session"
-	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -54,11 +53,11 @@ func sessionLruExpirationTestComponents() []BabuzaComponent {
 			CaseName:           "SessionExpirationTest: " + tc.caseName,
 			ClusterId:          1,
 			CreateStateMachine: tc.stateMachineCreator,
-			CreateCustomComponent: func(sessionType string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-				return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+			CreateCustomComponent: func(sessionType string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+				return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
 					b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
 						builder.TcpTransport, proxyNet).
-						SetClusterId(config.ClusterId).
+						SetClusterId(config.BubuzaConfig.ClusterId).
 						SetStorageRootDir(storageDir).
 						AddLruSessionOptions(session.SetLruMgrOptionsWithMaxSessions(2))
 

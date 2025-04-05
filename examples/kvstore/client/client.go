@@ -289,6 +289,25 @@ func (c *KvStoreClient) Get(ctx context.Context, key string) (*response.KvStoreR
 	return &res, nil
 }
 
+func (c *KvStoreClient) LinearizableGet(ctx context.Context, key string) (*response.KvStoreResponse, error) {
+	if c.isClosed() {
+		return nil, ErrClientClosed
+	}
+	var res response.KvStoreResponse
+	if err := c.proxy.SendRequest(ctx, func(reqCtx context.Context, leaderUrl url.URL) (*http.Request, error) {
+		leaderUrl.Path = api.KvHttpPath
+		req, err := makeGetKvRequest(reqCtx, leaderUrl, key)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set(api.LinearizableHeader, "true")
+		return req, nil
+	}, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 func (c *KvStoreClient) Set(ctx context.Context, key, value string) (*response.KvStoreResponse, error) {
 	if c.isClosed() {
 		return nil, ErrClientClosed

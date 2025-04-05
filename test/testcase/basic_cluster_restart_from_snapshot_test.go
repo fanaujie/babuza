@@ -122,13 +122,13 @@ func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 					CaseName:           "BasicTest: 3nodes-" + transportType + "-BabuzaWal-" + snapshotType + "-" + tc.caseName,
 					ClusterId:          1,
 					CreateStateMachine: tc.stateMachineCreator,
-					CreateCustomComponent: func(snapshotType, sessionType, transportType string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-						return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-							config.SnapshotCount = snapshotCount
+					CreateCustomComponent: func(snapshotType, sessionType, transportType string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+						return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+							config.BubuzaConfig.SnapshotCount = snapshotCount
 							chunkSize := 5 * 1024 * 1024
 							b := customBabuzaComponent(sessionType, builder.BabuzaWal, snapshotType,
 								transportType, proxyNet).
-								SetClusterId(config.ClusterId).
+								SetClusterId(config.BubuzaConfig.ClusterId).
 								SetStorageRootDir(storageDir).
 								AddTransportOptions(transport.SetTransportOptionsWithPeerSnapshotChunkSize(
 									int64(chunkSize))).SetCustomLogger(&logger.Mock{})

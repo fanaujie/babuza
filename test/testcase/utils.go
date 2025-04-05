@@ -5,12 +5,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
-	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"io"
 	"time"
@@ -86,12 +86,12 @@ func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
 				CreateStateMachine: func(storeDir string) ibabuza.BaseStateMachine {
 					return kvstore.NewDisk(storeDir)
 				},
-				CreateCustomComponent: func(walType, transportType string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-					return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-						config.DisableProposalForwarding = disableProposalForwarding
+				CreateCustomComponent: func(walType, transportType string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+					return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+						config.BubuzaConfig.RaftConfig.DisableProposalForwarding = disableProposalForwarding
 						b := customBabuzaComponent(builder.NoOpSession, walType, builder.DurableSnapshot,
 							transportType, proxyNet).
-							SetClusterId(config.ClusterId).
+							SetClusterId(config.BubuzaConfig.ClusterId).
 							SetStorageRootDir(storageDir)
 						return *config, *b.Build()
 					}
@@ -115,15 +115,14 @@ func proxyClusterComponents(checkQuorum, preVote bool) []BabuzaComponent {
 				CreateStateMachine: func(storeDir string) ibabuza.BaseStateMachine {
 					return kvstore.NewMemoryStore()
 				},
-				CreateCustomComponent: func(walType, transportType string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-					return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-						config.RaftConfig.CheckQuorum = checkQuorum
-						config.PreVote = preVote
+				CreateCustomComponent: func(walType, transportType string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+					return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+						config.BubuzaConfig.RaftConfig.CheckQuorum = checkQuorum
+						config.BubuzaConfig.RaftConfig.PreVote = preVote
 						b := customBabuzaComponent(builder.NoOpSession, walType, builder.DurableSnapshot,
 							transportType, proxyNet).
-							SetClusterId(config.ClusterId).
-							SetStorageRootDir(storageDir).
-							SetTransportTcpNetwork(pn)
+							SetClusterId(config.BubuzaConfig.ClusterId).
+							SetStorageRootDir(storageDir)
 						return *config, *b.Build()
 					}
 				}(walType, transportType),

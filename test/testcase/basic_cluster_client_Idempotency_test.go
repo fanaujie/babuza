@@ -7,7 +7,6 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
-	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -75,11 +74,11 @@ func idempotencyTestComponents() []BabuzaComponent {
 				CaseName:           "BasicTest: 3nodes-" + transport + "-BabuzaWal-DurableSnapshot-" + tc.caseName,
 				ClusterId:          1,
 				CreateStateMachine: tc.stateMachineCreator,
-				CreateCustomComponent: func(sessionType, transport string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-					return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+				CreateCustomComponent: func(sessionType, transport string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+					return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
 						b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
 							transport, proxyNet).
-							SetClusterId(config.ClusterId).
+							SetClusterId(config.BubuzaConfig.ClusterId).
 							SetStorageRootDir(storageDir)
 						return *config, *b.Build()
 					}

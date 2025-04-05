@@ -342,6 +342,10 @@ func (s *storageManager) SupportConcurrentSnapshot() bool {
 	return s.bsmInfo.supportConcurrentSnapshot
 }
 
+func (s *storageManager) GetStateMachine() ibabuza.BaseStateMachine {
+	return s.stateMachine
+}
+
 func (s *storageManager) releaseSnapshotContext(ctx ibabuza.StateMachineSnapshotContext) error {
 	if s.bsmInfo.supportConcurrentSnapshot {
 		return s.stateMachine.(ibabuza.ConcurrentSnapshotStateMachine).ReleaseSnapshotContext(ctx)

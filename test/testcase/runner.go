@@ -29,7 +29,7 @@ func RunTests(testCase ICase) {
 						ServiceAddress: appServiceAddresses[0],
 					}
 					var customComponents builder.BabuzaComponent
-					appConfig.BubuzaConfig, customComponents = component.CreateCustomComponent(&appConfig.BubuzaConfig,
+					appConfig, customComponents = component.CreateCustomComponent(&appConfig,
 						appDir, proxyNet)
 					return embedapp.NewKvStoreApp(appConfig,
 						component.CreateStateMachine(filepath.Join(appDir, "store")), customComponents)

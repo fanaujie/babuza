@@ -67,11 +67,11 @@ func snapshotManualTriggerTestComponents() []BabuzaComponent {
 					CaseName:           "SnapshotManualTrigger: 3nodes-" + transport + "-BabuzaWal-" + snapshotType + "-" + tc.caseName,
 					ClusterId:          1,
 					CreateStateMachine: tc.stateMachineCreator,
-					CreateCustomComponent: func(snapshotType, transport string) func(*babuza.BabuzaConfig, string, ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
-						return func(config *babuza.BabuzaConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (babuza.BabuzaConfig, builder.BabuzaComponent) {
+					CreateCustomComponent: func(snapshotType, transport string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+						return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
 							b := customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, snapshotType,
 								transport, proxyNet).
-								SetClusterId(config.ClusterId).
+								SetClusterId(config.BubuzaConfig.ClusterId).
 								SetStorageRootDir(storageDir)
 							if snapshotType == builder.MinIOSnapshot {
 								endpoint, err := mc.minioContainer.ConnectionString(context.Background())

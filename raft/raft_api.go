@@ -62,6 +62,8 @@ const (
 
 type Status struct {
 	State              RaftState
+	ClusterId          uint64
+	LocalPeerId        uint64
 	LeaderId           uint64
 	RaftTerm           uint64
 	RaftCommittedIndex uint64
@@ -70,6 +72,13 @@ type Status struct {
 	LastLogIndex       uint64
 	LastSnapshotTerm   uint64
 	LastSnapshotIndex  uint64
+}
+
+func (s Status) IsLeader() bool {
+	if s.State == LeaderState {
+		return true
+	}
+	return false
 }
 
 type Raft struct {
@@ -379,6 +388,8 @@ func (r *Raft) Status() Status {
 
 	return Status{
 		State:              raftState,
+		ClusterId:          r.cluster.ClusterId(),
+		LocalPeerId:        r.cluster.LocalPeerID(),
 		LeaderId:           leaderId,
 		RaftTerm:           r.status.GetHardStateTerm(),
 		RaftCommittedIndex: r.status.GetCommittedIndex(),
@@ -388,6 +399,11 @@ func (r *Raft) Status() Status {
 		LastSnapshotTerm:   snapshot.Metadata.Term,
 		LastSnapshotIndex:  snapshot.Metadata.Index,
 	}
+}
+
+func (r *Raft) GetStateMachine() ibabuza.BaseStateMachine {
+	return r.storage.GetStateMachine()
+
 }
 
 func (r *Raft) stop() {

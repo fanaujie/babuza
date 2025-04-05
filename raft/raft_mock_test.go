@@ -415,6 +415,10 @@ func (m *mockStorageMgr) Close() error {
 	return nil
 }
 
+func (m *mockStorageMgr) GetStateMachine() ibabuza.BaseStateMachine {
+	return nil
+}
+
 type mockEventDelegate struct {
 	acquiredLeaderStatus int
 }

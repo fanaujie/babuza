@@ -148,7 +148,7 @@ func DefaultBabuzaConfig(ClusterId, localPeerId uint64, raftListenAddr string) B
 		RaftConfig:                   DefaultRaftConfig(),
 		TLSConfig:                    ibabuza.TLSConfig{},
 		LearnerReadyPercent:          0.95,
-		LinearizedReadRequestTimeout: time.Second * 5,
+		LinearizedReadRequestTimeout: time.Second * 3,
 		LinearizedReadRetryTimeout:   time.Millisecond * 500,
 	}
 }

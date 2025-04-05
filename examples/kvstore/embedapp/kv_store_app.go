@@ -12,17 +12,15 @@ import (
 )
 
 type KvStoreAppConfig struct {
-	BubuzaConfig     babuza.BabuzaConfig
-	VotingPeersCfg   *babuza.VotingPeersConfiguration
-	ServiceAddress   string
-	LinearizableRead bool
+	BubuzaConfig   babuza.BabuzaConfig
+	VotingPeersCfg *babuza.VotingPeersConfiguration
+	ServiceAddress string
 }
 
 type KvStoreApp struct {
 	isLeader                  uint64 //must use atomic operations to access; keep 64-bit aligned
 	serviceAddress            string
 	disableProposalForwarding bool
-	enableLinearizableRead    bool
 	stopCh                    chan struct{}
 	stateMachine              ibabuza.BaseStateMachine
 	babuza                    *babuza.Raft
@@ -45,7 +43,6 @@ func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMac
 	}
 	app.serviceAddress = appConfig.ServiceAddress
 	app.disableProposalForwarding = appConfig.BubuzaConfig.DisableProposalForwarding
-	app.enableLinearizableRead = appConfig.LinearizableRead
 	app.stopCh = make(chan struct{})
 	app.babuza = r
 	go func() {
@@ -72,7 +69,7 @@ func (k *KvStoreApp) StartService() error {
 	m.Handle(api.ClusterPeersHttpPath, api.NewClusterPeerResourceHandler(k.babuza))
 	m.Handle(api.PromoteLearnerHttpPath, api.NewPromoteLearnerHandler(k.babuza))
 	m.Handle(api.TransferLeaderHttpPath, api.NewTransferLeaderHandler(k.babuza))
-	m.Handle(api.KvHttpPath, api.NewKvStoreResourceHandler(k.enableLinearizableRead, k.babuza, k.stateMachine.(api.ReadKvStore)))
+	m.Handle(api.KvHttpPath, api.NewKvStoreResourceHandler(k.babuza, k.stateMachine.(api.ReadKvStore)))
 	k.httpSrv = &http.Server{
 		Addr:    k.serviceAddress,
 		Handler: m,

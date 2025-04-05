@@ -43,6 +43,7 @@ type InternalStorage interface {
 	Apply(it ibabuza.Iterator)
 	SupportConcurrentSnapshot() bool
 	CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error)
+	GetStateMachine() ibabuza.BaseStateMachine
 }
 
 //type StateMachineAdaptor interface {
