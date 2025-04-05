@@ -1,12 +1,12 @@
 module github.com/fanaujie/babuza/examples/kvstore
 
-go 1.23.1
+go 1.24
 
 require (
 	github.com/dgraph-io/badger/v4 v4.6.0
-	github.com/fanaujie/babuza/ibabuza v0.1.4
-	github.com/fanaujie/babuza/pkg v0.1.4
-	github.com/fanaujie/babuza/raft v0.1.4
+	github.com/fanaujie/babuza/ibabuza v0.2.0
+	github.com/fanaujie/babuza/pkg v0.2.0
+	github.com/fanaujie/babuza/raft v0.2.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.26.0

@@ -1,10 +1,10 @@
 module github.com/fanaujie/babuza/raft
 
-go 1.23.1
+go 1.24
 
 require (
-	github.com/fanaujie/babuza/ibabuza v0.1.4
-	github.com/fanaujie/babuza/pkg v0.1.4
+	github.com/fanaujie/babuza/ibabuza v0.2.0
+	github.com/fanaujie/babuza/pkg v0.2.0
 	github.com/stretchr/testify v1.10.0
 	go.etcd.io/etcd/raft/v3 v3.5.12
 	go.etcd.io/etcd/server/v3 v3.5.12

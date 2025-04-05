@@ -1,16 +1,15 @@
 module github.com/fanaujie/babuza/test
 
-go 1.23.1
+go 1.24
 
 require (
 	github.com/anishathalye/porcupine v1.0.2
-	github.com/fanaujie/babuza/examples/kvstore v0.1.4
-	github.com/fanaujie/babuza/ibabuza v0.1.4
-	github.com/fanaujie/babuza/pkg v0.1.4
-	github.com/fanaujie/babuza/raft v0.1.4
+	github.com/fanaujie/babuza/examples/kvstore v0.2.0
+	github.com/fanaujie/babuza/ibabuza v0.2.0
+	github.com/fanaujie/babuza/pkg v0.2.0
+	github.com/fanaujie/babuza/raft v0.2.0
 	github.com/stretchr/testify v1.10.0
 	github.com/testcontainers/testcontainers-go/modules/minio v0.35.0
-	go.uber.org/zap v1.26.0
 )
 
 require (

@@ -1,6 +1,6 @@
 module github.com/fanaujie/babuza/ibabuza
 
-go 1.23.1
+go 1.24
 
 require (
 	github.com/gogo/protobuf v1.3.2
