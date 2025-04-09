@@ -6,4 +6,11 @@ type MetricsCollector interface {
 	IncrementLeaderChanges()
 	SetIsLearner(isFollower int64)
 	RecordApplySec(duration float64)
+	RecordDoSnapshotSec(duration float64)
+	RecordApplySnapshotSec(duration float64)
+	SetSnapshotApplyInProgress(applying int64)
+	IncrementInflightSnapshots()
+	DecrementInflightSnapshots()
+	SetProposalCommited(commitedEntries uint64)
+	SetProposalAppliedIndex(appliedIndex uint64)
 }

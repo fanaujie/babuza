@@ -35,6 +35,13 @@ func (r *Raft) processRaftReady() {
 				r.sendRaftMessage(rd.Messages)
 			}
 
+			r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
+
+			if !raft.IsEmptyHardState(rd.HardState) {
+				r.status.SetHardStateTerm(rd.HardState.Term)
+				r.metricsCollector.SetProposalCommited(rd.HardState.Commit)
+			}
+
 			notifyCh := make(chan struct{}, 1)
 			emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
 			if len(rd.CommittedEntries) > 0 || !emptySnapshot {
@@ -48,10 +55,6 @@ func (r *Raft) processRaftReady() {
 				}
 			}
 
-			r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
-			if rd.HardState.Term != 0 {
-				r.status.SetHardStateTerm(rd.HardState.Term)
-			}
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
 				r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
 			}
