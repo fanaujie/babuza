@@ -334,8 +334,8 @@ func (s *storageManager) SetStateMachineAppliedIndex(index uint64) {
 	s.bsmInfo.appliedIndex = index
 }
 
-func (s *storageManager) Apply(it ibabuza.Iterator) {
-	s.stateMachine.Apply(it)
+func (s *storageManager) Apply(e ibabuza.Entry) {
+	s.stateMachine.Apply(e)
 }
 
 func (s *storageManager) SupportConcurrentSnapshot() bool {

@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"github.com/fanaujie/babuza/pkg/metrics"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
 	"go.uber.org/zap"
 	"path/filepath"
@@ -24,13 +25,14 @@ import (
 )
 
 type BabuzaComponent struct {
-	Cluster         ibabuza.Cluster
-	RaftNode        ibabuza.RaftNode
-	SessionManager  ibabuza.SessionManager
-	SnapshotManager ibabuza.SnapshotManager
-	WalManager      ibabuza.WalManager
-	Transport       ibabuza.Transport
-	Logger          ibabuza.Logger
+	Cluster           ibabuza.Cluster
+	RaftNode          ibabuza.RaftNode
+	SessionManager    ibabuza.SessionManager
+	SnapshotManager   ibabuza.SnapshotManager
+	WalManager        ibabuza.WalManager
+	Transport         ibabuza.Transport
+	Logger            ibabuza.Logger
+	MetricsController ibabuza.MetricsCollector
 }
 
 type BabuzaComponentConfig struct {
@@ -45,6 +47,7 @@ type BabuzaComponentConfig struct {
 
 	CustomLogger        ibabuza.Logger
 	CustomEtcdZapLogger *zap.Logger // used for etcd wal
+	MetricController    ibabuza.MetricsCollector
 	// MinIO configuration
 	MinIOConfig *cloudstorage.Config
 
@@ -135,6 +138,14 @@ func (b *BabuzaComponentBuilder) SetCustomEtcdZapLogger(logger *zap.Logger) *Bab
 		panic("Builder has already been used to build a component, cannot modify configuration")
 	}
 	b.config.CustomEtcdZapLogger = logger
+	return b
+}
+
+func (b *BabuzaComponentBuilder) SetMetricsCollector(collector ibabuza.MetricsCollector) *BabuzaComponentBuilder {
+	if b.built {
+		panic("Builder has already been used to build a component, cannot modify configuration")
+	}
+	b.config.MetricController = collector
 	return b
 }
 
@@ -244,6 +255,9 @@ func (b *BabuzaComponentBuilder) Build() *BabuzaComponent {
 		zapLogger = b.config.CustomEtcdZapLogger
 	} else if zapLogger == nil {
 		zapLogger = logger.NewZapLogger(zapcore.DebugLevel, []string{"stdout"}, "")
+	}
+	if b.config.MetricController == nil {
+		component.MetricsController = metrics.NewMockMetricsCollector()
 	}
 	component.SessionManager = b.createSessionManager(component.Logger)
 	component.WalManager = b.createWalManager(component.Logger, zapLogger)

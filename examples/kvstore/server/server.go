@@ -136,7 +136,7 @@ func (s *Server) Start() error {
 	// Initialize Raft cluster using BootstrapBuilder
 	bootstrap, err := babuza.NewBootstrapRaftCluster(babuzaCfg, *peersConfiguration, s.stateMachine, babuzaComponets.Cluster,
 		babuzaComponets.RaftNode, babuzaComponets.SessionManager, babuzaComponets.SnapshotManager, babuzaComponets.WalManager,
-		babuzaComponets.Transport, babuzaComponets.Logger)
+		babuzaComponets.Transport, babuzaComponets.Logger, babuzaComponets.MetricsController)
 	if err != nil {
 		return err
 	}

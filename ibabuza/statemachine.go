@@ -10,7 +10,6 @@ type Entry interface {
 	Index() uint64
 	Command() []byte
 	SendResponse(any)
-	IsReply() bool
 }
 
 type Iterator interface {
@@ -28,7 +27,7 @@ type StateMachineSnapshotReader interface {
 }
 
 type BaseStateMachine interface {
-	Apply(Iterator)
+	Apply(Entry)
 	SaveSnapshot(StateMachineSnapshotContext, StateMachineSnapshotWriter) error
 	RestoreFromSnapshot(StateMachineSnapshotReader) error
 	Close() error

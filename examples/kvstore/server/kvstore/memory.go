@@ -23,47 +23,45 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-func (m *MemoryStore) Apply(it ibabuza.Iterator) {
+func (m *MemoryStore) Apply(e ibabuza.Entry) {
 	var req KvCommand
 
-	for e := it.Next(); e != nil; e = it.Next() {
-		if err := req.Unmarshal(e.Command()); err != nil {
-			panic(err)
+	if err := req.Unmarshal(e.Command()); err != nil {
+		panic(err)
+	}
+	switch req.Command {
+	case Set:
+		m.mu.Lock()
+		m.store.Set(req.Key, req.Value)
+		m.mu.Unlock()
+		res := KvResult{
+			Command: Set,
+			Key:     req.Key,
+			Value:   req.Value,
 		}
-		switch req.Command {
-		case Set:
-			m.mu.Lock()
-			m.store.Set(req.Key, req.Value)
-			m.mu.Unlock()
+		e.SendResponse(&res)
+	case Append:
+		m.mu.Lock()
+		result := m.store.Append(string(req.Key), req.Value)
+		m.mu.Unlock()
+		res := KvResult{
+			Command: Append,
+			Key:     req.Key,
+			Value:   result,
+		}
+		e.SendResponse(&res)
+	case Delete:
+		m.mu.Lock()
+		ok := m.store.Delete(string(req.Key))
+		m.mu.Unlock()
+		if ok {
 			res := KvResult{
-				Command: Set,
+				Command: Delete,
 				Key:     req.Key,
-				Value:   req.Value,
 			}
 			e.SendResponse(&res)
-		case Append:
-			m.mu.Lock()
-			result := m.store.Append(string(req.Key), req.Value)
-			m.mu.Unlock()
-			res := KvResult{
-				Command: Append,
-				Key:     req.Key,
-				Value:   result,
-			}
-			e.SendResponse(&res)
-		case Delete:
-			m.mu.Lock()
-			ok := m.store.Delete(string(req.Key))
-			m.mu.Unlock()
-			if ok {
-				res := KvResult{
-					Command: Delete,
-					Key:     req.Key,
-				}
-				e.SendResponse(&res)
-			} else {
-				e.SendResponse(kverror.ErrKeyNotFound)
-			}
+		} else {
+			e.SendResponse(kverror.ErrKeyNotFound)
 		}
 	}
 }

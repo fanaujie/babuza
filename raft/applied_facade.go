@@ -66,24 +66,7 @@ type appliedFacadeImpl struct {
 	trans                AppliedTransport
 	clusterMemberEventCh chan ClusterMemberEvent
 	log                  ibabuza.Logger
-}
-
-func newAppliedFacade(storage AppliedStorage, status AppliedStatus, firstCommitNotifier AppliedFirstCommitInTermNotifier,
-	sessionMgr AppliedSessionManager, replier AppliedReplier, cluster AppliedCluster, raftNode AppliedRaftNode,
-	trans AppliedTransport, clusterMemberEventCh chan ClusterMemberEvent, log ibabuza.Logger) *appliedFacadeImpl {
-
-	return &appliedFacadeImpl{
-		storage:              storage,
-		status:               status,
-		firstCommitNotifier:  firstCommitNotifier,
-		sessionMgr:           sessionMgr,
-		replier:              replier,
-		cluster:              cluster,
-		raftNode:             raftNode,
-		trans:                trans,
-		clusterMemberEventCh: clusterMemberEventCh,
-		log:                  log,
-	}
+	metricsCollector     ibabuza.MetricsCollector
 }
 
 func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
@@ -99,6 +82,7 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 		trans:                r.trans,
 		clusterMemberEventCh: r.clusterMemberEventCh,
 		log:                  r.logger,
+		metricsCollector:     r.metricsCollector,
 	}
 }
 
@@ -255,6 +239,13 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 			a.clusterMemberEventCh <- ClusterMemberEvent{
 				Event: MemberJoinEvent,
 				Peer:  confReq.RaftPeerAttr,
+			}
+		}
+		if confReq.RaftPeerAttr.Id == a.cluster.LocalPeerID() {
+			if cc.Type == raftpb.ConfChangeAddLearnerNode {
+				a.metricsCollector.SetIsLearner(1)
+			} else {
+				a.metricsCollector.SetIsLearner(0)
 			}
 		}
 

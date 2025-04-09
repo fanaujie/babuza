@@ -74,9 +74,6 @@ func (e *Entry) SendResponse(res any) {
 	e.session.AddResult(e.seqNum, e.reqTime, ar)
 	e.sendResult.SendStateMachineAppliedResult(e, ar)
 }
-func (e *Entry) IsReply() bool {
-	return e.isReplay
-}
 
 func (e *Entry) ReplyId() uint64 {
 	return e.replyId

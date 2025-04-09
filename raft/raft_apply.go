@@ -69,11 +69,35 @@ func (r *Raft) processStateMachine() {
 }
 
 func (r *Raft) applyEntries(entries []raftpb.Entry) bool {
-	r.applyIterator.SetEntries(entries)
-	defer r.applyIterator.ReleaseEntries()
-	r.storage.Apply(r.applyIterator)
+	removeSelf := false
+	for pos := 0; pos < len(entries); pos++ {
+		if removeSelf {
+			break
+		}
+		entry := entries[pos]
+		if len(entry.Data) == 0 {
+			r.appliedFacade.ApplyNilEntryInNewTerm(entry.Index, entry.Term)
+		} else {
+			switch entry.Type {
+			case raftpb.EntryNormal:
+				applyEntry := r.appliedFacade.ApplyNormalEntry(entry)
+				if applyEntry != nil {
+					now := time.Now()
+					r.storage.Apply(applyEntry)
+					r.metricsCollector.RecordApplySec(time.Since(now).Seconds())
+				}
+			case raftpb.EntryConfChange:
+				removeSelf = r.appliedFacade.ApplyConfChangeEntry(entry)
+				if removeSelf {
+					break
+				}
+			default:
+				r.logger.Panicf("raft[id=%d]: not support raft toApplyEntry type %d", r.cluster.ClusterId(), uint64(entry.Type))
+			}
+		}
+	}
 	r.completionReplier.MarkCompleted(r.status.GetAppliedIndex())
-	return r.applyIterator.HasRemovedSelf()
+	return removeSelf
 }
 
 func (r *Raft) applySnapshot(snap raftpb.Snapshot) error {

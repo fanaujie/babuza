@@ -24,7 +24,7 @@ func (m *mockRaftNodeStarter) Restart(config raft.Config) (raft.Node, error) {
 
 type mockBasicStateMachine struct{}
 
-func (m *mockBasicStateMachine) Apply(i ibabuza.Iterator) {}
+func (m *mockBasicStateMachine) Apply(i ibabuza.Entry) {}
 
 func (m *mockBasicStateMachine) SaveSnapshot(machineSnapshotContext ibabuza.StateMachineSnapshotContext, writer ibabuza.StateMachineSnapshotWriter) error {
 	return nil
@@ -353,7 +353,7 @@ func (m *mockStorageMgr) GetStateMachineAppliedIndex() uint64 {
 func (m *mockStorageMgr) SetStateMachineAppliedIndex(index uint64) {
 }
 
-func (m *mockStorageMgr) Apply(it ibabuza.Iterator) {
+func (m *mockStorageMgr) Apply(e ibabuza.Entry) {
 }
 
 func (m *mockStorageMgr) SupportConcurrentSnapshot() bool {

@@ -84,7 +84,6 @@ func (s Status) IsLeader() bool {
 type Raft struct {
 	config                    BabuzaConfig
 	cluster                   ibabuza.Cluster
-	applyIterator             InternalEntriesIterator
 	sessionMgr                ibabuza.SessionManager
 	idGenerator               InternalIdGenerator
 	resultReplier             InternalResultReplier
@@ -94,6 +93,7 @@ type Raft struct {
 	trans                     ibabuza.Transport
 	storage                   InternalStorage
 	logger                    ibabuza.Logger
+	metricsCollector          ibabuza.MetricsCollector
 	appliedFacade             InternalAppliedFacade
 	applyCh                   chan applyEntryToStateMachine
 	manualSnapshotCh          chan manualSnapshot
@@ -125,6 +125,7 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		trans:                     bootstrap.trans,
 		storage:                   bootstrap.storage,
 		logger:                    bootstrap.logger,
+		metricsCollector:          bootstrap.metricsCollector,
 		applyCh:                   make(chan applyEntryToStateMachine),
 		manualSnapshotCh:          make(chan manualSnapshot),
 		readStateCh:               make(chan raft.ReadState),
@@ -139,7 +140,6 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		closer:                    syncutil.NewCloser(),
 	}
 	r.appliedFacade = newAppliedFacadeFromRaft(r)
-	r.applyIterator = newIterator(r.appliedFacade)
 
 	if err = r.trans.SetupTransportRaft(&transportProcessor{
 		Raft: r,

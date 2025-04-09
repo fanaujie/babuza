@@ -136,18 +136,27 @@ func (r *Raft) updateCommittedIndex(entries []raftpb.Entry, snap raftpb.Snapshot
 
 func (r *Raft) updateLeadership(currentState raft.SoftState) {
 	preState := r.status.CloneSoftState()
+
 	newLeader := currentState.Lead != raft.None && preState.Lead != currentState.Lead
 	r.status.SetSoftState(currentState)
+	if currentState.Lead == raft.None {
+		r.metricsCollector.SetIsLeader(0)
+	} else {
+		r.metricsCollector.SetHasLeader(1)
+	}
 	if currentState.Lead == r.config.LocalPeerId {
 		r.status.SetLeader(true)
+		r.metricsCollector.SetIsLeader(1)
 		r.leaderCh <- true
 	} else {
 		if r.status.IsLeader() {
 			r.status.SetLeader(false)
+			r.metricsCollector.SetIsLeader(0)
 			r.leaderCh <- false
 		}
 	}
 	if newLeader {
+		r.metricsCollector.IncrementLeaderChanges()
 		r.leaderChangeNotifier.CloseChanAndRenew()
 	}
 
