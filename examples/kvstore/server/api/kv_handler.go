@@ -138,10 +138,6 @@ func (h *KvStoreResourceHandler) setKvStoreFunc(w http.ResponseWriter, r *http.R
 		return
 	}
 	proposalRes := cmdRes.Response()
-	if err, ok := proposalRes.(error); ok {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
-		return
-	}
 	res := response.KvStoreResponse{
 		SessionID:      req.SessionID,
 		SequenceNumber: req.SequenceNumber,
@@ -194,7 +190,7 @@ func (h *KvStoreResourceHandler) appendKvStoreFunc(w http.ResponseWriter, r *htt
 		return
 	}
 	proposalRes := cmdRes.Response()
-	if err, ok := proposalRes.(error); ok {
+	if err != nil {
 		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}
@@ -249,7 +245,7 @@ func (h *KvStoreResourceHandler) deleteKvStoreFunc(w http.ResponseWriter, r *htt
 		return
 	}
 	proposalRes := cmdRes.Response()
-	if err, ok := proposalRes.(error); ok {
+	if err != nil {
 		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}

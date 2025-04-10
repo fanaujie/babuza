@@ -107,7 +107,7 @@ func TestSnapshotAndRestore(t *testing.T) {
 	assert.Nil(t, s1.AddResult(2, 11, ar2))
 	ar3 := ibabuza.ApplyResult{
 		LogIndex: 3,
-		Response: errors.New("error"),
+		Error:    errors.New("error"),
 	}
 	assert.Nil(t, s1.AddResult(3, 12, ar3))
 	ar4 := ibabuza.ApplyResult{
@@ -138,7 +138,7 @@ func TestSnapshotAndRestore(t *testing.T) {
 	assert.Equal(t, "hello", res.(*mockResponseB).Value)
 
 	assert.Equal(t, uint64(3), s.result[3].LogIndex)
-	assert.Equal(t, "error", s.result[3].Response.(error).Error())
+	assert.Equal(t, "error", s.result[3].Error.Error())
 
 	assert.Equal(t, uint64(4), s.result[4].LogIndex)
 	assert.Nil(t, s.result[4].Response)

@@ -39,7 +39,7 @@ func (m *MemoryStore) Apply(e ibabuza.Entry) {
 			Key:     req.Key,
 			Value:   req.Value,
 		}
-		e.SendResponse(&res)
+		e.SendResponse(&res, nil)
 	case Append:
 		m.mu.Lock()
 		result := m.store.Append(string(req.Key), req.Value)
@@ -49,7 +49,7 @@ func (m *MemoryStore) Apply(e ibabuza.Entry) {
 			Key:     req.Key,
 			Value:   result,
 		}
-		e.SendResponse(&res)
+		e.SendResponse(&res, nil)
 	case Delete:
 		m.mu.Lock()
 		ok := m.store.Delete(string(req.Key))
@@ -59,9 +59,9 @@ func (m *MemoryStore) Apply(e ibabuza.Entry) {
 				Command: Delete,
 				Key:     req.Key,
 			}
-			e.SendResponse(&res)
+			e.SendResponse(&res, nil)
 		} else {
-			e.SendResponse(kverror.ErrKeyNotFound)
+			e.SendResponse(nil, kverror.ErrKeyNotFound)
 		}
 	}
 }

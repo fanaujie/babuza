@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/metrics"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -483,6 +484,7 @@ func newTestRaft(nodeId uint64) *Raft {
 			LinearizedReadRequestTimeout: time.Second * 5,
 			LinearizedReadRetryTimeout:   time.Millisecond * 500,
 		},
+		metricsCollector:          metrics.NewMockMetricsCollector(),
 		applyCh:                   make(chan applyEntryToStateMachine),
 		manualSnapshotCh:          make(chan manualSnapshot),
 		readStateCh:               make(chan raft.ReadState, 1),

@@ -160,7 +160,7 @@ func (r *Raft) updateLeadership(currentState raft.SoftState) {
 	}
 	if newLeader {
 		r.metricsCollector.IncrementLeaderChanges()
-		r.leaderChangeNotifier.CloseChanAndRenew()
+		r.leaderChangeNotifier.CloseAndRenew()
 	}
 
 }

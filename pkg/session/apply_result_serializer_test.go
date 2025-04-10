@@ -84,9 +84,10 @@ func (m *mockJsonResultSerializer) Deserialize(r io.Reader) (any, error) {
 }
 
 func TestApplyResultSerializer_MarshalUnmarshalStateMachineResponseNil(t *testing.T) {
-	p, err := ioutil.TempDir("", "applier")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
+	defer func() {
+		_ = os.RemoveAll(p)
+	}()
 
 	ars := newApplyResultSerializer(&mockJsonResultSerializer{})
 
@@ -112,25 +113,26 @@ func TestApplyResultSerializer_MarshalUnmarshalStateMachineResponseNil(t *testin
 }
 
 func TestApplyResultSerializer_MarshalUnmarshalResponseErr(t *testing.T) {
-	p, err := ioutil.TempDir("", "applier")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
+	defer func() {
+		_ = os.RemoveAll(p)
+	}()
 
 	ars := newApplyResultSerializer(&mockJsonResultSerializer{})
 
 	readFilePath := ""
-	w, err := ioutil.TempFile(p, "")
+	w, err := os.CreateTemp(p, "")
 	assert.Nil(t, err)
 	readFilePath = w.Name()
 	defer w.Close()
 
 	assert.Nil(t, ars.Marshal(w, ibabuza.ApplyResult{
 		LogIndex: 1,
-		Response: errors.New("error1"),
+		Error:    errors.New("error1"),
 	}))
 	assert.Nil(t, ars.Marshal(w, ibabuza.ApplyResult{
 		LogIndex: 2,
-		Response: errors.New("error2"),
+		Error:    errors.New("error2"),
 	}))
 
 	r, err := os.Open(readFilePath)
@@ -140,17 +142,20 @@ func TestApplyResultSerializer_MarshalUnmarshalResponseErr(t *testing.T) {
 	smRes, err := ars.Unmarshal(r)
 	assert.Nil(t, err)
 	assert.Equal(t, uint64(1), smRes.LogIndex)
-	assert.Equal(t, "error1", smRes.Response.(error).Error())
+	assert.Equal(t, "error1", smRes.Error.Error())
+	assert.Nil(t, smRes.Response)
 	smRes, err = ars.Unmarshal(r)
 	assert.Nil(t, err)
 	assert.Equal(t, uint64(2), smRes.LogIndex)
-	assert.Equal(t, "error2", smRes.Response.(error).Error())
+	assert.Equal(t, "error2", smRes.Error.Error())
+	assert.Nil(t, smRes.Response)
 }
 
 func TestApplyResultSerializer_MarshalUnmarshalStateMachineResponse(t *testing.T) {
-	p, err := ioutil.TempDir("", "applier")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
+	defer func() {
+		_ = os.RemoveAll(p)
+	}()
 
 	ars := newApplyResultSerializer(&mockJsonResultSerializer{})
 

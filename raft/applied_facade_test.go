@@ -29,7 +29,7 @@ type mockApplyNotifier struct {
 	close bool
 }
 
-func (m *mockApplyNotifier) CloseChanAndRenew() {
+func (m *mockApplyNotifier) CloseAndRenew() {
 	m.close = true
 }
 
@@ -295,7 +295,7 @@ func TestApplier_DoExactlyOnce(t *testing.T) {
 		ar, ok := replier.reply[10]
 		assert.Equal(t, true, ok)
 		assert.Equal(t, uint64(100), ar.LogIndex)
-		assert.Error(t, ar.Response.(error))
+		assert.Error(t, ar.Error)
 	})
 
 	t.Run("find session and clear result", func(t *testing.T) {
@@ -484,7 +484,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 
 		ar, ok := replier.reply[req.Context.ReplyId]
 		assert.Equal(t, true, ok)
-		assert.Error(t, ar.Response.(error))
+		assert.Error(t, ar.Error)
 	})
 
 	t.Run("session: exactly-once", func(t *testing.T) {
@@ -718,7 +718,7 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		assert.Equal(t, status.term, e.Term)
 		ar, ok := replier.reply[req.Context.ReplyId]
 		assert.Equal(t, true, ok)
-		assert.Error(t, ar.Response.(error))
+		assert.Error(t, ar.Error)
 	})
 
 	t.Run("session: exactly-once", func(t *testing.T) {
@@ -853,7 +853,7 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		ar, ok := replier.reply[req.Context.ReplyId]
 		assert.Equal(t, true, ok)
 		assert.Equal(t, uint64(2), ar.LogIndex)
-		assert.Error(t, ar.Response.(error))
+		assert.Error(t, ar.Error)
 	})
 
 	t.Run("remove self: no operation session", func(t *testing.T) {

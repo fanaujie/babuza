@@ -76,11 +76,6 @@ func (h *ClusterPeerResourceHandler) joinPeerFunc(w http.ResponseWriter, r *http
 		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}
-	proposalRes := joinRes.Response()
-	if err, ok := proposalRes.(error); ok {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
-		return
-	}
 	res := convertRaftClusterPeersToResponse(h.r, session.SessionID, session.SequenceNumber)
 	if err = writeHttpResponse(w, res); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -139,11 +134,6 @@ func (h *ClusterPeerResourceHandler) updatePeerFunc(w http.ResponseWriter, r *ht
 		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}
-	proposalRes := updateRes.Response()
-	if err, ok := proposalRes.(error); ok {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
-		return
-	}
 	res := convertRaftClusterPeersToResponse(h.r, session.SessionID, session.SequenceNumber)
 	if err = writeHttpResponse(w, res); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -184,8 +174,8 @@ func (h *ClusterPeerResourceHandler) removePeerFunc(w http.ResponseWriter, r *ht
 		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}
-	proposalRes := removeRes.Response()
-	if err, ok := proposalRes.(error); ok {
+	_ = removeRes.Response()
+	if err != nil {
 		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}

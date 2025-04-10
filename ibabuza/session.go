@@ -7,6 +7,7 @@ import (
 type ApplyResult struct {
 	LogIndex uint64
 	Response any
+	Error    error
 }
 
 type ApplyResultSerializer interface {

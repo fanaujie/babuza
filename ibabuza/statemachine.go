@@ -9,7 +9,7 @@ type Entry interface {
 	Term() uint64
 	Index() uint64
 	Command() []byte
-	SendResponse(any)
+	SendResponse(result any, err error)
 }
 
 type Iterator interface {

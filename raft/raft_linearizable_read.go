@@ -37,7 +37,7 @@ func (r *Raft) processRaftLinearizedRead() {
 			if err == raft.ErrStopped || err == ErrStopped {
 				return
 			} else {
-				oldNotifier.CloseChan(err)
+				oldNotifier.Close(err)
 				continue
 			}
 		}
@@ -49,7 +49,7 @@ func (r *Raft) processRaftLinearizedRead() {
 				return
 			}
 		}
-		oldNotifier.CloseChan(nil)
+		oldNotifier.Close(nil)
 	}
 }
 

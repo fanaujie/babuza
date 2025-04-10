@@ -53,7 +53,7 @@ func (s *BadgerStore) Apply(e ibabuza.Entry) {
 				Key:     req.Key,
 				Value:   req.Value,
 			}
-			e.SendResponse(&res)
+			e.SendResponse(&res, nil)
 		}
 	case Append:
 		var result []byte
@@ -82,7 +82,7 @@ func (s *BadgerStore) Apply(e ibabuza.Entry) {
 				Key:     req.Key,
 				Value:   string(result),
 			}
-			e.SendResponse(&res)
+			e.SendResponse(&res, nil)
 		}
 
 	case Delete:
@@ -100,13 +100,13 @@ func (s *BadgerStore) Apply(e ibabuza.Entry) {
 			if err != badger.ErrKeyNotFound {
 				panic(err)
 			}
-			e.SendResponse(kverror.ErrKeyNotFound)
+			e.SendResponse(nil, kverror.ErrKeyNotFound)
 		} else {
 			res := KvResult{
 				Command: Delete,
 				Key:     req.Key,
 			}
-			e.SendResponse(&res)
+			e.SendResponse(&res, nil)
 		}
 	}
 }

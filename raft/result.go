@@ -47,35 +47,34 @@ func newErrorResult(err error) *errorResult {
 	return &errorResult{e: err}
 }
 
-func (es *errorResult) Wait() error {
-	return es.e
+func (er *errorResult) Wait() error {
+	return er.e
 }
 
-func (es *errorResult) Response() any {
+func (er *errorResult) Response() any {
 	return nil
 }
 
-func (es *errorResult) LogIndex() uint64 {
+func (er *errorResult) LogIndex() uint64 {
 	return 0
 }
 
-func (es *errorResult) Release() {
-	es.e = nil
+func (er *errorResult) Release() {
+	er.e = nil
 }
 
-func (es *errorResult) SnapshotMetadata() babuzapb.SnapshotMetadata {
+func (er *errorResult) SnapshotMetadata() babuzapb.SnapshotMetadata {
 	return babuzapb.SnapshotMetadata{}
 }
 
-func (es *errorResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
-	return nil, es.e
+func (er *errorResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
+	return nil, er.e
 }
 
 type proposalResult struct {
 	ctx     context.Context
 	closer  *syncutil.Closer
 	resulCh chan ibabuza.ApplyResult
-	err     error
 	ar      ibabuza.ApplyResult
 }
 
@@ -96,30 +95,43 @@ func newProposalResult(ctx context.Context, closer *syncutil.Closer, resultCh ch
 }
 
 func (p *proposalResult) Wait() error {
-	if p.err != nil {
-		return p.err
+	if p.resulCh == nil {
+		panic("proposalResult already released")
 	}
 	if p.ar.LogIndex != 0 {
-		return nil
+		return p.ar.Error
 	}
 	select {
 	case <-p.closer.CloseCh():
-		p.err = ErrStopped
-		return p.err
+		return ErrStopped
 	case <-p.ctx.Done():
-		p.err = p.ctx.Err()
-		return p.err
+		return p.ctx.Err()
 	case result := <-p.resulCh:
 		p.ar = result
+		if result.Error != nil {
+			return result.Error
+		}
 		return nil
 	}
 }
 
 func (p *proposalResult) Response() any {
+	if p.resulCh == nil {
+		panic("proposalResult already released")
+	}
+	if p.ar.LogIndex == 0 {
+		panic("proposalResult not ready")
+	}
 	return p.ar.Response
 }
 
 func (p *proposalResult) LogIndex() uint64 {
+	if p.resulCh == nil {
+		panic("proposalResult already released")
+	}
+	if p.ar.LogIndex == 0 {
+		panic("proposalResult not ready")
+	}
 	return p.ar.LogIndex
 }
 
@@ -127,7 +139,6 @@ func (p *proposalResult) Release() {
 	p.resulCh = nil
 	p.ctx = nil
 	p.closer = nil
-	p.err = nil
 	p.ar = ibabuza.ApplyResult{}
 	proposalResPool.Put(p)
 }

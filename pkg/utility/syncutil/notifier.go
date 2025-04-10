@@ -37,7 +37,7 @@ func (r *Notifier) Get() chan struct{} {
 	return r.ch
 }
 
-func (r *Notifier) CloseChanAndRenew() {
+func (r *Notifier) CloseAndRenew() {
 	r.mu.Lock()
 	oldCh := r.ch
 	r.ch = make(chan struct{}, 1)
@@ -69,7 +69,7 @@ func (e *ErrNotifier) Renew() (old *ChanWithErr) {
 	return old
 }
 
-func (c *ChanWithErr) CloseChan(err error) {
+func (c *ChanWithErr) Close(err error) {
 	c.err = err
 	close(c.ch)
 }
