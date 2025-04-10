@@ -96,7 +96,7 @@ func TestWriterAndReader(t *testing.T) {
 			assert.NoError(t, err)
 
 			// Create reader
-			reader := NewReader(buf, tt.bufSize)
+			reader := NewReader(buf)
 
 			// Read back
 			var readMsgType MessageType
@@ -134,7 +134,7 @@ func TestCorruptedMessage(t *testing.T) {
 	bufData[HeaderSize] = bufData[HeaderSize] ^ 0xFF // Flip bits in first byte of message
 
 	// Create reader with corrupted buffer
-	reader := NewReader(bytes.NewBuffer(bufData), 100)
+	reader := NewReader(bytes.NewBuffer(bufData))
 
 	// Try to read the corrupted message
 	err = reader.ReadFrame(func(msgType MessageType, msgBuf []byte) error {
@@ -165,8 +165,7 @@ func TestMessageTypes(t *testing.T) {
 			writeBuf := allocator.Acquire(100).Buffer
 			err := writer.Encode(writeBuf, msgType, msg)
 			assert.NoError(t, err)
-
-			reader := NewReader(buf, 100)
+			reader := NewReader(buf)
 			var readMsgType MessageType
 
 			err = reader.ReadFrame(func(mType MessageType, msgBuf []byte) error {
@@ -184,7 +183,7 @@ func TestIncompleteRead(t *testing.T) {
 	// Create a buffer with incomplete data
 	buf := bytes.NewBuffer([]byte{1, 2, 3}) // Not enough bytes for a header
 
-	reader := NewReader(buf, 100)
+	reader := NewReader(buf)
 
 	// Try to read
 	err := reader.ReadFrame(func(msgType MessageType, msgBuf []byte) error {

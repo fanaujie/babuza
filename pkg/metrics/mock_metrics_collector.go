@@ -31,3 +31,5 @@ func (m *MockMetricsCollector) SetProposalAppliedIndex(appliedIndex uint64) {}
 func (m *MockMetricsCollector) IncrementProposalPending()                   {}
 func (m *MockMetricsCollector) DecrementProposalPending()                   {}
 func (m *MockMetricsCollector) IncrementProposalFailed()                    {}
+func (m *MockMetricsCollector) IncrementSlowReadIndex()                     {}
+func (m *MockMetricsCollector) IncrementReadIndexFailed()                   {}

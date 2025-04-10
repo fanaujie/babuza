@@ -2,12 +2,13 @@ package testcase
 
 import (
 	"context"
+	"strconv"
+	"testing"
+
 	"github.com/fanaujie/babuza/examples/kvstore/client"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
-	"strconv"
-	"testing"
 )
 
 type BasicCluster struct {

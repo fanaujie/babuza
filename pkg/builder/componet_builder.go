@@ -1,10 +1,13 @@
 package builder
 
 import (
+	"path/filepath"
+
 	"github.com/fanaujie/babuza/pkg/metrics"
+	"github.com/fanaujie/babuza/pkg/metrics/otelmetrics"
+	"github.com/fanaujie/babuza/pkg/metrics/prometheusmetrics"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
 	"go.uber.org/zap"
-	"path/filepath"
 
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/cluster"
@@ -44,6 +47,7 @@ type BabuzaComponentConfig struct {
 	SnapshotType  string // builder.DurableSnapshot, builder.VolatileSnapshot, builder.MinIOSnapshot
 	TransportType string // builder.TcpTransport, builder.TcpMemoryTransport, builder.HttpTransport, builder.GRPCTransport
 	WalType       string // builder.BabuzaWal, builder.ETCDWal, builder.LsmtWalDisk, builder.LsmtWalMemory
+	MetricType    string // builder.MetricsOtel, builder.MetricsPrometheus, builder.MetricsMock
 
 	CustomLogger        ibabuza.Logger
 	CustomEtcdZapLogger *zap.Logger // used for etcd wal
@@ -256,9 +260,23 @@ func (b *BabuzaComponentBuilder) Build() *BabuzaComponent {
 	} else if zapLogger == nil {
 		zapLogger = logger.NewZapLogger(zapcore.DebugLevel, []string{"stdout"}, "")
 	}
-	if b.config.MetricController == nil {
-		component.MetricsController = metrics.NewMockMetricsCollector()
+
+	// Configure metrics collector
+	if b.config.MetricController != nil {
+		component.MetricsController = b.config.MetricController
+	} else {
+		// Create metrics collector based on the specified type
+		switch b.config.MetricType {
+		case MetricsOtel:
+			component.MetricsController = otelmetrics.NewOtlpMetricsCollector()
+		case MetricsPrometheus:
+			component.MetricsController = prometheusmetrics.NewPrometheusMetricsCollector()
+		default:
+			// Default to mock metrics collector
+			component.MetricsController = metrics.NewMockMetricsCollector()
+		}
 	}
+
 	component.SessionManager = b.createSessionManager(component.Logger)
 	component.WalManager = b.createWalManager(component.Logger, zapLogger)
 	component.SnapshotManager = b.createSnapshotManager(component.Logger)

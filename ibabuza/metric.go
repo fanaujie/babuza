@@ -18,4 +18,6 @@ type MetricsCollector interface {
 	IncrementProposalPending()
 	DecrementProposalPending()
 	IncrementProposalFailed()
+	IncrementSlowReadIndex()
+	IncrementReadIndexFailed()
 }
