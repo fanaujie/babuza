@@ -33,8 +33,8 @@ type OtelMetricsCollector struct {
 	proposalApplied  atomic.Int64
 }
 
-// NewOtlpMetricsCollector creates a new instance of OtlpMetricsCollector
-func NewOtlpMetricsCollector() ibabuza.MetricsCollector {
+// NewOtelMetricsCollector creates a new instance of OtlpMetricsCollector
+func NewOtelMetricsCollector() ibabuza.MetricsCollector {
 	collector := &OtelMetricsCollector{
 		meter: otel.GetMeterProvider().Meter("babuza"),
 	}

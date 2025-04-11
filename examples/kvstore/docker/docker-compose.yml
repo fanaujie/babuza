@@ -14,9 +14,6 @@ services:
 
   # Node 1
   kvstore-node1:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
     image: babuza-kvstore:latest
     container_name: kvstore-node1
     command: [
@@ -37,9 +34,6 @@ services:
 
   # Node 2
   kvstore-node2:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
     image: babuza-kvstore:latest
     container_name: kvstore-node2
     command: [
@@ -61,9 +55,6 @@ services:
 
   # Node 3
   kvstore-node3:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
     image: babuza-kvstore:latest
     container_name: kvstore-node3
     command: [
@@ -81,3 +72,39 @@ services:
     ]
     ports:
       - "24203:24200"  # HTTP API
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    depends_on:
+      - kvstore-node1
+      - kvstore-node2
+      - kvstore-node3
+    restart: unless-stopped
+
+  # Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:

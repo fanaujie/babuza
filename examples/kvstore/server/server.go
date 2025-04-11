@@ -7,6 +7,7 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
@@ -123,6 +124,7 @@ func (s *Server) Start() error {
 		TransportType:  s.cfg.BabuzaTransportProtocol,
 		WalType:        s.cfg.BabuzaWal,
 		SnapshotType:   s.cfg.BabuzaSnapshot,
+		MetricType:     builder.MetricsPrometheus,
 		MinIOConfig: &cloudstorage.Config{
 			Endpoint:        s.cfg.MinIOEndpoint,
 			AccessKeyID:     s.cfg.MinIOAccessKeyID,
@@ -188,6 +190,7 @@ func (s *Server) startService() error {
 	m.Handle(api.PromoteLearnerHttpPath, corsMiddleware(api.NewPromoteLearnerHandler(s.raft)))
 	m.Handle(api.TransferLeaderHttpPath, corsMiddleware(api.NewTransferLeaderHandler(s.raft)))
 	m.Handle(api.KvHttpPath, corsMiddleware(api.NewKvStoreResourceHandler(s.raft, s.stateMachine.(api.ReadKvStore))))
+	m.Handle("/metrics", promhttp.Handler())
 	s.httpSrv = &http.Server{
 		Addr:    s.cfg.KvServiceHttpAddress,
 		Handler: m,

@@ -2,7 +2,7 @@
 
 set -e
 
-if ! [[ "$0" =~ scripts/genProto.sh ]]; then
+if ! [[ "$0" =~ tools/genProto.sh ]]; then
  echo "must be run from repository root"
  exit 255
 fi

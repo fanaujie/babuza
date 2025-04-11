@@ -1,8 +1,6 @@
 package prometheusmetrics
 
 import (
-	"sync/atomic"
-
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -18,23 +16,19 @@ type PrometheusMetricsCollector struct {
 	readIndexFailedCounter prometheus.Counter
 
 	// Gauges
-	hasLeaderGauge        prometheus.Gauge
-	isLeaderGauge         prometheus.Gauge
-	isLearnerGauge        prometheus.Gauge
-	snapshotApplyGauge    prometheus.Gauge
-	proposalCommitedGauge prometheus.Gauge
-	proposalAppliedGauge  prometheus.Gauge
+	hasLeaderGauge          prometheus.Gauge
+	isLeaderGauge           prometheus.Gauge
+	isLearnerGauge          prometheus.Gauge
+	snapshotApplyGauge      prometheus.Gauge
+	proposalCommitedGauge   prometheus.Gauge
+	proposalAppliedGauge    prometheus.Gauge
+	inflightSnapshotCounter prometheus.Gauge
+	proposalPendingCounter  prometheus.Gauge
 
 	// Histograms
 	applyHistogram         prometheus.Histogram
 	doSnapshotHistogram    prometheus.Histogram
 	applySnapshotHistogram prometheus.Histogram
-
-	// Counters with dynamic values
-	inflightSnapshotCounter prometheus.Gauge
-	proposalPendingCounter  prometheus.Gauge
-	pendingProposals        atomic.Int64
-	inflightSnapshots       atomic.Int64
 
 	// Metric naming
 	namespace     string
@@ -284,14 +278,12 @@ func (p *PrometheusMetricsCollector) SetSnapshotApplyInProgress(applying int64) 
 
 // IncrementInflightSnapshots increments the counter for in-flight snapshots
 func (p *PrometheusMetricsCollector) IncrementInflightSnapshots() {
-	value := p.inflightSnapshots.Add(1)
-	p.inflightSnapshotCounter.Set(float64(value))
+	p.inflightSnapshotCounter.Inc()
 }
 
 // DecrementInflightSnapshots decrements the counter for in-flight snapshots
 func (p *PrometheusMetricsCollector) DecrementInflightSnapshots() {
-	value := p.inflightSnapshots.Add(-1)
-	p.inflightSnapshotCounter.Set(float64(value))
+	p.inflightSnapshotCounter.Dec()
 }
 
 // SetProposalCommited sets the number of committed proposals
@@ -306,14 +298,12 @@ func (p *PrometheusMetricsCollector) SetProposalAppliedIndex(appliedIndex uint64
 
 // IncrementProposalPending increments the counter for pending proposals
 func (p *PrometheusMetricsCollector) IncrementProposalPending() {
-	value := p.pendingProposals.Add(1)
-	p.proposalPendingCounter.Set(float64(value))
+	p.proposalPendingCounter.Inc()
 }
 
 // DecrementProposalPending decrements the counter for pending proposals
 func (p *PrometheusMetricsCollector) DecrementProposalPending() {
-	value := p.pendingProposals.Add(-1)
-	p.proposalPendingCounter.Set(float64(value))
+	p.proposalPendingCounter.Dec()
 }
 
 // IncrementProposalFailed increments the counter for failed proposals
