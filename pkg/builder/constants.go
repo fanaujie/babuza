@@ -28,4 +28,8 @@ const (
 	StateMachineMemory                           = "memory"
 	StateMachineMemoryWithConcurrentSnapshotType = "memory-concurrent"
 	StateMachineDisk                             = "disk"
+
+	// Metrics implementations
+	MetricsOtel       = "otel"
+	MetricsPrometheus = "prometheus"
 )

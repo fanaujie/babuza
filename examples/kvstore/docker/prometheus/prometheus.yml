@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'babuza-kvstore'
+    scrape_interval: 5s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['kvstore-node1:24200', 'kvstore-node2:24200', 'kvstore-node3:24200']
+        labels:
+          group: 'babuza-cluster'

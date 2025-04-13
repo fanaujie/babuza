@@ -14,18 +14,19 @@ import (
 )
 
 type BootstrapRaftCluster struct {
-	cluster    ibabuza.Cluster
-	storage    InternalStorage
-	node       raft.Node
-	sessionMgr ibabuza.SessionManager
-	trans      ibabuza.Transport
-	status     InternalStatus
-	logger     ibabuza.Logger
+	cluster          ibabuza.Cluster
+	storage          InternalStorage
+	node             raft.Node
+	sessionMgr       ibabuza.SessionManager
+	trans            ibabuza.Transport
+	status           InternalStatus
+	logger           ibabuza.Logger
+	metricsCollector ibabuza.MetricsCollector
 }
 
 func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConfiguration, stateMachine ibabuza.BaseStateMachine,
 	cluster ibabuza.Cluster, raftNode ibabuza.RaftNode, sessions ibabuza.SessionManager, snapshotManager ibabuza.SnapshotManager,
-	walManager ibabuza.WalManager, trans ibabuza.Transport, logger ibabuza.Logger) (*BootstrapRaftCluster, error) {
+	walManager ibabuza.WalManager, trans ibabuza.Transport, logger ibabuza.Logger, metricsController ibabuza.MetricsCollector) (*BootstrapRaftCluster, error) {
 
 	storage, err := newStorageManager(stateMachine, snapshotManager, walManager)
 	if err != nil {
@@ -62,13 +63,14 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConf
 		}
 	}
 	return &BootstrapRaftCluster{
-		cluster:    cluster,
-		storage:    storage,
-		node:       node,
-		sessionMgr: sessions,
-		trans:      trans,
-		status:     raftStatus,
-		logger:     logger,
+		cluster:          cluster,
+		storage:          storage,
+		node:             node,
+		sessionMgr:       sessions,
+		trans:            trans,
+		status:           raftStatus,
+		logger:           logger,
+		metricsCollector: metricsController,
 	}, nil
 }
 

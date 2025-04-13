@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/idgenerator"
@@ -84,7 +85,6 @@ func (s Status) IsLeader() bool {
 type Raft struct {
 	config                    BabuzaConfig
 	cluster                   ibabuza.Cluster
-	applyIterator             InternalEntriesIterator
 	sessionMgr                ibabuza.SessionManager
 	idGenerator               InternalIdGenerator
 	resultReplier             InternalResultReplier
@@ -94,6 +94,7 @@ type Raft struct {
 	trans                     ibabuza.Transport
 	storage                   InternalStorage
 	logger                    ibabuza.Logger
+	metricsCollector          ibabuza.MetricsCollector
 	appliedFacade             InternalAppliedFacade
 	applyCh                   chan applyEntryToStateMachine
 	manualSnapshotCh          chan manualSnapshot
@@ -125,6 +126,7 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		trans:                     bootstrap.trans,
 		storage:                   bootstrap.storage,
 		logger:                    bootstrap.logger,
+		metricsCollector:          bootstrap.metricsCollector,
 		applyCh:                   make(chan applyEntryToStateMachine),
 		manualSnapshotCh:          make(chan manualSnapshot),
 		readStateCh:               make(chan raft.ReadState),
@@ -139,7 +141,6 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		closer:                    syncutil.NewCloser(),
 	}
 	r.appliedFacade = newAppliedFacadeFromRaft(r)
-	r.applyIterator = newIterator(r.appliedFacade)
 
 	if err = r.trans.SetupTransportRaft(&transportProcessor{
 		Raft: r,
@@ -188,7 +189,11 @@ func (r *Raft) AddVotingPeer(ctx context.Context, session ClientSession, raftPee
 	if err != nil {
 		newErrorResult(err)
 	}
-	return r.proposeConfChange(ctx, replyId, confChange)
+	ar, err := r.proposeConfChange(ctx, replyId, confChange)
+	if err != nil {
+		return newErrorResult(err)
+	}
+	return ar
 }
 
 func (r *Raft) RemovePeer(ctx context.Context, session ClientSession, peerId uint64) ProposedResult {
@@ -201,7 +206,11 @@ func (r *Raft) RemovePeer(ctx context.Context, session ClientSession, peerId uin
 	if err != nil {
 		return newErrorResult(err)
 	}
-	return r.proposeConfChange(ctx, replyId, confChange)
+	ar, err := r.proposeConfChange(ctx, replyId, confChange)
+	if err != nil {
+		return newErrorResult(err)
+	}
+	return ar
 }
 
 func (r *Raft) UpdatePeer(ctx context.Context, session ClientSession, raftPeerAttr babuzapb.RaftPeerAttribute) ProposedResult {
@@ -213,7 +222,11 @@ func (r *Raft) UpdatePeer(ctx context.Context, session ClientSession, raftPeerAt
 	if err != nil {
 		return newErrorResult(err)
 	}
-	return r.proposeConfChange(ctx, replyId, confChange)
+	ar, err := r.proposeConfChange(ctx, replyId, confChange)
+	if err != nil {
+		return newErrorResult(err)
+	}
+	return ar
 }
 
 func (r *Raft) AddLearner(ctx context.Context, session ClientSession, raftPeerAttr babuzapb.RaftPeerAttribute) ProposedResult {
@@ -228,28 +241,48 @@ func (r *Raft) AddLearner(ctx context.Context, session ClientSession, raftPeerAt
 	if err != nil {
 		return newErrorResult(err)
 	}
-	return r.proposeConfChange(ctx, replyId, confChange)
+	ar, err := r.proposeConfChange(ctx, replyId, confChange)
+	if err != nil {
+		return newErrorResult(err)
+	}
+	return ar
 }
 
 func (r *Raft) PromoteLearner(ctx context.Context, session ClientSession, peerId uint64) ProposedResult {
-	p, err := r.cluster.Peer(peerId)
+	//TODO: add test case
+	result, err := func() (ProposedResult, error) {
+		p, err := r.cluster.Peer(peerId)
+		if err != nil {
+			return nil, err
+		}
+		if p.RaftPeerAttr.IsLearner == false {
+			return nil, ErrVotingMemberCanNotPromote
+		}
+		// only leader can check if the learner is ready
+		if err = r.learnerReady(peerId); err != nil {
+			return nil, err
+		}
+		replyId := r.idGenerator.Next()
+		confChange, err := encodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeAddNode, babuzapb.RaftPeerAttribute{
+			Id: peerId,
+		}, true)
+		if err != nil {
+			return nil, err
+		}
+		return r.proposeConfChange(ctx, replyId, confChange)
+	}()
 	if err != nil {
-		return newErrorResult(err)
+		if !errors.Is(err, ErrNotLeader) {
+			r.metricsCollector.IncrementLearnerPromoteFailed()
+			return newErrorResult(err)
+		}
+		// forward request to leader
+	} else {
+		r.metricsCollector.IncrementLearnerPromoteSucceed()
+		return result
 	}
-	if p.RaftPeerAttr.IsLearner == false {
-		return newErrorResult(ErrVotingMemberCanNotPromote)
-	}
-	if err = r.learnerReady(peerId); err != nil {
-		return newErrorResult(err)
-	}
-	replyId := r.idGenerator.Next()
-	confChange, err := encodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeAddNode, babuzapb.RaftPeerAttribute{
-		Id: peerId,
-	}, true)
-	if err != nil {
-		return newErrorResult(err)
-	}
-	return r.proposeConfChange(ctx, replyId, confChange)
+	//TODO: forward request to leader when current node is not the leader
+	return newErrorResult(ErrNotLeader)
 }
 
 func (r *Raft) TransferLeader(ctx context.Context, transferee uint64) TransferLeaderResult {

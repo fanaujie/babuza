@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/cluster"
+	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/metrics"
 	"github.com/fanaujie/babuza/pkg/replier"
 	"github.com/fanaujie/babuza/pkg/status"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
@@ -44,10 +47,11 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 
 		closer := syncutil.NewCloser()
 		r := &Raft{
-			raftNode:      newMockRaftNode(),
-			resultReplier: replier.NewResult[ibabuza.ApplyResult](),
-			status:        status.New(),
-			closer:        closer,
+			raftNode:         newMockRaftNode(),
+			metricsCollector: metrics.NewMockMetricsCollector(),
+			resultReplier:    replier.NewResult[ibabuza.ApplyResult](),
+			status:           status.New(),
+			closer:           closer,
 		}
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
@@ -55,38 +59,50 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 			LogIndex: uint64(100),
 			Response: uint64(1000),
 		})
-		assert.Nil(t, res.Wait())
+		err := res.Wait()
+		assert.Nil(t, err)
 		assert.Equal(t, uint64(100), res.LogIndex())
-		assert.Equal(t, uint64(1000), res.Response().(uint64))
+		ar := res.Response()
+		assert.Nil(t, err)
+		assert.Equal(t, uint64(1000), ar.(uint64))
 	})
 
 	t.Run("raft stop", func(t *testing.T) {
 		closer := syncutil.NewCloser()
 		r := &Raft{
-			raftNode:      newMockRaftNode(),
-			resultReplier: replier.NewResult[ibabuza.ApplyResult](),
-			status:        status.New(),
-			closer:        closer,
+			raftNode:         newMockRaftNode(),
+			metricsCollector: metrics.NewMockMetricsCollector(),
+			resultReplier:    replier.NewResult[ibabuza.ApplyResult](),
+			status:           status.New(),
+			closer:           closer,
 		}
 		closer.Close()
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
-		assert.Equal(t, ErrStopped, res.Wait())
+		err := res.Wait()
+		assert.Equal(t, ErrStopped, err)
 	})
 
 	t.Run("failure: raftNodeProposal ", func(t *testing.T) {
 		closer := syncutil.NewCloser()
 		m := newMockRaftNode()
 		m.errorPropose = ErrNotLeader
+		log := &logger.Mock{}
+		cl := cluster.NewCluster(log)
+		cl.SetClusterId(1)
 		r := &Raft{
-			raftNode:      m,
-			resultReplier: replier.NewResult[ibabuza.ApplyResult](),
-			status:        status.New(),
-			closer:        closer,
+			raftNode:         m,
+			cluster:          cl,
+			metricsCollector: metrics.NewMockMetricsCollector(),
+			logger:           log,
+			resultReplier:    replier.NewResult[ibabuza.ApplyResult](),
+			status:           status.New(),
+			closer:           closer,
 		}
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
-		assert.Equal(t, ErrNotLeader, res.Wait())
+		err := res.Wait()
+		assert.Equal(t, ErrNotLeader, err)
 	})
 }
 
@@ -115,11 +131,18 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 		trans := &mockTransport{
 			mockClient: &mockPubTransClient{},
 		}
+		log := &logger.Mock{}
+		cl := cluster.NewCluster(log)
+		cl.SetClusterId(1)
+		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
-			trans:         trans,
-			resultReplier: replier.NewResult[ibabuza.ApplyResult](),
-			status:        status.New(),
-			closer:        closer,
+			cluster:          cl,
+			logger:           log,
+			metricsCollector: mockMetric,
+			trans:            trans,
+			resultReplier:    replier.NewResult[ibabuza.ApplyResult](),
+			status:           status.New(),
+			closer:           closer,
 		}
 		resultCh := make(chan error)
 		go func() {
@@ -129,7 +152,7 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 		err := errors.New("foo")
 		r.resultReplier.SendResult(1, ibabuza.ApplyResult{
 			LogIndex: 10,
-			Response: err,
+			Error:    err,
 		})
 		assert.Equal(t, err, <-resultCh)
 	})
@@ -141,11 +164,18 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 				errMsg: err.Error(),
 			},
 		}
+		log := &logger.Mock{}
+		cl := cluster.NewCluster(log)
+		cl.SetClusterId(1)
+		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
-			trans:         trans,
-			resultReplier: replier.NewResult[ibabuza.ApplyResult](),
-			status:        status.New(),
-			closer:        closer,
+			cluster:          cl,
+			logger:           log,
+			metricsCollector: mockMetric,
+			trans:            trans,
+			resultReplier:    replier.NewResult[ibabuza.ApplyResult](),
+			status:           status.New(),
+			closer:           closer,
 		}
 		resultCh := make(chan error)
 		go func() {
@@ -155,7 +185,7 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 
 		r.resultReplier.SendResult(1, ibabuza.ApplyResult{
 			LogIndex: 10,
-			Response: err,
+			Error:    err,
 		})
 		assert.Equal(t, err, <-resultCh)
 	})
@@ -186,6 +216,10 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 		trans := &mockTransport{
 			mockClient: &mockPubTransClient{},
 		}
+		log := &logger.Mock{}
+		cl := cluster.NewCluster(log)
+		cl.SetClusterId(1)
+		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
 			idGenerator: &mockIdGenerator{
 				id: 1,
@@ -195,11 +229,14 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: true,
 				}},
-			trans:         trans,
-			raftNode:      newMockRaftNode(),
-			resultReplier: replier.NewResult[ibabuza.ApplyResult](),
-			status:        status.New(),
-			closer:        closer,
+			cluster:          cl,
+			logger:           log,
+			metricsCollector: mockMetric,
+			trans:            trans,
+			raftNode:         newMockRaftNode(),
+			resultReplier:    replier.NewResult[ibabuza.ApplyResult](),
+			status:           status.New(),
+			closer:           closer,
 		}
 		r.status.SetSoftState(raft.SoftState{Lead: 1})
 		ch := make(chan error, 1)
@@ -255,11 +292,12 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: false,
 				}},
-			trans:         trans,
-			raftNode:      newMockRaftNode(),
-			resultReplier: replier.NewResult[ibabuza.ApplyResult](),
-			status:        status.New(),
-			closer:        closer,
+			metricsCollector: metrics.NewMockMetricsCollector(),
+			trans:            trans,
+			raftNode:         newMockRaftNode(),
+			resultReplier:    replier.NewResult[ibabuza.ApplyResult](),
+			status:           status.New(),
+			closer:           closer,
 		}
 		r.status.SetSoftState(raft.SoftState{Lead: 1})
 		ch := make(chan error, 1)

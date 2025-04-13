@@ -30,14 +30,20 @@ func (r *Raft) processRaftLinearizedRead() {
 		oldNotifier := r.linearizeReqNotifier.Renew()
 		binary.BigEndian.PutUint64(readCtx, nextID)
 		if err := r.raftReadIndexRequest(readCtx); err != nil {
-			return
+			if errors.Is(err, raft.ErrStopped) {
+				return
+			}
+			r.metricsCollector.IncrementReadIndexFailed()
+			oldNotifier.Close(err)
+			continue
 		}
 		rs, err := r.readIndexResponse(readCtx, leaderChangedCh)
 		if err != nil {
-			if err == raft.ErrStopped || err == ErrStopped {
+			if errors.Is(err, raft.ErrStopped) || errors.Is(err, ErrStopped) {
 				return
 			} else {
-				oldNotifier.CloseChan(err)
+				r.metricsCollector.IncrementReadIndexFailed()
+				oldNotifier.Close(err)
 				continue
 			}
 		}
@@ -49,7 +55,7 @@ func (r *Raft) processRaftLinearizedRead() {
 				return
 			}
 		}
-		oldNotifier.CloseChan(nil)
+		oldNotifier.Close(nil)
 	}
 }
 
@@ -68,16 +74,16 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 
 				// a previous request might time out. now we should ignore the response of it and
 				// continue waiting for the response of the current requests.
-				//id2 := uint64(0)
-				//if len(rs.RequestCtx) == 8 {
-				//	id2 = binary.BigEndian.Uint64(rs.RequestCtx)
-				//}
-				//lg.Warn(
-				//	"ignored out-of-date read index response; local node read indexes queueing up and waiting to be in sync with leader",
-				//	zap.Uint64("sent-request-Id", id1),
-				//	zap.Uint64("receiver-request-Id", id2),
-				//)
-				//slowReadIndex.Inc()
+				id1 := uint64(0)
+				if len(readCtx) == 8 {
+					id1 = binary.BigEndian.Uint64(readCtx)
+				}
+				id2 := uint64(0)
+				if len(rs.RequestCtx) == 8 {
+					id2 = binary.BigEndian.Uint64(rs.RequestCtx)
+				}
+				r.logger.Warningf("raft[%d] ignored out-of-date read index response; local node read indexes queueing up and waiting to be in sync with leader, id1: %d, id2: %d", r.cluster.ClusterId(), id1, id2)
+				r.metricsCollector.IncrementSlowReadIndex()
 				continue
 			}
 			return
@@ -97,6 +103,7 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 			retryTimer.Reset(r.config.LinearizedReadRetryTimeout)
 		case <-requestTimer.C:
 			err = errReadIndexRequestTimeout
+			r.metricsCollector.IncrementSlowReadIndex()
 			return
 		case <-r.closer.CloseCh():
 			err = ErrStopped

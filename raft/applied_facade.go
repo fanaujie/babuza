@@ -23,7 +23,7 @@ type AppliedStatus interface {
 }
 
 type AppliedFirstCommitInTermNotifier interface {
-	CloseChanAndRenew()
+	CloseAndRenew()
 }
 
 type AppliedSessionManager interface {
@@ -66,24 +66,7 @@ type appliedFacadeImpl struct {
 	trans                AppliedTransport
 	clusterMemberEventCh chan ClusterMemberEvent
 	log                  ibabuza.Logger
-}
-
-func newAppliedFacade(storage AppliedStorage, status AppliedStatus, firstCommitNotifier AppliedFirstCommitInTermNotifier,
-	sessionMgr AppliedSessionManager, replier AppliedReplier, cluster AppliedCluster, raftNode AppliedRaftNode,
-	trans AppliedTransport, clusterMemberEventCh chan ClusterMemberEvent, log ibabuza.Logger) *appliedFacadeImpl {
-
-	return &appliedFacadeImpl{
-		storage:              storage,
-		status:               status,
-		firstCommitNotifier:  firstCommitNotifier,
-		sessionMgr:           sessionMgr,
-		replier:              replier,
-		cluster:              cluster,
-		raftNode:             raftNode,
-		trans:                trans,
-		clusterMemberEventCh: clusterMemberEventCh,
-		log:                  log,
-	}
+	metricsCollector     ibabuza.MetricsCollector
 }
 
 func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
@@ -99,11 +82,12 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 		trans:                r.trans,
 		clusterMemberEventCh: r.clusterMemberEventCh,
 		log:                  r.logger,
+		metricsCollector:     r.metricsCollector,
 	}
 }
 
 func (a *appliedFacadeImpl) ApplyNilEntryInNewTerm(index, term uint64) {
-	a.firstCommitNotifier.CloseChanAndRenew()
+	a.firstCommitNotifier.CloseAndRenew()
 	a.status.SetAppliedIndex(index)
 	a.status.SetAppliedTerm(term)
 }
@@ -155,8 +139,8 @@ func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) bool {
 		a.updateAppliedIndexAndTerm(entry.Index, entry.Term)
 		return false
 	}
-	removeSelf, result := a.processConfChange(cc, confReq)
-	a.sendConfChangeResult(session, confReq.Context, entry.Index, result)
+	removeSelf, err := a.processConfChange(cc, confReq)
+	a.sendConfChangeResult(session, confReq.Context, entry.Index, err)
 	a.updateAppliedIndexAndTerm(entry.Index, entry.Term)
 	return removeSelf
 }
@@ -176,7 +160,7 @@ func (a *appliedFacadeImpl) doExactlyOnce(index uint64, requestTime int64, ctx b
 	if err != nil {
 		a.replier.SendResult(ctx.ReplyId, ibabuza.ApplyResult{
 			LogIndex: index,
-			Response: err,
+			Error:    err,
 		})
 		return false, nil
 	}
@@ -186,7 +170,7 @@ func (a *appliedFacadeImpl) doExactlyOnce(index uint64, requestTime int64, ctx b
 			err = fmt.Errorf("seesion id(%d) seqence nume(%d): not found apply result", ctx.SessionID, ctx.SequenceNum)
 			a.replier.SendResult(ctx.ReplyId, ibabuza.ApplyResult{
 				LogIndex: index,
-				Response: err,
+				Error:    err,
 			})
 		} else {
 			a.replier.SendResult(ctx.ReplyId, ar)
@@ -257,6 +241,13 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 				Peer:  confReq.RaftPeerAttr,
 			}
 		}
+		if confReq.RaftPeerAttr.Id == a.cluster.LocalPeerID() {
+			if cc.Type == raftpb.ConfChangeAddLearnerNode {
+				a.metricsCollector.SetIsLearner(1)
+			} else {
+				a.metricsCollector.SetIsLearner(0)
+			}
+		}
 
 	case raftpb.ConfChangeRemoveNode:
 		if cc.NodeID == a.cluster.LocalPeerID() {
@@ -286,10 +277,11 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 	return removeSelf, nil
 }
 
-func (a *appliedFacadeImpl) sendConfChangeResult(session ibabuza.Session, ctx babuzapb.RequestContext, index uint64, response error) {
+func (a *appliedFacadeImpl) sendConfChangeResult(session ibabuza.Session, ctx babuzapb.RequestContext, index uint64,
+	err error) {
 	ar := ibabuza.ApplyResult{
 		LogIndex: index,
-		Response: response,
+		Error:    err,
 	}
 	_ = session.AddResult(ctx.SequenceNum, time.Now().UnixNano(), ar)
 	a.replier.SendResult(ctx.ReplyId, ar)

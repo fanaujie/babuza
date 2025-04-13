@@ -54,8 +54,8 @@ func (h *PromoteLearnerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}
-	proposalRes := promoteRes.Response()
-	if err, ok := proposalRes.(error); ok {
+	_ = promoteRes.Response()
+	if err != nil {
 		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}

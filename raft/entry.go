@@ -66,16 +66,14 @@ func (e *Entry) Command() []byte {
 	return e.command
 }
 
-func (e *Entry) SendResponse(res any) {
+func (e *Entry) SendResponse(result any, err error) {
 	ar := ibabuza.ApplyResult{
 		LogIndex: e.index,
-		Response: res,
+		Response: result,
+		Error:    err,
 	}
 	e.session.AddResult(e.seqNum, e.reqTime, ar)
 	e.sendResult.SendStateMachineAppliedResult(e, ar)
-}
-func (e *Entry) IsReply() bool {
-	return e.isReplay
 }
 
 func (e *Entry) ReplyId() uint64 {

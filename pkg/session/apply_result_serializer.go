@@ -32,16 +32,16 @@ func (m *applyResultSerializer) Marshal(w io.Writer, ar ibabuza.ApplyResult) err
 	if err := fileutil.FileWriteUint64(w, buf8Bytes, ar.LogIndex); err != nil {
 		return err
 	}
-	if ar.Response == nil {
+	if ar.Response == nil && ar.Error == nil {
 		if err := fileutil.FileWriteUint64(w, buf8Bytes, stateMachineResponseNil); err != nil {
 			return err
 		}
 	} else {
-		if err, ok := ar.Response.(error); ok {
+		if ar.Error != nil {
 			if err := fileutil.FileWriteUint64(w, buf8Bytes, stateMachineResponseErr); err != nil {
 				return err
 			}
-			data := []byte(err.Error())
+			data := []byte(ar.Error.Error())
 			if err := fileutil.FileWriteUint64(w, buf8Bytes, uint64(len(data))); err != nil {
 				return err
 			}
@@ -101,11 +101,11 @@ func (m *applyResultSerializer) Unmarshal(r io.Reader) (ibabuza.ApplyResult, err
 				allocator.Release(resErrSliceBuf)
 				return ibabuza.ApplyResult{}, io.ErrUnexpectedEOF
 			}
-			res := errors.New(string(errBuf))
+			nErr := errors.New(string(errBuf))
 			allocator.Release(resErrSliceBuf)
 			return ibabuza.ApplyResult{
 				LogIndex: index,
-				Response: res,
+				Error:    nErr,
 			}, nil
 
 		}(dataSize, logIndex)

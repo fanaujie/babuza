@@ -35,6 +35,13 @@ func (r *Raft) processRaftReady() {
 				r.sendRaftMessage(rd.Messages)
 			}
 
+			r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
+
+			if !raft.IsEmptyHardState(rd.HardState) {
+				r.status.SetHardStateTerm(rd.HardState.Term)
+				r.metricsCollector.SetProposalCommited(rd.HardState.Commit)
+			}
+
 			notifyCh := make(chan struct{}, 1)
 			emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
 			if len(rd.CommittedEntries) > 0 || !emptySnapshot {
@@ -48,10 +55,6 @@ func (r *Raft) processRaftReady() {
 				}
 			}
 
-			r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
-			if rd.HardState.Term != 0 {
-				r.status.SetHardStateTerm(rd.HardState.Term)
-			}
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
 				r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
 			}
@@ -136,19 +139,28 @@ func (r *Raft) updateCommittedIndex(entries []raftpb.Entry, snap raftpb.Snapshot
 
 func (r *Raft) updateLeadership(currentState raft.SoftState) {
 	preState := r.status.CloneSoftState()
+
 	newLeader := currentState.Lead != raft.None && preState.Lead != currentState.Lead
 	r.status.SetSoftState(currentState)
+	if currentState.Lead == raft.None {
+		r.metricsCollector.SetIsLeader(0)
+	} else {
+		r.metricsCollector.SetHasLeader(1)
+	}
 	if currentState.Lead == r.config.LocalPeerId {
 		r.status.SetLeader(true)
+		r.metricsCollector.SetIsLeader(1)
 		r.leaderCh <- true
 	} else {
 		if r.status.IsLeader() {
 			r.status.SetLeader(false)
+			r.metricsCollector.SetIsLeader(0)
 			r.leaderCh <- false
 		}
 	}
 	if newLeader {
-		r.leaderChangeNotifier.CloseChanAndRenew()
+		r.metricsCollector.IncrementLeaderChanges()
+		r.leaderChangeNotifier.CloseAndRenew()
 	}
 
 }

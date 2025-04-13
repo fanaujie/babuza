@@ -19,14 +19,15 @@ func TestRaft_ProposalResult(t *testing.T) {
 
 	t.Run("get proposalResult from pool", func(t *testing.T) {
 		r := newProposalResult(ctx, closer, ch)
-		r.err = errors.New("foo")
 		r.ar = ibabuza.ApplyResult{
 			LogIndex: 100,
 			Response: "bar",
 		}
 		r.Release()
+		assert.Nil(t, r.resulCh)
+		assert.Nil(t, r.closer)
+		assert.Nil(t, r.ctx)
 		r = newProposalResult(ctx, closer, ch)
-		assert.Nil(t, r.err)
 		assert.Nil(t, r.ar.Response)
 		r.Release()
 	})
@@ -39,8 +40,11 @@ func TestRaft_ProposalResult(t *testing.T) {
 		r := newProposalResult(ctx, closer, ch)
 		assert.Nil(t, r.Wait())
 		assert.Equal(t, uint64(100), r.LogIndex())
-		assert.Equal(t, "bar", r.Response().(string))
-		assert.Nil(t, r.Wait()) // call wait() twice
+		ar := r.Response()
+		assert.Equal(t, "bar", ar.(string))
+		ar = r.Response()
+		assert.Equal(t, uint64(100), r.LogIndex())
+		assert.Equal(t, "bar", ar.(string))
 		r.Release()
 	})
 
@@ -48,13 +52,14 @@ func TestRaft_ProposalResult(t *testing.T) {
 		e := errors.New("bar")
 		ch <- ibabuza.ApplyResult{
 			LogIndex: 100,
-			Response: e,
+			Error:    e,
 		}
 		r := newProposalResult(ctx, closer, ch)
-		assert.Nil(t, r.Wait())
+		assert.Equal(t, e, r.Wait())
 		assert.Equal(t, uint64(100), r.LogIndex())
-		assert.Equal(t, e, r.Response().(error))
-		assert.Nil(t, r.Wait()) // call wait() twice
+		ar := r.Response()
+		assert.Nil(t, ar)
+		assert.Equal(t, e, r.Wait()) // call wait() twice
 		r.Release()
 	})
 	t.Run("close", func(t *testing.T) {

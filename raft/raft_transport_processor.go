@@ -131,6 +131,7 @@ func (d *transportProcessor) ReportUnreachable(id uint64) {
 }
 func (d *transportProcessor) ReportSnapshot(id uint64, status raft.SnapshotStatus) {
 	d.status.AddInflightSnapshots(-1)
+	d.metricsCollector.DecrementInflightSnapshots()
 	if status == raft.SnapshotFinish {
 		d.logger.Infof("raft[id=%d] finish to send snapshot to peer(id=%d)", d.cluster.LocalPeerID(), id)
 	}
@@ -143,6 +144,7 @@ func (d *transportProcessor) CreateSnapshotReader(snapshotIndex uint64) (ibabuza
 		return nil, err
 	}
 	d.status.AddInflightSnapshots(1)
+	d.metricsCollector.IncrementInflightSnapshots()
 	return snapReader, nil
 }
 

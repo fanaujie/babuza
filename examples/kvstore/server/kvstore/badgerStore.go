@@ -28,86 +28,85 @@ func NewBadgerStore(db *badger.DB) *BadgerStore {
 	}
 }
 
-func (s *BadgerStore) Apply(it ibabuza.Iterator) {
+func (s *BadgerStore) Apply(e ibabuza.Entry) {
 	var req KvCommand
-	for e := it.Next(); e != nil; e = it.Next() {
-		if err := req.Unmarshal(e.Command()); err != nil {
-			panic(err)
-		}
-		binary.LittleEndian.PutUint64(s.buf, e.Index())
-		switch req.Command {
-		case Set:
-			if err := s.db.Update(func(txn *badger.Txn) error {
-				if err := txn.Set([]byte(req.Key), []byte(req.Value)); err != nil {
-					return err
-				}
-				if err := txn.Set(applyIndexPrefix, s.buf); err != nil {
-					return err
-				}
-				return nil
-			}); err != nil {
-				panic(err)
-			} else {
-				res := KvResult{
-					Command: Set,
-					Key:     req.Key,
-					Value:   req.Value,
-				}
-				e.SendResponse(&res)
-			}
-		case Append:
-			var result []byte
-			if err := s.db.Update(func(txn *badger.Txn) error {
-				item, err := txn.Get([]byte(req.Key))
-				if err != nil {
-					if err == badger.ErrKeyNotFound {
-						result = []byte(req.Value)
-						return txn.Set([]byte(req.Key), result)
-					}
-					return err
-				}
-				return item.Value(func(val []byte) error {
-					result = append(result, val...)
-					result = append(result, req.Value...)
-					if err = txn.Set([]byte(req.Key), result); err != nil {
-						return err
-					}
-					return txn.Set(applyIndexPrefix, s.buf)
-				})
-			}); err != nil {
-				panic(err)
-			} else {
-				res := KvResult{
-					Command: Append,
-					Key:     req.Key,
-					Value:   string(result),
-				}
-				e.SendResponse(&res)
-			}
 
-		case Delete:
-			key := []byte(req.Key)
-			if err := s.db.Update(func(txn *badger.Txn) error {
-				_, err := txn.Get(key)
-				if err != nil {
-					return err
+	if err := req.Unmarshal(e.Command()); err != nil {
+		panic(err)
+	}
+	binary.LittleEndian.PutUint64(s.buf, e.Index())
+	switch req.Command {
+	case Set:
+		if err := s.db.Update(func(txn *badger.Txn) error {
+			if err := txn.Set([]byte(req.Key), []byte(req.Value)); err != nil {
+				return err
+			}
+			if err := txn.Set(applyIndexPrefix, s.buf); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			panic(err)
+		} else {
+			res := KvResult{
+				Command: Set,
+				Key:     req.Key,
+				Value:   req.Value,
+			}
+			e.SendResponse(&res, nil)
+		}
+	case Append:
+		var result []byte
+		if err := s.db.Update(func(txn *badger.Txn) error {
+			item, err := txn.Get([]byte(req.Key))
+			if err != nil {
+				if err == badger.ErrKeyNotFound {
+					result = []byte(req.Value)
+					return txn.Set([]byte(req.Key), result)
 				}
-				if err = txn.Delete(key); err != nil {
+				return err
+			}
+			return item.Value(func(val []byte) error {
+				result = append(result, val...)
+				result = append(result, req.Value...)
+				if err = txn.Set([]byte(req.Key), result); err != nil {
 					return err
 				}
 				return txn.Set(applyIndexPrefix, s.buf)
-			}); err != nil {
-				if err != badger.ErrKeyNotFound {
-					panic(err)
-				}
-				e.SendResponse(kverror.ErrKeyNotFound)
-			} else {
-				res := KvResult{
-					Command: Delete,
-					Key:     req.Key,
-				}
-				e.SendResponse(&res)
+			})
+		}); err != nil {
+			panic(err)
+		} else {
+			res := KvResult{
+				Command: Append,
+				Key:     req.Key,
+				Value:   string(result),
 			}
+			e.SendResponse(&res, nil)
+		}
+
+	case Delete:
+		key := []byte(req.Key)
+		if err := s.db.Update(func(txn *badger.Txn) error {
+			_, err := txn.Get(key)
+			if err != nil {
+				return err
+			}
+			if err = txn.Delete(key); err != nil {
+				return err
+			}
+			return txn.Set(applyIndexPrefix, s.buf)
+		}); err != nil {
+			if err != badger.ErrKeyNotFound {
+				panic(err)
+			}
+			e.SendResponse(nil, kverror.ErrKeyNotFound)
+		} else {
+			res := KvResult{
+				Command: Delete,
+				Key:     req.Key,
+			}
+			e.SendResponse(&res, nil)
 		}
 	}
 }

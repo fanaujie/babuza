@@ -124,7 +124,7 @@ func (c *KvClientProxy) command(command []byte) {
 		r := c.kvStores[c.leader]
 		if r.Status().IsLeader() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-			_, err := r.ProposeThenWait(ctx, cs, command)
+			_, err := r.ProposeThenWaitResponse(ctx, cs, command)
 			if err == nil {
 				cancel()
 				//TODO: finish

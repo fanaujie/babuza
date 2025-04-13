@@ -14,37 +14,41 @@ func (r *Raft) propose(ctx context.Context, replyId uint64, proposalData []byte)
 	if err != nil {
 		return nil, err
 	}
+	r.metricsCollector.IncrementProposalPending()
+	defer r.metricsCollector.DecrementProposalPending()
 	if err = r.raftNode.Propose(ctx, proposalData); err != nil {
+		r.metricsCollector.IncrementProposalFailed()
 		r.resultReplier.CancelResult(replyId)
 		if errors.Is(err, raft.ErrProposalDropped) {
 			err = ErrNotLeader
 		} else if errors.Is(err, raft.ErrStopped) {
 			err = ErrStopped
-		} else {
-			//TODO: add log warning
 		}
+		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.ClusterId(), err)
 		return nil, err
 	}
 	return ch, nil
 }
 
-func (r *Raft) proposeConfChange(ctx context.Context, replyId uint64, confChange raftpb.ConfChangeI) ProposedResult {
+func (r *Raft) proposeConfChange(ctx context.Context, replyId uint64, confChange raftpb.ConfChangeI) (ProposedResult, error) {
 	ch, err := r.resultReplier.AcquireResultChan(replyId)
 	if err != nil {
-		return newErrorResult(err)
+		return nil, err
 	}
+	r.metricsCollector.IncrementProposalPending()
+	defer r.metricsCollector.DecrementProposalPending()
 	if err = r.raftNode.ProposeConfChange(ctx, confChange); err != nil {
+		r.metricsCollector.IncrementProposalFailed()
 		r.resultReplier.CancelResult(replyId)
 		if errors.Is(err, raft.ErrProposalDropped) {
 			err = ErrNotLeader
 		} else if errors.Is(err, raft.ErrStopped) {
 			err = ErrStopped
-		} else {
-			//TODO: add log warning
 		}
-		return newErrorResult(err)
+		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.ClusterId(), err)
+		return nil, err
 	}
-	return newProposalResult(ctx, r.closer, ch)
+	return newProposalResult(ctx, r.closer, ch), nil
 }
 
 func (r *Raft) learnerReady(learnerId uint64) error {

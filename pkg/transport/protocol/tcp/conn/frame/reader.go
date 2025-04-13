@@ -30,21 +30,27 @@ func (r *Reader) ReadFrame(msgHandler func(msgType MessageType, msgBuf []byte) e
 		return err
 	}
 	h := binary.LittleEndian.Uint32(headerBuf[0:CrcOffset])
-	msgSize := int((h & MsgSizeMask) >> MsgSizeShift)
-	msgSliceBuf := allocator.Acquire(msgSize)
-	defer allocator.Release(msgSliceBuf)
 	crc := binary.LittleEndian.Uint32(headerBuf[CrcOffset:HeaderSize])
-
-	messageBuf := msgSliceBuf.Buffer[:msgSize]
-	if _, err := io.ReadFull(r.conn, messageBuf); err != nil {
-		if err == io.EOF {
-			return io.ErrUnexpectedEOF
+	msgSize := int((h & MsgSizeMask) >> MsgSizeShift)
+	var readCrc uint32
+	if msgSize > 0 {
+		msgSliceBuf := allocator.Acquire(msgSize)
+		defer allocator.Release(msgSliceBuf)
+		messageBuf := msgSliceBuf.Buffer[:msgSize]
+		if _, err := io.ReadFull(r.conn, messageBuf); err != nil {
+			if err == io.EOF {
+				return io.ErrUnexpectedEOF
+			}
+			return err
 		}
-		return err
+		readCrc = crc32.Checksum(messageBuf, Crc32Table)
+		if readCrc != crc {
+			return fmt.Errorf("crc does not match.(expected=%d) (real=%d)", crc, readCrc)
+		}
+		return msgHandler(MessageType(h&MsgTypeMask), messageBuf)
 	}
-	readCrc := crc32.Checksum(messageBuf, Crc32Table)
 	if readCrc != crc {
 		return fmt.Errorf("crc does not match.(expected=%d) (real=%d)", crc, readCrc)
 	}
-	return msgHandler(MessageType(h&MsgTypeMask), messageBuf)
+	return msgHandler(MessageType(h&MsgTypeMask), nil)
 }

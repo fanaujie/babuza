@@ -33,7 +33,7 @@ func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMac
 	bootstrap, err := babuza.NewBootstrapRaftCluster(
 		appConfig.BubuzaConfig, *appConfig.VotingPeersCfg, stateMachine, customBuilder.Cluster,
 		customBuilder.RaftNode, customBuilder.SessionManager, customBuilder.SnapshotManager, customBuilder.WalManager,
-		customBuilder.Transport, customBuilder.Logger)
+		customBuilder.Transport, customBuilder.Logger, customBuilder.MetricsController)
 	if err != nil {
 		return nil, err
 	}
