@@ -51,7 +51,6 @@ func (r *Raft) processStateMachine() {
 				}
 				return
 			}
-			<-ap.notifyCh
 			if r.status.GetAppliedIndex()-r.status.GetSnapshotIndex() < r.config.SnapshotCount {
 				continue
 			}

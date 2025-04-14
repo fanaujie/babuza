@@ -31,15 +31,12 @@ func (r *Raft) processRaftReady() {
 				}
 			}
 
-			if isLeader {
-				r.sendRaftMessage(rd.Messages)
-			}
-
 			r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
-
-			if !raft.IsEmptyHardState(rd.HardState) {
-				r.status.SetHardStateTerm(rd.HardState.Term)
-				r.metricsCollector.SetProposalCommited(rd.HardState.Commit)
+			waitWALSync := shouldWaitWALSync(rd)
+			if waitWALSync {
+				if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
+					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
+				}
 			}
 
 			notifyCh := make(chan struct{}, 1)
@@ -54,10 +51,16 @@ func (r *Raft) processRaftReady() {
 					notifyCh: notifyCh}:
 				}
 			}
-
-			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-				r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
+			if isLeader {
+				r.sendRaftMessage(rd.Messages)
 			}
+
+			if !waitWALSync {
+				if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
+					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
+				}
+			}
+
 			if !emptySnapshot {
 				if err := r.storage.ApplyAndReleaseSnapshot(rd.Snapshot); err != nil {
 					r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.config.LocalPeerId, err)
@@ -66,7 +69,6 @@ func (r *Raft) processRaftReady() {
 			if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
 				r.logger.Panicf("raft[id=%d]: append entries failed: %v", r.config.LocalPeerId, err)
 			}
-			notifyCh <- struct{}{}
 			if !isLeader {
 
 				// Candidate or follower needs to wait for all pending configuration
@@ -163,4 +165,41 @@ func (r *Raft) updateLeadership(currentState raft.SoftState) {
 		r.leaderChangeNotifier.CloseAndRenew()
 	}
 
+}
+
+// For a cluster with only one member, the raft may send both the
+// unstable entries and committed entries to etcdserver, and there
+// may have overlapped log entries between them.
+//
+// etcd responds to the client once it finishes (actually partially)
+// the applying workflow. But when the client receives the response,
+// it doesn't mean etcd has already successfully saved the data,
+// including BoltDB and WAL, because:
+//  1. etcd commits the boltDB transaction periodically instead of on each request;
+//  2. etcd saves WAL entries in parallel with applying the committed entries.
+//
+// Accordingly, it might run into a situation of data loss when the etcd crashes
+// immediately after responding to the client and before the boltDB and WAL
+// successfully save the data to disk.
+// Note that this issue can only happen for clusters with only one member.
+//
+// For clusters with multiple members, it isn't an issue, because etcd will
+// not commit & apply the data before it being replicated to majority members.
+// When the client receives the response, it means the data must have been applied.
+// It further means the data must have been committed.
+// Note: for clusters with multiple members, the raft will never send identical
+// unstable entries and committed entries to etcdserver.
+//
+// Refer to https://github.com/etcd-io/etcd/issues/14370.
+func shouldWaitWALSync(rd raft.Ready) bool {
+	if len(rd.CommittedEntries) == 0 || len(rd.Entries) == 0 {
+		return false
+	}
+
+	// Check if there is overlap between unstable and committed entries
+	// assuming that their index and term are only incrementing.
+	lastCommittedEntry := rd.CommittedEntries[len(rd.CommittedEntries)-1]
+	firstUnstableEntry := rd.Entries[0]
+	return lastCommittedEntry.Term > firstUnstableEntry.Term ||
+		(lastCommittedEntry.Term == firstUnstableEntry.Term && lastCommittedEntry.Index >= firstUnstableEntry.Index)
 }

@@ -127,7 +127,7 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		storage:                   bootstrap.storage,
 		logger:                    bootstrap.logger,
 		metricsCollector:          bootstrap.metricsCollector,
-		applyCh:                   make(chan applyEntryToStateMachine),
+		applyCh:                   make(chan applyEntryToStateMachine, 8),
 		manualSnapshotCh:          make(chan manualSnapshot),
 		readStateCh:               make(chan raft.ReadState),
 		readIndexCh:               make(chan struct{}),

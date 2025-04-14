@@ -268,7 +268,7 @@ func (b *BabuzaComponentBuilder) Build() *BabuzaComponent {
 		// Create metrics collector based on the specified type
 		switch b.config.MetricType {
 		case MetricsOtel:
-			component.MetricsController = otelmetrics.NewOtlpMetricsCollector()
+			component.MetricsController = otelmetrics.NewOtelMetricsCollector()
 		case MetricsPrometheus:
 			component.MetricsController = prometheusmetrics.NewPrometheusMetricsCollector()
 		default:
