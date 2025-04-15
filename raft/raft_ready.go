@@ -39,7 +39,6 @@ func (r *Raft) processRaftReady() {
 				}
 			}
 
-			notifyCh := make(chan struct{}, 1)
 			emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
 			if len(rd.CommittedEntries) > 0 || !emptySnapshot {
 				select {
@@ -47,8 +46,7 @@ func (r *Raft) processRaftReady() {
 					return
 				case r.applyCh <- applyEntryToStateMachine{
 					entries:  rd.CommittedEntries,
-					snapshot: rd.Snapshot,
-					notifyCh: notifyCh}:
+					snapshot: rd.Snapshot}:
 				}
 			}
 			if isLeader {

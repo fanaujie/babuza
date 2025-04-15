@@ -23,6 +23,10 @@ func (c *Closer) CloseCh() <-chan struct{} {
 	return c.ctx.Done()
 }
 
+func (c *Closer) Err() error {
+	return c.ctx.Err()
+}
+
 func (c *Closer) Cancel() {
 	c.cancelFunc()
 }
