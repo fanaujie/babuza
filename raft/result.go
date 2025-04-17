@@ -45,6 +45,13 @@ type SnapshotResult struct {
 	err      error
 }
 
+func NewSnapshotResult(metadata babuzapb.SnapshotMetadata, err error) SnapshotResult {
+	return SnapshotResult{
+		metadata: metadata,
+		err:      err,
+	}
+}
+
 type ErrorResult struct {
 	e error
 }

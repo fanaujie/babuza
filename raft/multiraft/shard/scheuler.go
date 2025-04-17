@@ -3,30 +3,22 @@ package shard
 import (
 	"errors"
 	"github.com/Workiva/go-datastructures/queue"
-	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"sync"
 )
-
-type RaftGroupID uint64
 
 var (
 	ErrSchedulerFull = errors.New("scheduler ringbuffer is full")
 )
 
 const (
-	StateTick     = 1
-	StateReady    = 2
-	StateStep     = 4
-	StateProposal = 8
+	StateTick         = 1
+	StateReady        = 2
+	StateStep         = 4
+	StateProposal     = 8
+	StateConfigChange = 16
 )
-
-type RaftStateProcessor interface {
-	ProcessTick(gid RaftGroupID)
-	ProcessReady(gid RaftGroupID)
-	ProcessStep(gid RaftGroupID)
-	ProcessProposal(gid RaftGroupID)
-}
 
 type internalState struct {
 	state int
@@ -36,25 +28,25 @@ type internalState struct {
 type Scheduler struct {
 	cfg           Config
 	rb            *queue.RingBuffer
-	raftProcessor RaftStateProcessor
-	log           logger.RaftLogger
+	raftProcessor ibabuza.RaftStateProcessor
+	log           ibabuza.Logger
 	mu            sync.Mutex
-	groupState    map[RaftGroupID]internalState
+	groupState    map[ibabuza.RaftGroupID]internalState
 	closer        *syncutil.Closer
 }
 
-func NewScheduler(cfg Config, raftProcessor RaftStateProcessor, log logger.RaftLogger) *Scheduler {
+func NewScheduler(cfg Config, raftProcessor ibabuza.RaftStateProcessor, log ibabuza.Logger) *Scheduler {
 	s := &Scheduler{
 		cfg:           cfg,
 		rb:            queue.NewRingBuffer(cfg.QueueSize),
 		raftProcessor: raftProcessor,
 		log:           log,
-		groupState:    make(map[RaftGroupID]internalState),
+		groupState:    make(map[ibabuza.RaftGroupID]internalState),
 		closer:        syncutil.NewCloser(),
 	}
 	for i := 0; i < cfg.WorkerNum; i++ {
 		s.closer.Run(func() {
-
+			s.worker()
 		})
 	}
 	return s
@@ -64,7 +56,7 @@ func (s *Scheduler) Stop() {
 	s.closer.Close()
 }
 
-func (s *Scheduler) EnqueueState(gid RaftGroupID, state int) error {
+func (s *Scheduler) EnqueueState(gid ibabuza.RaftGroupID, state int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -93,7 +85,7 @@ func (s *Scheduler) EnqueueState(gid RaftGroupID, state int) error {
 	return nil
 }
 
-func (s *Scheduler) EnqueueBatchTickState(gids []RaftGroupID) error {
+func (s *Scheduler) EnqueueBatchTickState(gids []ibabuza.RaftGroupID) error {
 	gidsLen := len(gids)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -138,7 +130,7 @@ func (s *Scheduler) worker() {
 			s.log.Errorf("scheduler get from ringbuffer failed: %v", err)
 			return
 		}
-		gid := g.(RaftGroupID)
+		gid := g.(ibabuza.RaftGroupID)
 		s.mu.Lock()
 		oldState, ok := s.groupState[gid]
 		s.groupState[gid] = internalState{}
@@ -148,6 +140,11 @@ func (s *Scheduler) worker() {
 		}
 		if oldState.state&StateProposal == StateProposal {
 			s.raftProcessor.ProcessProposal(gid)
+			oldState.state |= StateReady
+		}
+
+		if oldState.state&StateConfigChange == StateConfigChange {
+			s.raftProcessor.ProcessConfigChange(gid)
 			oldState.state |= StateReady
 		}
 

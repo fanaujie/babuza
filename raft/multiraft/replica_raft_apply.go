@@ -1,0 +1,134 @@
+package multiraft
+
+import (
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	babuza "github.com/fanaujie/babuza/raft"
+	"go.etcd.io/etcd/raft/v3"
+	"go.etcd.io/etcd/raft/v3/raftpb"
+)
+
+func (r *Replica) doApplyJob(applyData *applyEntry) {
+	defer poolReleaseApplyEntry(applyData)
+
+	r.applySnapshot(applyData.snapshot)
+	if r.applyEntries(applyData.entries) {
+		//TODO: remove self
+		return
+	}
+	if r.status.GetAppliedIndex()-r.status.GetSnapshotIndex() < r.config.SnapshotCount {
+		return
+	}
+	term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
+	ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.session)
+	if err != nil {
+		r.logger.Panicf("gid[%d] raft[id=%d]: create snapshot context failed: %v", r.raftGroup.ID,
+			r.cluster.LocalPeerID(), err)
+	}
+	r.triggerSnapshot(ctx, nil)
+}
+
+func (r *Replica) applySnapshot(snap raftpb.Snapshot) {
+	if raft.IsEmptySnap(snap) {
+		return
+	}
+	if snap.Metadata.Index <= r.status.GetAppliedIndex() {
+		r.logger.Panicf("gid[%d] raft[id=%d]: apply snapshot index %d <= applied index %d", r.raftGroup.ID,
+			r.cluster.LocalPeerID(), snap.Metadata.Index, r.status.GetAppliedIndex())
+	}
+	if err := r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.session); err != nil {
+		r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.cluster.LocalPeerID(), err)
+	}
+	//r.trans.RemovePeers()
+	for _, p := range r.cluster.Peers() {
+		if p.RaftPeerAttr.Id == r.cluster.ClusterId() {
+			continue
+		}
+		//	r.trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)
+	}
+	r.logger.Infof("raft[id=%d]: applyEntry done for apply snapshot to storage (snapshot index=%d)",
+		r.cluster.LocalPeerID(), snap.Metadata.Index)
+
+	r.status.SetAppliedTerm(snap.Metadata.Term)
+	r.status.SetAppliedIndex(snap.Metadata.Index)
+	r.status.SetSnapshotIndex(snap.Metadata.Index)
+	r.status.SetConfState(snap.Metadata.ConfState)
+	r.storage.SetStateMachineAppliedIndex(snap.Metadata.Index)
+}
+
+func (r *Replica) applyEntries(entries []raftpb.Entry) bool {
+	removeSelf := false
+	defer func() {
+		appliedIndex := r.status.GetAppliedIndex()
+		r.completionReplier.MarkCompleted(appliedIndex)
+	}()
+	for pos := 0; pos < len(entries); pos++ {
+		if removeSelf {
+			break
+		}
+		entry := entries[pos]
+		if len(entry.Data) == 0 {
+			r.appliedFacade.ApplyNilEntryInNewTerm(entry.Index, entry.Term)
+		} else {
+			switch entry.Type {
+			case raftpb.EntryNormal:
+				toApplyEntry := r.appliedFacade.ApplyNormalEntry(entry)
+				if toApplyEntry != nil {
+					r.storage.Apply(toApplyEntry)
+				}
+			case raftpb.EntryConfChange:
+				removeSelf = r.appliedFacade.ApplyConfChangeEntry(entry)
+				if removeSelf {
+					break
+				}
+			default:
+				r.logger.Panicf("gid[%d] raft[id=%d]: not support raft toApplyEntry type %d", r.raftGroup.ID,
+					r.cluster.LocalPeerID(), uint64(entry.Type))
+			}
+		}
+	}
+	return removeSelf
+}
+
+func (r *Replica) triggerSnapshot(snapCtx babuza.InternalStorageSnapshotContext, snapshotResultCh chan babuza.SnapshotResult) {
+	r.status.SetSnapshotIndex(snapCtx.Index())
+	doSnapshot := func() {
+		metadata, err := r.doSnapshot(snapCtx)
+		if err != nil {
+			r.logger.Panicf("raft[id=%d]: do snapshot failed: %v", r.cluster.LocalPeerID(), err)
+		}
+		r.logger.Infof("raft[id=%d]: do snapshot done (index=%d)", r.cluster.LocalPeerID(), metadata.Snapshot.Metadata.Index)
+		if snapshotResultCh != nil {
+			snapshotResultCh <- babuza.NewSnapshotResult(metadata, err)
+		}
+	}
+	if !r.storage.SupportConcurrentSnapshot() {
+		doSnapshot()
+	} else {
+		r.closer.Run(func() {
+			doSnapshot()
+		})
+	}
+
+}
+
+func (r *Replica) doSnapshot(snapCtx babuza.InternalStorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
+	metadata, err := r.storage.SaveStateMachineSnapshot(snapCtx)
+	if err != nil {
+		return babuzapb.SnapshotMetadata{}, err
+	}
+	if err = r.storage.Save(raftpb.HardState{}, nil, metadata.Snapshot); err != nil {
+		return babuzapb.SnapshotMetadata{}, err
+	}
+	inflight := r.status.GetInflightSnapshots()
+	if inflight > 0 {
+		r.logger.Warningf("raft[id=%d]: inflight snapshot counts=%d, skip compaction", r.cluster.LocalPeerID(), inflight)
+		return metadata, nil
+	} else if inflight < 0 {
+		r.logger.Fatalf("raft[id=%d]: inflight snapshot counts=%d is less than zero ", r.cluster.LocalPeerID(), inflight)
+	}
+
+	if err = r.storage.CompactAndReleaseSnapshot(snapCtx.Index(), metadata.Snapshot); err != nil {
+		return babuzapb.SnapshotMetadata{}, err
+	}
+	return metadata, nil
+}
