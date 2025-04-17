@@ -13,13 +13,8 @@ type applyEntryToStateMachine struct {
 	notifyCh chan struct{}
 }
 
-type snapshotResult struct {
-	metadata babuzapb.SnapshotMetadata
-	err      error
-}
-
 type manualSnapshot struct {
-	resultCh chan snapshotResult
+	resultCh chan SnapshotResult
 }
 
 func (r *Raft) processStateMachine() {
@@ -31,7 +26,7 @@ func (r *Raft) processStateMachine() {
 			term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
 			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionMgr)
 			if err != nil {
-				s.resultCh <- snapshotResult{
+				s.resultCh <- SnapshotResult{
 					err: err,
 				}
 				r.logger.Panicf("raft[id=%d]: create manual snapshot context failed: %v", r.cluster.ClusterId(), err)
@@ -159,7 +154,7 @@ func (r *Raft) doSnapshot(snapCtx InternalStorageSnapshotContext) (babuzapb.Snap
 	return metadata, nil
 }
 
-func (r *Raft) triggerSnapshot(snapCtx InternalStorageSnapshotContext, snapshotResultCh chan snapshotResult) {
+func (r *Raft) triggerSnapshot(snapCtx InternalStorageSnapshotContext, snapshotResultCh chan SnapshotResult) {
 	r.status.SetSnapshotIndex(snapCtx.Index())
 	doSnapshot := func() {
 		metadata, err := r.doSnapshot(snapCtx)
@@ -168,7 +163,7 @@ func (r *Raft) triggerSnapshot(snapCtx InternalStorageSnapshotContext, snapshotR
 		}
 		r.logger.Infof("raft[id=%d]: do snapshot done (index=%d)", r.cluster.ClusterId(), metadata.Snapshot.Metadata.Index)
 		if snapshotResultCh != nil {
-			snapshotResultCh <- snapshotResult{
+			snapshotResultCh <- SnapshotResult{
 				metadata: metadata,
 				err:      err,
 			}

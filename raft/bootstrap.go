@@ -19,7 +19,7 @@ type BootstrapRaftCluster struct {
 	node             raft.Node
 	sessionMgr       ibabuza.SessionManager
 	trans            ibabuza.Transport
-	status           InternalStatus
+	status           ibabuza.Status
 	logger           ibabuza.Logger
 	metricsCollector ibabuza.MetricsCollector
 }
@@ -215,6 +215,7 @@ func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNod
 	}
 	raftCfg := cfg.convertToRaftConfig(logger, entryStorage)
 	if cfg.Join {
+		// as a learner node will not start raft node
 		return raftNode.Restart(raftCfg)
 	}
 	peers, err = configuration.ToRaftPeers()
@@ -225,7 +226,7 @@ func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNod
 }
 
 func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cluster, sessions ibabuza.SessionManager,
-	storage InternalStorage, trans ibabuza.Transport, status InternalStatus, logger ibabuza.Logger) (raft.Node, error) {
+	storage InternalStorage, trans ibabuza.Transport, status ibabuza.Status, logger ibabuza.Logger) (raft.Node, error) {
 
 	//TODO: verify snap and wal match
 	walSnapshots, err := storage.FindSnapshotFromWal()

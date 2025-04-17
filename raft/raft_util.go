@@ -48,7 +48,7 @@ func (r *Raft) proposeConfChange(ctx context.Context, replyId uint64, confChange
 		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.ClusterId(), err)
 		return nil, err
 	}
-	return newProposalResult(ctx, r.closer, ch), nil
+	return NewProposalResult(ctx, r.closer, ch), nil
 }
 
 func (r *Raft) learnerReady(learnerId uint64) error {

@@ -5,7 +5,7 @@ import (
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
-func encodeRegisterSessionRequest(replyId uint64) ([]byte, error) {
+func EncodeRegisterSessionRequest(replyId uint64) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
 			ReplyId: replyId,
@@ -19,7 +19,7 @@ func encodeRegisterSessionRequest(replyId uint64) ([]byte, error) {
 	return data, nil
 }
 
-func encodePubAppServiceAddressesRequest(replyId, peerId uint64, addresses []string) ([]byte, error) {
+func EncodePubAppServiceAddressesRequest(replyId, peerId uint64, addresses []string) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
 			ReplyId: replyId,
@@ -36,7 +36,7 @@ func encodePubAppServiceAddressesRequest(replyId, peerId uint64, addresses []str
 	return data, nil
 }
 
-func encodeClusterConfigurationChange(replyId uint64, session ClientSession, changeType raftpb.ConfChangeType,
+func EncodeClusterConfigurationChange(replyId uint64, session ClientSession, changeType raftpb.ConfChangeType,
 	raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) (raftpb.ConfChange, error) {
 	req := babuzapb.ConfChangeRequest{
 		Context: babuzapb.RequestContext{
@@ -57,7 +57,7 @@ func encodeClusterConfigurationChange(replyId uint64, session ClientSession, cha
 	return raftpb.ConfChange{Type: changeType, NodeID: raftPeerAttr.Id, Context: data}, nil
 }
 
-func encodeProposedLog(replyId uint64, session ClientSession, log []byte) ([]byte, error) {
+func EncodeProposedLog(replyId uint64, session ClientSession, log []byte) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
 			ReplyId: replyId,

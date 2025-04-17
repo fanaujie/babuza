@@ -3,7 +3,6 @@ package raft
 import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 )
@@ -46,27 +45,6 @@ type InternalStorage interface {
 	GetStateMachine() ibabuza.BaseStateMachine
 }
 
-//type StateMachineAdaptor interface {
-//	Open(snapshotIndex uint64, reader StateMachineSnapshotReader) error
-//	Apply(it Iterator)
-//	GetAppliedIndex() uint64
-//	SetAppliedIndex(index uint64)
-//	SupportConcurrentSnapshot() bool
-//	PrepareSnapshotContext() (StateMachineSnapshotContext, error)
-//	ReleaseSnapshotContext(ctx StateMachineSnapshotContext) error
-//	SaveSnapshot(ctx StateMachineSnapshotContext, w StateMachineSnapshotWriter) error
-//	RestoreFromSnapshot(r StateMachineSnapshotReader) error
-//	GetApplyResultSerializer() ResponseSerializer
-//	GetStateMachine() BaseStateMachine
-//}
-
-type InternalEntriesIterator interface {
-	SetEntries(entries []raftpb.Entry)
-	ReleaseEntries()
-	HasRemovedSelf() bool
-	Next() ibabuza.Entry
-}
-
 type InternalIdGenerator interface {
 	Next() uint64
 }
@@ -80,29 +58,6 @@ type InternalResultReplier interface {
 type InternalCompletionReplier interface {
 	AcquireCompletionChan(id uint64) chan struct{}
 	MarkCompleted(id uint64)
-}
-
-type InternalStatus interface {
-	SetHardStateTerm(v uint64)
-	GetHardStateTerm() uint64
-	SetCommittedIndex(v uint64)
-	GetCommittedIndex() uint64
-	SetAppliedIndex(v uint64)
-	GetAppliedIndex() uint64
-	SetAppliedTerm(v uint64)
-	GetAppliedTerm() uint64
-	SetSnapshotIndex(v uint64)
-	GetSnapshotIndex() uint64
-	AddInflightSnapshots(v int64)
-	GetInflightSnapshots() int64
-	SetConfState(raftpb.ConfState)
-	CloneConfState() raftpb.ConfState
-	SetSoftState(raft.SoftState)
-	CloneSoftState() raft.SoftState
-	SetLeader(bool)
-	IsLeader() bool
-	MarkPublishServiceDone()
-	IsLocalPeerPublishServiceMarkDone() bool
 }
 
 type InternalAppliedFacade interface {

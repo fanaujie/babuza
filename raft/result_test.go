@@ -18,7 +18,7 @@ func TestRaft_ProposalResult(t *testing.T) {
 	ch := make(chan ibabuza.ApplyResult, 1)
 
 	t.Run("get proposalResult from pool", func(t *testing.T) {
-		r := newProposalResult(ctx, closer, ch)
+		r := NewProposalResult(ctx, closer, ch)
 		r.ar = ibabuza.ApplyResult{
 			LogIndex: 100,
 			Response: "bar",
@@ -27,7 +27,7 @@ func TestRaft_ProposalResult(t *testing.T) {
 		assert.Nil(t, r.resulCh)
 		assert.Nil(t, r.closer)
 		assert.Nil(t, r.ctx)
-		r = newProposalResult(ctx, closer, ch)
+		r = NewProposalResult(ctx, closer, ch)
 		assert.Nil(t, r.ar.Response)
 		r.Release()
 	})
@@ -37,7 +37,7 @@ func TestRaft_ProposalResult(t *testing.T) {
 			LogIndex: 100,
 			Response: "bar",
 		}
-		r := newProposalResult(ctx, closer, ch)
+		r := NewProposalResult(ctx, closer, ch)
 		assert.Nil(t, r.Wait())
 		assert.Equal(t, uint64(100), r.LogIndex())
 		ar := r.Response()
@@ -54,7 +54,7 @@ func TestRaft_ProposalResult(t *testing.T) {
 			LogIndex: 100,
 			Error:    e,
 		}
-		r := newProposalResult(ctx, closer, ch)
+		r := NewProposalResult(ctx, closer, ch)
 		assert.Equal(t, e, r.Wait())
 		assert.Equal(t, uint64(100), r.LogIndex())
 		ar := r.Response()
@@ -63,7 +63,7 @@ func TestRaft_ProposalResult(t *testing.T) {
 		r.Release()
 	})
 	t.Run("close", func(t *testing.T) {
-		r := newProposalResult(ctx, closer, ch)
+		r := NewProposalResult(ctx, closer, ch)
 		closer.Close()
 		assert.Equal(t, ErrStopped, r.Wait())
 		r.Release()
@@ -85,7 +85,7 @@ func TestRaft_ManualSnapshotResult(t *testing.T) {
 			},
 		},
 	}
-	ch := make(chan snapshotResult, 1)
+	ch := make(chan SnapshotResult, 1)
 	t.Run("success", func(t *testing.T) {
 		r := manualSnapshotResult{
 			ctx:     ctx,
@@ -94,7 +94,7 @@ func TestRaft_ManualSnapshotResult(t *testing.T) {
 			resulCh: ch,
 		}
 
-		ch <- snapshotResult{
+		ch <- SnapshotResult{
 			metadata: storage.snapMetadata,
 		}
 		assert.Nil(t, r.Wait())
@@ -112,7 +112,7 @@ func TestRaft_ManualSnapshotResult(t *testing.T) {
 			resulCh: ch,
 		}
 		e := errors.New("bar")
-		ch <- snapshotResult{
+		ch <- SnapshotResult{
 			err: e,
 		}
 		assert.Equal(t, e, mr.Wait())

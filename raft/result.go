@@ -5,6 +5,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
+	"go.etcd.io/etcd/raft/v3"
 	"math/rand"
 	"sync"
 	"time"
@@ -39,62 +40,67 @@ var (
 	proposalResPool sync.Pool
 )
 
-type errorResult struct {
+type SnapshotResult struct {
+	metadata babuzapb.SnapshotMetadata
+	err      error
+}
+
+type ErrorResult struct {
 	e error
 }
 
-func newErrorResult(err error) *errorResult {
-	return &errorResult{e: err}
+func NewErrorResult(err error) *ErrorResult {
+	return &ErrorResult{e: err}
 }
 
-func (er *errorResult) Wait() error {
+func (er *ErrorResult) Wait() error {
 	return er.e
 }
 
-func (er *errorResult) Response() any {
+func (er *ErrorResult) Response() any {
 	return nil
 }
 
-func (er *errorResult) LogIndex() uint64 {
+func (er *ErrorResult) LogIndex() uint64 {
 	return 0
 }
 
-func (er *errorResult) Release() {
+func (er *ErrorResult) Release() {
 	er.e = nil
 }
 
-func (er *errorResult) SnapshotMetadata() babuzapb.SnapshotMetadata {
+func (er *ErrorResult) SnapshotMetadata() babuzapb.SnapshotMetadata {
 	return babuzapb.SnapshotMetadata{}
 }
 
-func (er *errorResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
+func (er *ErrorResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
 	return nil, er.e
 }
 
-type proposalResult struct {
+type ProposalResult struct {
 	ctx     context.Context
 	closer  *syncutil.Closer
 	resulCh chan ibabuza.ApplyResult
 	ar      ibabuza.ApplyResult
 }
 
-func newProposalResult(ctx context.Context, closer *syncutil.Closer, resultCh chan ibabuza.ApplyResult) *proposalResult {
+func NewProposalResult(ctx context.Context, closer *syncutil.Closer, resultCh chan ibabuza.ApplyResult) ProposedResult {
 	res := proposalResPool.Get()
 	if res == nil {
-		return &proposalResult{
+		return &ProposalResult{
 			ctx:     ctx,
 			closer:  closer,
 			resulCh: resultCh,
 		}
 	}
-	pr := res.(*proposalResult)
+	pr := res.(*ProposalResult)
 	pr.ctx = ctx
 	pr.closer = closer
 	pr.resulCh = resultCh
 	return pr
 }
 
-func (p *proposalResult) Wait() error {
+func (p *ProposalResult) Wait() error {
 	if p.resulCh == nil {
 		panic("proposalResult already released")
 	}
@@ -103,7 +109,7 @@ func (p *proposalResult) Wait() error {
 	}
 	select {
 	case <-p.closer.CloseCh():
-		return ErrStopped
+		return raft.ErrStopped
 	case <-p.ctx.Done():
 		return p.ctx.Err()
 	case result := <-p.resulCh:
@@ -115,7 +121,7 @@ func (p *proposalResult) Wait() error {
 	}
 }
 
-func (p *proposalResult) Response() any {
+func (p *ProposalResult) Response() any {
 	if p.resulCh == nil {
 		panic("proposalResult already released")
 	}
@@ -125,7 +131,7 @@ func (p *proposalResult) Response() any {
 	return p.ar.Response
 }
 
-func (p *proposalResult) LogIndex() uint64 {
+func (p *ProposalResult) LogIndex() uint64 {
 	if p.resulCh == nil {
 		panic("proposalResult already released")
 	}
@@ -135,7 +141,7 @@ func (p *proposalResult) LogIndex() uint64 {
 	return p.ar.LogIndex
 }
 
-func (p *proposalResult) Release() {
+func (p *ProposalResult) Release() {
 	p.resulCh = nil
 	p.ctx = nil
 	p.closer = nil
@@ -143,14 +149,27 @@ func (p *proposalResult) Release() {
 	proposalResPool.Put(p)
 }
 
+type SnapshotReader interface {
+	CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error)
+}
+
 type manualSnapshotResult struct {
 	ctx     context.Context
 	closer  *syncutil.Closer
-	storage InternalStorage
-	result  snapshotResult
+	reader  SnapshotReader
+	result  SnapshotResult
 	done    bool
-	resulCh chan snapshotResult
-	babuza  *Raft
+	resulCh chan SnapshotResult
+}
+
+func NewManualSnapshotResult(ctx context.Context, closer *syncutil.Closer, reader SnapshotReader,
+	resultCh chan SnapshotResult) ManualSnapshotResult {
+	return &manualSnapshotResult{
+		ctx:     ctx,
+		closer:  closer,
+		reader:  reader,
+		resulCh: resultCh,
+	}
 }
 
 func (m *manualSnapshotResult) Wait() error {
@@ -159,7 +178,7 @@ func (m *manualSnapshotResult) Wait() error {
 	}
 	select {
 	case <-m.closer.CloseCh():
-		m.result.err = ErrStopped
+		m.result.err = raft.ErrStopped
 		return m.result.err
 	case <-m.ctx.Done():
 		m.result.err = m.ctx.Err()
@@ -175,14 +194,14 @@ func (m *manualSnapshotResult) SnapshotMetadata() babuzapb.SnapshotMetadata {
 }
 
 func (m *manualSnapshotResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
-	return m.babuza.storage.CreateSnapshotReader(m.result.metadata.Snapshot.Metadata.Index)
+	return m.reader.CreateSnapshotReader(m.result.metadata.Snapshot.Metadata.Index)
 }
 
 type shutdownResult struct {
 	resulCh chan struct{}
 }
 
-func newShutdownResult(raftStop func()) *shutdownResult {
+func NewShutdownResult(raftStop func()) ShutdownResult {
 	r := &shutdownResult{
 		resulCh: make(chan struct{}),
 	}
@@ -209,8 +228,9 @@ type transferLeaderResult struct {
 	resulCh               chan error
 }
 
-func newTransferLeaderResult(ctx context.Context, transferee uint64, closer *syncutil.Closer, checkNewLeaderTimeout time.Duration,
-	getLeaderId func() uint64) *transferLeaderResult {
+func NewTransferLeaderResult(ctx context.Context, transferee uint64, closer *syncutil.Closer,
+	checkNewLeaderTimeout time.Duration,
+	getLeaderId func() uint64) TransferLeaderResult {
 	r := &transferLeaderResult{
 		transferee:            transferee,
 		ctx:                   ctx,
@@ -229,7 +249,7 @@ func (r *transferLeaderResult) do() {
 	for r.getLeaderId() != r.transferee {
 		select {
 		case <-r.closer.CloseCh():
-			r.resulCh <- ErrStopped
+			r.resulCh <- raft.ErrStopped
 			return
 		case <-r.ctx.Done():
 			r.resulCh <- r.ctx.Err()

@@ -90,7 +90,7 @@ type Raft struct {
 	resultReplier             InternalResultReplier
 	completionReplier         InternalCompletionReplier
 	raftNode                  raft.Node
-	status                    InternalStatus
+	status                    ibabuza.Status
 	trans                     ibabuza.Transport
 	storage                   InternalStorage
 	logger                    ibabuza.Logger
@@ -164,86 +164,86 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 
 func (r *Raft) RegisterSession(ctx context.Context) ProposedResult {
 	replyId := r.idGenerator.Next()
-	proposalData, err := encodeRegisterSessionRequest(replyId)
+	proposalData, err := EncodeRegisterSessionRequest(replyId)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	ch, err := r.propose(ctx, replyId, proposalData)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
-	return newProposalResult(ctx, r.closer, ch)
+	return NewProposalResult(ctx, r.closer, ch)
 }
 
 func (r *Raft) AddVotingPeer(ctx context.Context, session ClientSession, raftPeerAttr babuzapb.RaftPeerAttribute) ProposedResult {
 
 	if r.config.DisableProposalForwarding && r.status.IsLeader() == false {
-		return newErrorResult(ErrNotLeader)
+		return NewErrorResult(ErrNotLeader)
 	}
 	if raftPeerAttr.IsLearner {
-		return newErrorResult(ErrLearnerCanNotVote)
+		return NewErrorResult(ErrLearnerCanNotVote)
 	}
 	replyId := r.idGenerator.Next()
-	confChange, err := encodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeAddNode,
+	confChange, err := EncodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeAddNode,
 		raftPeerAttr, false)
 	if err != nil {
-		newErrorResult(err)
+		NewErrorResult(err)
 	}
 	ar, err := r.proposeConfChange(ctx, replyId, confChange)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	return ar
 }
 
 func (r *Raft) RemovePeer(ctx context.Context, session ClientSession, peerId uint64) ProposedResult {
 	if r.config.DisableProposalForwarding && r.status.IsLeader() == false {
-		return newErrorResult(ErrNotLeader)
+		return NewErrorResult(ErrNotLeader)
 	}
 	replyId := r.idGenerator.Next()
-	confChange, err := encodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeRemoveNode,
+	confChange, err := EncodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeRemoveNode,
 		babuzapb.RaftPeerAttribute{Id: peerId}, false)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	ar, err := r.proposeConfChange(ctx, replyId, confChange)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	return ar
 }
 
 func (r *Raft) UpdatePeer(ctx context.Context, session ClientSession, raftPeerAttr babuzapb.RaftPeerAttribute) ProposedResult {
 	if r.config.DisableProposalForwarding && r.status.IsLeader() == false {
-		return newErrorResult(ErrNotLeader)
+		return NewErrorResult(ErrNotLeader)
 	}
 	replyId := r.idGenerator.Next()
-	confChange, err := encodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeUpdateNode, raftPeerAttr, false)
+	confChange, err := EncodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeUpdateNode, raftPeerAttr, false)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	ar, err := r.proposeConfChange(ctx, replyId, confChange)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	return ar
 }
 
 func (r *Raft) AddLearner(ctx context.Context, session ClientSession, raftPeerAttr babuzapb.RaftPeerAttribute) ProposedResult {
 	if r.config.DisableProposalForwarding && r.status.IsLeader() == false {
-		return newErrorResult(ErrNotLeader)
+		return NewErrorResult(ErrNotLeader)
 	}
 	if raftPeerAttr.IsLearner == false {
-		return newErrorResult(ErrVotingMemberCanNotPromote)
+		return NewErrorResult(ErrVotingMemberCanNotPromote)
 	}
 	replyId := r.idGenerator.Next()
-	confChange, err := encodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeAddLearnerNode, raftPeerAttr, false)
+	confChange, err := EncodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeAddLearnerNode, raftPeerAttr, false)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	ar, err := r.proposeConfChange(ctx, replyId, confChange)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	return ar
 }
@@ -263,7 +263,7 @@ func (r *Raft) PromoteLearner(ctx context.Context, session ClientSession, peerId
 			return nil, err
 		}
 		replyId := r.idGenerator.Next()
-		confChange, err := encodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeAddNode, babuzapb.RaftPeerAttribute{
+		confChange, err := EncodeClusterConfigurationChange(replyId, session, raftpb.ConfChangeAddNode, babuzapb.RaftPeerAttribute{
 			Id: peerId,
 		}, true)
 		if err != nil {
@@ -274,7 +274,7 @@ func (r *Raft) PromoteLearner(ctx context.Context, session ClientSession, peerId
 	if err != nil {
 		if !errors.Is(err, ErrNotLeader) {
 			r.metricsCollector.IncrementLearnerPromoteFailed()
-			return newErrorResult(err)
+			return NewErrorResult(err)
 		}
 		// forward request to leader
 	} else {
@@ -282,53 +282,50 @@ func (r *Raft) PromoteLearner(ctx context.Context, session ClientSession, peerId
 		return result
 	}
 	//TODO: forward request to leader when current node is not the leader
-	return newErrorResult(ErrNotLeader)
+	return NewErrorResult(ErrNotLeader)
 }
 
 func (r *Raft) TransferLeader(ctx context.Context, transferee uint64) TransferLeaderResult {
 	toPeer, err := r.cluster.Peer(transferee)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	if toPeer.RaftPeerAttr.IsLearner {
-		return newErrorResult(ErrLearnerCanNotSwitchLeadership)
+		return NewErrorResult(ErrLearnerCanNotSwitchLeadership)
 	}
 	r.raftNode.TransferLeadership(ctx, r.config.LocalPeerId, transferee)
-	res := newTransferLeaderResult(ctx, transferee, r.closer, time.Second,
+	return NewTransferLeaderResult(ctx, transferee, r.closer, time.Second,
 		r.getLeaderId)
-	go res.do()
-	return res
 }
 
 func (r *Raft) Propose(ctx context.Context, session ClientSession, log []byte) ProposedResult {
 	replyId := r.idGenerator.Next()
-	proposalData, err := encodeProposedLog(replyId, session, log)
+	proposalData, err := EncodeProposedLog(replyId, session, log)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	ch, err := r.propose(ctx, replyId, proposalData)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
-	return newProposalResult(ctx, r.closer, ch)
+	return NewProposalResult(ctx, r.closer, ch)
 }
 
 func (r *Raft) ManualSnapshot(ctx context.Context) ManualSnapshotResult {
-	ch := make(chan snapshotResult, 1)
+	ch := make(chan SnapshotResult, 1)
 
 	select {
 	case <-r.closer.CloseCh():
-		return newErrorResult(ErrStopped)
+		return NewErrorResult(ErrStopped)
 	case r.manualSnapshotCh <- manualSnapshot{
 		resultCh: ch}:
 	}
 	return &manualSnapshotResult{
 		ctx:     ctx,
 		closer:  r.closer,
-		storage: r.storage,
+		reader:  r.storage,
 		done:    false,
 		resulCh: ch,
-		babuza:  r,
 	}
 }
 
@@ -363,14 +360,14 @@ func (r *Raft) Shutdown() ShutdownResult {
 	defer r.shutdownMu.Unlock()
 	select {
 	case <-r.removeSelfCh:
-		return newErrorResult(ErrStopped)
+		return NewErrorResult(ErrStopped)
 	default:
 		select {
 		case <-r.shutdownCh:
-			return newErrorResult(ErrStopped)
+			return NewErrorResult(ErrStopped)
 		default:
 			close(r.shutdownCh)
-			return newShutdownResult(r.stop)
+			return NewShutdownResult(r.stop)
 		}
 	}
 }

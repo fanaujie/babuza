@@ -81,15 +81,15 @@ func (r *Raft) findLeader(ctx context.Context, checkLeaderTimeout time.Duration)
 }
 
 func (r *Raft) proposalPubAppService(ctx context.Context, replyId uint64, appServiceAddresses []string) ProposedResult {
-	proposalData, err := encodePubAppServiceAddressesRequest(replyId, r.config.LocalPeerId, appServiceAddresses)
+	proposalData, err := EncodePubAppServiceAddressesRequest(replyId, r.config.LocalPeerId, appServiceAddresses)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
 	ch, err := r.propose(ctx, replyId, proposalData)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
-	return newProposalResult(ctx, r.closer, ch)
+	return NewProposalResult(ctx, r.closer, ch)
 }
 
 func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderId, replyId uint64,
