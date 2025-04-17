@@ -87,7 +87,7 @@ func (r *Raft) applyEntries(entries []raftpb.Entry) bool {
 					break
 				}
 			default:
-				r.logger.Panicf("raft[id=%d]: not support raft toApplyEntry type %d", r.cluster.ClusterId(), uint64(entry.Type))
+				r.logger.Panicf("raft[id=%d]: not support raft toApplyEntry type %d", r.cluster.LocalPeerID(), uint64(entry.Type))
 			}
 		}
 	}
@@ -99,7 +99,7 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 		return
 	}
 	if snap.Metadata.Index <= r.status.GetAppliedIndex() {
-		r.logger.Panicf("raft[id=%d]: apply snapshot index %d <= applied index %d", r.cluster.ClusterId(), snap.Metadata.Index, r.status.GetAppliedIndex())
+		r.logger.Panicf("raft[id=%d]: apply snapshot index %d <= applied index %d", r.cluster.LocalPeerID(), snap.Metadata.Index, r.status.GetAppliedIndex())
 	}
 	if err := func() error {
 		now := time.Now()
@@ -110,7 +110,7 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 		}()
 		return r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.sessionMgr)
 	}(); err != nil {
-		r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.cluster.ClusterId(), err)
+		r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.cluster.LocalPeerID(), err)
 	}
 	r.trans.RemovePeers()
 	for _, p := range r.cluster.Peers() {
@@ -120,7 +120,7 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 		r.trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)
 	}
 	r.logger.Infof("raft[id=%d]: applyEntry done for apply snapshot to storage (snapshot index=%d)",
-		r.config.LocalPeerId, snap.Metadata.Index)
+		r.cluster.LocalPeerID(), snap.Metadata.Index)
 
 	r.status.SetAppliedTerm(snap.Metadata.Term)
 	r.status.SetAppliedIndex(snap.Metadata.Index)
@@ -141,10 +141,10 @@ func (r *Raft) doSnapshot(snapCtx InternalStorageSnapshotContext) (babuzapb.Snap
 	}
 	inflight := r.status.GetInflightSnapshots()
 	if inflight > 0 {
-		r.logger.Warningf("raft[id=%d]: inflight snapshot counts=%d, skip compaction", r.cluster.ClusterId(), inflight)
+		r.logger.Warningf("raft[id=%d]: inflight snapshot counts=%d, skip compaction", r.cluster.LocalPeerID(), inflight)
 		return metadata, nil
 	} else if inflight < 0 {
-		r.logger.Fatalf("raft[id=%d]: inflight snapshot counts=%d is less than zero ", r.cluster.ClusterId(), inflight)
+		r.logger.Fatalf("raft[id=%d]: inflight snapshot counts=%d is less than zero ", r.cluster.LocalPeerID(), inflight)
 	}
 
 	if err = r.storage.CompactAndReleaseSnapshot(snapCtx.Index(), metadata.Snapshot); err != nil {
@@ -158,9 +158,9 @@ func (r *Raft) triggerSnapshot(snapCtx InternalStorageSnapshotContext, snapshotR
 	doSnapshot := func() {
 		metadata, err := r.doSnapshot(snapCtx)
 		if err != nil {
-			r.logger.Panicf("raft[id=%d]: do snapshot failed: %v", r.cluster.ClusterId(), err)
+			r.logger.Panicf("raft[id=%d]: do snapshot failed: %v", r.cluster.LocalPeerID(), err)
 		}
-		r.logger.Infof("raft[id=%d]: do snapshot done (index=%d)", r.cluster.ClusterId(), metadata.Snapshot.Metadata.Index)
+		r.logger.Infof("raft[id=%d]: do snapshot done (index=%d)", r.cluster.LocalPeerID(), metadata.Snapshot.Metadata.Index)
 		if snapshotResultCh != nil {
 			snapshotResultCh <- SnapshotResult{
 				metadata: metadata,

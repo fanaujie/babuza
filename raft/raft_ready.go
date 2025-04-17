@@ -25,7 +25,7 @@ func (r *Raft) processRaftReady() {
 				select {
 				case r.readStateCh <- rd.ReadStates[len(rd.ReadStates)-1]:
 				case <-time.After(time.Second):
-					r.logger.Warningf("raft[id=%d] timed out sending read state. timeout=%d", r.config.LocalPeerId, time.Second)
+					r.logger.Warningf("raft[id=%d] timed out sending read state. timeout=%d", r.cluster.LocalPeerID(), time.Second)
 				case <-r.closer.CloseCh():
 					return
 				}
@@ -35,7 +35,7 @@ func (r *Raft) processRaftReady() {
 			waitWALSync := shouldWaitWALSync(rd)
 			if waitWALSync {
 				if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
+					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.cluster.LocalPeerID(), err)
 				}
 			}
 
@@ -55,17 +55,17 @@ func (r *Raft) processRaftReady() {
 
 			if !waitWALSync {
 				if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
+					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.cluster.LocalPeerID(), err)
 				}
 			}
 
 			if !emptySnapshot {
 				if err := r.storage.ApplyAndReleaseSnapshot(rd.Snapshot); err != nil {
-					r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.config.LocalPeerId, err)
+					r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.cluster.LocalPeerID(), err)
 				}
 			}
 			if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
-				r.logger.Panicf("raft[id=%d]: append entries failed: %v", r.config.LocalPeerId, err)
+				r.logger.Panicf("raft[id=%d]: append entries failed: %v", r.cluster.LocalPeerID(), err)
 			}
 			if !isLeader {
 
