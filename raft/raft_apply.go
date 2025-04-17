@@ -10,7 +10,6 @@ import (
 type applyEntryToStateMachine struct {
 	entries  []raftpb.Entry
 	snapshot raftpb.Snapshot
-	notifyCh chan struct{}
 }
 
 type manualSnapshot struct {

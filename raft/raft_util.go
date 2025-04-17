@@ -24,7 +24,7 @@ func (r *Raft) propose(ctx context.Context, replyId uint64, proposalData []byte)
 		} else if errors.Is(err, raft.ErrStopped) {
 			err = ErrStopped
 		}
-		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.ClusterId(), err)
+		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.LocalPeerID(), err)
 		return nil, err
 	}
 	return ch, nil
@@ -45,7 +45,7 @@ func (r *Raft) proposeConfChange(ctx context.Context, replyId uint64, confChange
 		} else if errors.Is(err, raft.ErrStopped) {
 			err = ErrStopped
 		}
-		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.ClusterId(), err)
+		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.LocalPeerID(), err)
 		return nil, err
 	}
 	return NewProposalResult(ctx, r.closer, ch), nil
