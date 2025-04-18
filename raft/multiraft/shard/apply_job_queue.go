@@ -24,7 +24,7 @@ func NewApplyJobQueue(workerNum int, log ibabuza.Logger) *ApplyJobQueue {
 	return j
 }
 
-func (j *ApplyJobQueue) Put(groupID uint64, job ibabuza.MultiRaftApplyJob) error {
+func (j *ApplyJobQueue) Put(groupID uint64, job ibabuza.MultiRaftReplicaApplyJob) error {
 	return j.rb[int(groupID)%j.workerNum].Put(job)
 }
 
@@ -42,7 +42,7 @@ func (j *ApplyJobQueue) worker(shardID int, q *queue.Queue) {
 			return
 		}
 		for _, job := range v {
-			job.(ibabuza.MultiRaftApplyJob)()
+			job.(ibabuza.MultiRaftReplicaApplyJob)()
 		}
 	}
 }

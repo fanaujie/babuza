@@ -67,14 +67,14 @@ func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMes
 	mr.receivedSnapMsg[message.Index] = message
 
 	// Store snapshot data for validation
-	if message.FinishMessage != nil {
+	if message.FinishMessage.To != 0 {
 		mr.finishMsg = raftpb.Message{
 			Type:     raftpb.MsgSnap,
 			From:     message.From,
 			To:       message.To,
 			Snapshot: message.FinishMessage.Snapshot,
 		}
-	} else if message.ChunkMessage != nil {
+	} else if message.ChunkMessage.ContinueCrc32 != 0 {
 		if _, ok := mr.snapshotFileData[message.ChunkMessage.FileTag]; !ok {
 			mr.snapshotFileData[message.ChunkMessage.FileTag] = make([]byte, 0)
 		}
@@ -82,8 +82,8 @@ func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMes
 			mr.snapshotFileData[message.ChunkMessage.FileTag],
 			message.ChunkMessage.Data...,
 		)
-	} else if message.Metadata != nil {
-		mr.metadata = *message.Metadata
+	} else if message.Metadata.Files != nil {
+		mr.metadata = message.Metadata
 	}
 }
 

@@ -15,7 +15,7 @@ type Node struct {
 	config        NodeConfig
 	trans         ibabuza.MultiRaftTransport
 	scheduler     ibabuza.MultiRaftScheduler
-	applyJobQueue ibabuza.MultiRaftApplyJobQueue
+	applyJobQueue ibabuza.MultiRaftReplicaApplyJobQueue
 	log           ibabuza.Logger
 	multiStatus   ibabuza.MultiRaftStatus
 	replicaSet    struct {

@@ -22,3 +22,10 @@ type Peer interface {
 	UpdateRaftReport(report ibabuza.RaftStatusReporter)
 	Stop()
 }
+
+type MultiRaftPeer interface {
+	SendRaftMessage(msg babuzapb.MultiRaftMessage) error
+	SendSnapshot(snapMsg babuzapb.MultiRaftMessage, snapReader SnapshotFileReader)
+	UpdateRaftReport(report ibabuza.RaftStatusReporter)
+	Stop()
+}

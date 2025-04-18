@@ -19,7 +19,7 @@ type leaderChange struct {
 type Replica struct {
 	raftGroup            ibabuza.RaftGroup
 	config               ReplicaRaftConfig
-	applyJobQueue        ibabuza.MultiRaftApplyJobQueue
+	applyJobQueue        ibabuza.MultiRaftReplicaApplyJobQueue
 	cluster              ibabuza.Cluster
 	transport            ibabuza.MultiRaftTransport
 	status               ibabuza.Status

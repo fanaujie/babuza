@@ -28,14 +28,14 @@ type internalState struct {
 type Scheduler struct {
 	cfg           Config
 	rb            *queue.RingBuffer
-	raftProcessor ibabuza.MultiRaftStateProcessor
+	raftProcessor ibabuza.MultiRaftReplicaStateProcessor
 	log           ibabuza.Logger
 	mu            sync.Mutex
 	groupState    map[ibabuza.RaftGroupID]internalState
 	closer        *syncutil.Closer
 }
 
-func NewScheduler(cfg Config, raftProcessor ibabuza.MultiRaftStateProcessor, log ibabuza.Logger) *Scheduler {
+func NewScheduler(cfg Config, raftProcessor ibabuza.MultiRaftReplicaStateProcessor, log ibabuza.Logger) *Scheduler {
 	s := &Scheduler{
 		cfg:           cfg,
 		rb:            queue.NewRingBuffer(cfg.QueueSize),

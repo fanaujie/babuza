@@ -20,12 +20,12 @@ func (m *MockPeer) UpdatePeer() {
 	panic("implement me")
 }
 
-func (m *MockPeer) SendRaftMessage(msg *raftpb.Message) error {
+func (m *MockPeer) SendRaftMessage(msg raftpb.Message) error {
 	args := m.Called(msg)
 	return args.Error(0)
 }
 
-func (m *MockPeer) SendSnapshot(msg *raftpb.Message, snapReader peer.SnapshotFileReader) {
+func (m *MockPeer) SendSnapshot(msg raftpb.Message, snapReader peer.SnapshotFileReader) {
 	m.Called(msg, snapReader)
 }
 

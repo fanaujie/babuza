@@ -19,14 +19,14 @@ type MultiRaftScheduler interface {
 	Stop()
 }
 
-type MultiRaftApplyJob func()
+type MultiRaftReplicaApplyJob func()
 
-type MultiRaftApplyJobQueue interface {
-	Put(groupID RaftGroupID, job MultiRaftApplyJob) error
+type MultiRaftReplicaApplyJobQueue interface {
+	Put(groupID RaftGroupID, job MultiRaftReplicaApplyJob) error
 	Stop()
 }
 
-type MultiRaftStateProcessor interface {
+type MultiRaftReplicaStateProcessor interface {
 	ProcessTick(groupID RaftGroupID)
 	ProcessReady(groupID RaftGroupID)
 	ProcessStep(groupID RaftGroupID)
@@ -51,4 +51,14 @@ type MultiRaftTransport interface {
 	UpdatePeer(uint64, string)
 	RemovePeer(uint64)
 	RemovePeers()
+}
+
+type MultiSnapshotStorage interface {
+	CreateSnapshotReader(groupID RaftGroupID, snapshotIndex uint64) (SnapshotReader, error)
+}
+
+type MultiRaftNodeHandler interface {
+	RaftMessageHandler
+	RaftStatusReporter
+	MultiSnapshotStorage
 }
