@@ -49,12 +49,12 @@ func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cId := req.URL.Query().Get("clusterId")
+	cId := req.URL.Query().Get("clusterID")
 	if cId == "" {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
-	clusterId, err := strconv.ParseUint(cId, 10, 64)
+	clusterID, err := strconv.ParseUint(cId, 10, 64)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -80,9 +80,9 @@ func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	res := h.raft.GetClusterPeersRequest(babuzapb.GetClusterPeersRequest{
-		ClusterId: uint64(clusterId),
-		FromId:    uint64(fromId),
-		ToId:      uint64(toId),
+		ClusterID: uint64(clusterID),
+		From:      uint64(fromId),
+		To:        uint64(toId),
 	})
 	msgSize := res.Size()
 	byteSlice := allocator.Acquire(msgSize)

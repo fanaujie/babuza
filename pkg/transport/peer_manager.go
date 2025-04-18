@@ -30,41 +30,41 @@ func (m *ManagerImpl) GetPeer(id uint64) peer.Peer {
 	return p
 }
 
-func (m *ManagerImpl) AddPeer(peerId uint64, peerAddress string, factory PeerFactory) error {
+func (m *ManagerImpl) AddPeer(peerID uint64, peerAddress string, factory PeerFactory) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	_, ok := m.peers[peerId]
+	_, ok := m.peers[peerID]
 	if ok {
-		return fmt.Errorf("peer with id %d already exists", peerId)
+		return fmt.Errorf("peer with id %d already exists", peerID)
 	}
-	p := factory.CreatePeer(peerId)
-	m.peers[peerId] = p
-	m.addresses[peerId] = peerAddress
+	p := factory.CreatePeer(peerID)
+	m.peers[peerID] = p
+	m.addresses[peerID] = peerAddress
 
 	return nil
 }
 
-func (m *ManagerImpl) UpdatePeer(peerId uint64, peerAddress string) error {
+func (m *ManagerImpl) UpdatePeer(peerID uint64, peerAddress string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, ok := m.addresses[peerId]
+	_, ok := m.addresses[peerID]
 	if ok {
-		m.addresses[peerId] = peerAddress
+		m.addresses[peerID] = peerAddress
 		return nil
 	}
-	return fmt.Errorf("peer with id %d not found", peerId)
+	return fmt.Errorf("peer with id %d not found", peerID)
 }
 
-func (m *ManagerImpl) RemovePeer(peerId uint64) error {
+func (m *ManagerImpl) RemovePeer(peerID uint64) error {
 	m.mu.Lock()
-	p, ok := m.peers[peerId]
+	p, ok := m.peers[peerID]
 	if !ok {
 		m.mu.Unlock()
-		return fmt.Errorf("peer with id %d not found", peerId)
+		return fmt.Errorf("peer with id %d not found", peerID)
 	}
-	delete(m.peers, peerId)
-	delete(m.addresses, peerId)
+	delete(m.peers, peerID)
+	delete(m.addresses, peerID)
 	m.mu.Unlock()
 	p.Stop()
 	return nil

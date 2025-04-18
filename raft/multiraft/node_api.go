@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/cluster"
 	"github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/raft/multiraft/shard"
 	"github.com/pkg/errors"
@@ -56,10 +55,11 @@ func (n *Node) CreateRaftGroup(raftGroup ibabuza.RaftGroup, initGroupNodes map[u
 	if _, ok := n.replicaSet.replica[raftGroup.ID]; ok {
 		return errors.Errorf("raft group %d already exists", raftGroup.ID)
 	}
-	replica, err := BootstrapNewReplica(ReplicaConfig{}, nil, cluster.NewCluster(n.log), n.trans)
-	if err != nil {
-		return errors.Errorf("failed to bootstrap new replica(raft group id=%d): %v", raftGroup.ID, err)
-	}
+	replica := &Replica{}
+	// BootstrapNewReplica(ReplicaConfig{}, nil, cluster.NewCluster(n.log), n.trans)
+	//if err != nil {
+	//	return errors.Errorf("failed to bootstrap new replica(raft group id=%d): %v", raftGroup.ID, err)
+	//}
 	n.replicaSet.replica[raftGroup.ID] = replica
 	return nil
 }

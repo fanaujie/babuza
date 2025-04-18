@@ -28,7 +28,7 @@ func (r *Raft) processStateMachine() {
 				s.resultCh <- SnapshotResult{
 					err: err,
 				}
-				r.logger.Panicf("raft[id=%d]: create manual snapshot context failed: %v", r.cluster.ClusterId(), err)
+				r.logger.Panicf("raft[id=%d]: create manual snapshot context failed: %v", r.cluster.ClusterID(), err)
 				continue
 			}
 			r.triggerSnapshot(ctx, s.resultCh)
@@ -51,7 +51,7 @@ func (r *Raft) processStateMachine() {
 			term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
 			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionMgr)
 			if err != nil {
-				r.logger.Panicf("raft[id=%d]: create snapshot context failed: %v", r.cluster.ClusterId(), err)
+				r.logger.Panicf("raft[id=%d]: create snapshot context failed: %v", r.cluster.ClusterID(), err)
 			}
 			r.triggerSnapshot(ctx, nil)
 		}
@@ -114,7 +114,7 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 	}
 	r.trans.RemovePeers()
 	for _, p := range r.cluster.Peers() {
-		if p.RaftPeerAttr.Id == r.cluster.ClusterId() {
+		if p.RaftPeerAttr.Id == r.cluster.ClusterID() {
 			continue
 		}
 		r.trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)

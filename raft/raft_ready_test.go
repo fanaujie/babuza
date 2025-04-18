@@ -13,9 +13,9 @@ import (
 )
 
 func TestRaft_Ready(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = etcdRaftNode
 	tr.storage = &mockStorageMgr{}
 	tr.closer.Run(func() {
@@ -49,9 +49,9 @@ func TestRaft_Ready(t *testing.T) {
 }
 
 func TestRaft_Ready_FollowerWaitConfigChanged(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = etcdRaftNode
 	trans := &mockTransport{}
 	tr.trans = trans
@@ -67,7 +67,7 @@ func TestRaft_Ready_FollowerWaitConfigChanged(t *testing.T) {
 	t.Run("follower: waiting for votingPeersCfg changed ", func(t *testing.T) {
 		etcdRaftNode.readyCh <- raft.Ready{
 			SoftState: &raft.SoftState{
-				Lead:      localPeerId + 1,
+				Lead:      localPeerID + 1,
 				RaftState: raft.StateFollower,
 			},
 		}
@@ -109,7 +109,7 @@ func TestRaft_Ready_FollowerWaitConfigChanged(t *testing.T) {
 	t.Run("follower: no votingPeersCfg changed", func(t *testing.T) {
 		etcdRaftNode.readyCh <- raft.Ready{
 			SoftState: &raft.SoftState{
-				Lead:      localPeerId + 1,
+				Lead:      localPeerID + 1,
 				RaftState: raft.StateFollower,
 			},
 		}
@@ -142,9 +142,9 @@ func TestRaft_Ready_FollowerWaitConfigChanged(t *testing.T) {
 }
 
 func TestRaft_SendRaftMessage(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	raftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = raftNode
 	trans := &mockTransport{}
 	tr.trans = trans
@@ -203,7 +203,7 @@ func TestRaft_SendRaftMessage(t *testing.T) {
 		if tc.isLeader {
 			raftNode.readyCh <- raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId,
+					Lead:      localPeerID,
 					RaftState: raft.StateLeader,
 				},
 			}
@@ -211,7 +211,7 @@ func TestRaft_SendRaftMessage(t *testing.T) {
 		} else {
 			raftNode.readyCh <- raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId + 1,
+					Lead:      localPeerID + 1,
 					RaftState: raft.StateFollower,
 				},
 			}
@@ -229,9 +229,9 @@ func TestRaft_SendRaftMessage(t *testing.T) {
 }
 
 func TestRaft_SaveStorage(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = etcdRaftNode
 	storage := &mockStorageMgr{}
 	tr.storage = storage
@@ -294,8 +294,8 @@ func TestRaft_SaveStorage(t *testing.T) {
 
 func TestRaft_UpdateLeaderShip(t *testing.T) {
 
-	localPeerId := uint64(1)
-	tr := newTestRaft(localPeerId)
+	localPeerID := uint64(1)
+	tr := newTestRaft(localPeerID)
 	tr.status = status.New()
 
 	tr.updateLeadership(raft.SoftState{
@@ -350,9 +350,9 @@ func TestRaft_UpdateLeaderShip(t *testing.T) {
 }
 
 func TestRaft_LeadershipNotify(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	raftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = raftNode
 	tr.storage = &mockStorageMgr{}
 	tr.status = status.New()
@@ -368,7 +368,7 @@ func TestRaft_LeadershipNotify(t *testing.T) {
 		{
 			ready: raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId,
+					Lead:      localPeerID,
 					RaftState: raft.StateLeader,
 				},
 			},
@@ -378,7 +378,7 @@ func TestRaft_LeadershipNotify(t *testing.T) {
 		{
 			ready: raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId + 1,
+					Lead:      localPeerID + 1,
 					RaftState: raft.StateFollower,
 				},
 			},
@@ -388,7 +388,7 @@ func TestRaft_LeadershipNotify(t *testing.T) {
 		{
 			ready: raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId,
+					Lead:      localPeerID,
 					RaftState: raft.StateLeader,
 				},
 			},
@@ -418,7 +418,7 @@ func TestRaft_LeadershipNotify(t *testing.T) {
 		{
 			ready: raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId,
+					Lead:      localPeerID,
 					RaftState: raft.StateLeader,
 				},
 			},
@@ -433,7 +433,7 @@ func TestRaft_LeadershipNotify(t *testing.T) {
 				assert.Fail(t, "wait time limit exceeded")
 			case l := <-tr.LeaderCh():
 				if l {
-					assert.Equal(t, localPeerId, tr.getLeaderId())
+					assert.Equal(t, localPeerID, tr.getLeaderId())
 				}
 				assert.Equal(t, tc.isLeader, l)
 			}

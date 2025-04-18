@@ -36,14 +36,14 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConf
 		return nil, err
 	}
 	if err = trans.SetupTransportConfig(ibabuza.TransportConfig{
-		PeerId:      cfg.LocalPeerId,
+		PeerId:      cfg.LocalPeerID,
 		PeerAddress: cfg.RaftListenAddress,
 		TLSConfig:   cfg.TLSConfig,
 	}); err != nil {
 		return nil, err
 	}
-	cluster.SetClusterId(cfg.ClusterId)
-	cluster.SetLocalPeerId(cfg.LocalPeerId)
+	cluster.SetClusterID(cfg.ClusterID)
+	cluster.SetLocalPeerID(cfg.LocalPeerID)
 	raftStatus := status.New()
 	var node raft.Node
 	if exist, err := storage.HasExistingWalFiles(); err != nil {
@@ -122,7 +122,7 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConf
 //		if err = sessions.Restore(reader); err != nil {
 //			return err
 //		}
-//		if cluster.ClusterId() != cfg.ClusterId || cluster.LocalPeerID() != cfg.LocalPeerId {
+//		if cluster.ClusterID() != cfg.ClusterID || cluster.LocalPeerID() != cfg.LocalPeerId {
 //			return errors.New("")
 //		}
 //		for _, p := range cluster.Peers() {
@@ -137,7 +137,7 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConf
 //	if err = metadata.Unmarshal(result.Metadata()); err != nil {
 //		return err
 //	}
-//	if metadata.ClusterId != cfg.ClusterId || metadata.LocalPeerId != cfg.LocalPeerId {
+//	if metadata.ClusterID != cfg.ClusterID || metadata.LocalPeerId != cfg.LocalPeerId {
 //		return errors.New("")
 //	}
 //	hardState := result.HardState()
@@ -158,7 +158,7 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConf
 //	if err = cs.Append(appendEntries); err != nil {
 //		return err
 //	}
-//	cluster.SetClusterId(cfg.ClusterId)
+//	cluster.SetClusterID(cfg.ClusterID)
 //	cluster.SetLocalPeerId(cfg.LocalPeerId)
 //	if err = cluster.Add(babuzapb.RaftPeerAttribute{
 //		Id:             cfg.LocalPeerId,
@@ -184,7 +184,7 @@ func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNod
 		return nil, err
 	}
 	for _, raftPeerAttr := range configuration.RaftPeersAttribute() {
-		if raftPeerAttr.Id != cfg.LocalPeerId {
+		if raftPeerAttr.Id != cfg.LocalPeerID {
 			trans.AddPeer(raftPeerAttr.Id, raftPeerAttr.RaftListenAddr)
 		}
 	}
@@ -198,8 +198,8 @@ func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNod
 		}
 	}
 	if err = storage.CreateWal(babuzapb.WalMetadata{
-		ClusterId:   cfg.ClusterId,
-		LocalPeerId: cfg.LocalPeerId,
+		ClusterID:   cfg.ClusterID,
+		LocalPeerID: cfg.LocalPeerID,
 	}); err != nil {
 		return nil, err
 	}
@@ -245,7 +245,7 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 	if err = metadata.Unmarshal(walReplayResult.Metadata()); err != nil {
 		return nil, err
 	}
-	cluster.SetLocalPeerId(metadata.LocalPeerId)
+	cluster.SetLocalPeerID(metadata.LocalPeerID)
 	entryStorage, err := storage.GetEntryStorage()
 	if err != nil {
 		return nil, err
@@ -264,9 +264,9 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 		if err = storage.RestoreFromSnapshot(snap.Metadata.Index, false, cluster, sessions); err != nil {
 			return nil, err
 		}
-		if cluster.ClusterId() != cfg.ClusterId || cluster.LocalPeerID() != cfg.LocalPeerId {
-			return nil, fmt.Errorf("bootstrap: mistach configuration (clusterId=%d, restore clusterId=%d, localPeerId=%d, restore localPeerId=%d) ",
-				cfg.ClusterId, cluster.ClusterId(), cfg.LocalPeerId, cluster.LocalPeerID())
+		if cluster.ClusterID() != cfg.ClusterID || cluster.LocalPeerID() != cfg.LocalPeerID {
+			return nil, fmt.Errorf("bootstrap: mistach configuration (clusterID=%d, restore clusterID=%d, localPeerID=%d, restore localPeerID=%d) ",
+				cfg.ClusterID, cluster.ClusterID(), cfg.LocalPeerID, cluster.LocalPeerID())
 		}
 		for _, p := range cluster.Peers() {
 			trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)
@@ -286,8 +286,8 @@ func matchRemoteCluster(remoteCtx context.Context, config BabuzaConfig, remoteCo
 	trans ibabuza.Transport) error {
 
 	req := babuzapb.GetClusterPeersRequest{
-		ClusterId: config.ClusterId,
-		FromId:    config.LocalPeerId,
+		ClusterID: config.ClusterID,
+		From:      config.LocalPeerID,
 	}
 	client, err := trans.CreateTransportClient()
 	if err != nil {
@@ -296,7 +296,7 @@ func matchRemoteCluster(remoteCtx context.Context, config BabuzaConfig, remoteCo
 	defer client.Close()
 
 	for _, raftPeerAttr := range remoteConfiguration.RaftPeersAttribute() {
-		if raftPeerAttr.Id == config.LocalPeerId {
+		if raftPeerAttr.Id == config.LocalPeerID {
 			continue
 		}
 		select {
@@ -304,8 +304,8 @@ func matchRemoteCluster(remoteCtx context.Context, config BabuzaConfig, remoteCo
 			return remoteCtx.Err()
 		default:
 		}
-		res := func(toId uint64) babuzapb.GetClusterPeersResponse {
-			req.ToId = toId
+		res := func(to uint64) babuzapb.GetClusterPeersResponse {
+			req.To = to
 			return client.GetClusterPeers(req)
 		}(raftPeerAttr.Id)
 		if res.Status == babuzapb.FAILED {

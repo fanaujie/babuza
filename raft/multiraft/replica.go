@@ -45,37 +45,37 @@ func NewReplica(raftGroup ibabuza.RaftGroup, rn *raft.RawNode, log ibabuza.Logge
 
 func (r *Replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {
 
-	replyId := r.idGenerator.Next()
-	data, err := babuza.EncodeProposedLog(replyId, session, log)
+	replyID := r.idGenerator.Next()
+	data, err := babuza.EncodeProposedLog(replyID, session, log)
 	if err != nil {
 		return babuza.NewErrorResult(err)
 	}
 	proposal := poolGetProposal()
-	proposal.replyID = replyId
+	proposal.replyID = replyID
 	proposal.data = data
 	if err = r.proposalQueue.Put(proposal); err != nil {
 		poolReleaseProposal(proposal)
 		return babuza.NewErrorResult(err)
 	}
-	ch, err := r.resultReplier.AcquireResultChan(replyId)
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
 func (r *Replica) EnqueueConfigChange(ctx context.Context, session babuza.ClientSession, changeType raftpb.ConfChangeType,
 	raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) babuza.ProposedResult {
 
-	replyId := r.idGenerator.Next()
-	config, err := babuza.EncodeClusterConfigurationChange(replyId, session, changeType, raftPeerAttr, promoteLearner)
+	replyID := r.idGenerator.Next()
+	config, err := babuza.EncodeClusterConfigurationChange(replyID, session, changeType, raftPeerAttr, promoteLearner)
 	if err != nil {
 		return babuza.NewErrorResult(err)
 	}
 	configChange := poolGetConfigChange()
-	configChange.replyID = replyId
+	configChange.replyID = replyID
 	configChange.confChange = config
 	if err = r.configChangeQueue.Put(configChange); err != nil {
 		return babuza.NewErrorResult(err)
 	}
 
-	ch, err := r.resultReplier.AcquireResultChan(replyId)
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }

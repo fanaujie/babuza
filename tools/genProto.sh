@@ -35,7 +35,7 @@ mkdir -p "${BUILD_PATH}/bin"
 GOGO_PROTO_SHA=ba06b47c162d49f2af050fb4c75bcbc86a159d5c #v1.2.1
 GOGOPROTO_ROOT="${GOPATH}/src/mod/github.com/gogo/protobuf"
 
-ETCD_SHA=d42e8589e1305d893eeec9e7db746f6f4a76c250 #v3.5.1
+ETCD_SHA=a17edfd59754d1aed29c2db33520ab9d401326a5 #v3.5.21
 ETCD_ROOT="${GOPATH}/src/go.etcd.io/etcd"
 
 if [ "$1" == "install" ]; then

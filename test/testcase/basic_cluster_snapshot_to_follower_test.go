@@ -31,7 +31,7 @@ func (c *BasicSendSnapshotToFollower) Run(tc *testcluster.BabuzaCluster, testPar
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 	// Identify the current leader
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Create a client with automatic incrementing session
@@ -61,12 +61,12 @@ func (c *BasicSendSnapshotToFollower) Run(tc *testcluster.BabuzaCluster, testPar
 	}
 
 	// Verify all peers have consistent state
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 
 	// Record snapshot metadata from leader for later verification
 	lastSnapshotIndex := uint64(0)
 	lastSnapshotTerm := uint64(0)
-	assert.Nil(c.t, tc.CheckStatus(wait, leaderId, func(s babuza.Status) bool {
+	assert.Nil(c.t, tc.CheckStatus(wait, leaderID, func(s babuza.Status) bool {
 		lastSnapshotIndex = s.LastSnapshotIndex
 		lastSnapshotTerm = s.LastSnapshotTerm
 		return s.LastSnapshotIndex >= c.snapshotCount &&
@@ -79,11 +79,11 @@ func (c *BasicSendSnapshotToFollower) Run(tc *testcluster.BabuzaCluster, testPar
 	connectGroup.Add(newFollowerId)
 
 	// Join the new node to the cluster - it should receive a snapshot
-	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, newFollower, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, newFollower, connectGroup.GetIDs()))
 
 	// Check if the new follower properly joined
 	assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId, newFollower)
+		return tc.CheckPeerExists(ctx, leaderID, newFollower)
 	}))
 
 	// Wait a bit for snapshot transfer to complete
@@ -107,7 +107,7 @@ func (c *BasicSendSnapshotToFollower) Run(tc *testcluster.BabuzaCluster, testPar
 	}
 
 	// Final verification that all nodes (including the new follower) have identical state
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestSendSnapshotToFollower(t *testing.T) {

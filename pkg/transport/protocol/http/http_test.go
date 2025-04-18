@@ -146,8 +146,8 @@ func NewMockTransportResolver() *MockTransportResolver {
 	}
 }
 
-func (m *MockTransportResolver) ResolvePeerAddress(peerId uint64) (string, error) {
-	if addr, ok := m.addressMap[peerId]; ok {
+func (m *MockTransportResolver) ResolvePeerAddress(peerID uint64) (string, error) {
+	if addr, ok := m.addressMap[peerID]; ok {
 		return addr, nil
 	}
 	return "localhost:14200", nil // Default for testing
@@ -251,7 +251,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				},
 			}
 			mr.clusterRes = res
-			getRes := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterId: 100})
+			getRes := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterID: 100})
 			assert.Equal(t, res, getRes)
 		}
 		nodeDoneMsg := <-mr.notifyNodeDoneCh

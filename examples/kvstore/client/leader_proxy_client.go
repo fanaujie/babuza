@@ -101,11 +101,11 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 	}
 }
 
-func (p *leaderProxyClient) SendRequestWithPeerId(peerId uint64, makeRequest func(leaderUrl url.URL) (*http.Request, error), result any) error {
+func (p *leaderProxyClient) SendRequestWithPeerId(peerID uint64, makeRequest func(leaderUrl url.URL) (*http.Request, error), result any) error {
 	var leaderUrl *url.URL
 	p.mu.RLock()
 	for _, peer := range p.peers {
-		if peer.Id == peerId {
+		if peer.Id == peerID {
 			leaderUrl = &url.URL{
 				Scheme: p.httpScheme,
 				Host:   peer.KvServiceAddress,
@@ -114,7 +114,7 @@ func (p *leaderProxyClient) SendRequestWithPeerId(peerId uint64, makeRequest fun
 	}
 	p.mu.RUnlock()
 	if leaderUrl == nil {
-		return fmt.Errorf("not found service address. (peerId=%d)", peerId)
+		return fmt.Errorf("not found service address. (peerID=%d)", peerID)
 	}
 	req, err := makeRequest(*leaderUrl)
 	if err != nil {

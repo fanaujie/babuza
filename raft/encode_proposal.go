@@ -5,10 +5,10 @@ import (
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
-func EncodeRegisterSessionRequest(replyId uint64) ([]byte, error) {
+func EncodeRegisterSessionRequest(replyID uint64) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: replyId,
+			ReplyID: replyID,
 		},
 		Register: &babuzapb.RegisterSessionRequest{},
 	}
@@ -19,13 +19,13 @@ func EncodeRegisterSessionRequest(replyId uint64) ([]byte, error) {
 	return data, nil
 }
 
-func EncodePubAppServiceAddressesRequest(replyId, peerId uint64, addresses []string) ([]byte, error) {
+func EncodePubAppServiceAddressesRequest(replyID, peerID uint64, addresses []string) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: replyId,
+			ReplyID: replyID,
 		},
 		PubAppService: &babuzapb.PubAppServiceRequest{
-			PubServicePeerId:    peerId,
+			PubServicePeerID:    peerID,
 			AppServiceAddresses: addresses,
 		},
 	}
@@ -36,11 +36,11 @@ func EncodePubAppServiceAddressesRequest(replyId, peerId uint64, addresses []str
 	return data, nil
 }
 
-func EncodeClusterConfigurationChange(replyId uint64, session ClientSession, changeType raftpb.ConfChangeType,
+func EncodeClusterConfigurationChange(replyID uint64, session ClientSession, changeType raftpb.ConfChangeType,
 	raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) (raftpb.ConfChange, error) {
 	req := babuzapb.ConfChangeRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: replyId,
+			ReplyID: replyID,
 		},
 		RaftPeerAttr:   raftPeerAttr,
 		PromoteLearner: promoteLearner,
@@ -57,10 +57,10 @@ func EncodeClusterConfigurationChange(replyId uint64, session ClientSession, cha
 	return raftpb.ConfChange{Type: changeType, NodeID: raftPeerAttr.Id, Context: data}, nil
 }
 
-func EncodeProposedLog(replyId uint64, session ClientSession, log []byte) ([]byte, error) {
+func EncodeProposedLog(replyID uint64, session ClientSession, log []byte) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: replyId,
+			ReplyID: replyID,
 		},
 		StateMachineLog: log,
 	}

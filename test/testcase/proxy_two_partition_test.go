@@ -77,10 +77,10 @@ func (c *TwoPartitionCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 	assert.Nil(c.t, tc.CheckPeersConsistency(wait, partition1))
 
 	// Reconnect all nodes - heal the partition
-	assert.Nil(c.t, tc.SetPartition(connectGroup.GetIds()))
+	assert.Nil(c.t, tc.SetPartition(connectGroup.GetIDs()))
 
 	// Check leader after healing the partition
-	lastLeader, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	lastLeader, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Leader should still be in partition1 (unchanged)
@@ -94,7 +94,7 @@ func (c *TwoPartitionCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 	assert.True(c.t, leaderInPartition1)
 
 	// Check consistency across the entire cluster
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 
 	// Create second partition: nodes 1,5 in one group, nodes 2,3,4 in another
 	partition1 = []uint64{1, 5}
@@ -118,12 +118,12 @@ func (c *TwoPartitionCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 	assert.True(c.t, findLeader)
 
 	// Reconnect all peers - heal the partition again
-	assert.Nil(c.t, tc.SetPartition(connectGroup.GetIds()))
-	_, err = tc.CheckOneLeader(wait, connectGroup.GetIds())
+	assert.Nil(c.t, tc.SetPartition(connectGroup.GetIDs()))
+	_, err = tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Check consistency across the entire cluster
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestTwoPartitionCluster(t *testing.T) {

@@ -144,13 +144,13 @@ func (m *mockSessionManager) Restore(reader io.Reader) error {
 
 type mockCluster struct{}
 
-func (m *mockCluster) SetClusterId(clusterId uint64) {
+func (m *mockCluster) SetClusterID(clusterID uint64) {
 }
 
-func (m *mockCluster) SetLocalPeerId(localPeerId uint64) {
+func (m *mockCluster) SetLocalPeerID(localPeerID uint64) {
 }
 
-func (m *mockCluster) Peer(peerId uint64) (babuzapb.Peer, error) {
+func (m *mockCluster) Peer(peerID uint64) (babuzapb.Peer, error) {
 	return babuzapb.Peer{}, nil
 }
 
@@ -166,7 +166,7 @@ func (m *mockCluster) Peers() []babuzapb.Peer {
 	return nil
 }
 
-func (m *mockCluster) ClusterId() uint64 {
+func (m *mockCluster) ClusterID() uint64 {
 	return 0
 }
 
@@ -182,15 +182,15 @@ func (m *mockCluster) Update(attribute babuzapb.RaftPeerAttribute) error {
 	return nil
 }
 
-func (m *mockCluster) Remove(peerId uint64) error {
+func (m *mockCluster) Remove(peerID uint64) error {
 	return nil
 }
 
-func (m *mockCluster) Promote(peerId uint64) error {
+func (m *mockCluster) Promote(peerID uint64) error {
 	return nil
 }
 
-func (m *mockCluster) UpdateAppServiceAddresses(peerId uint64, addresses []string) error {
+func (m *mockCluster) UpdateAppServiceAddresses(peerID uint64, addresses []string) error {
 	return nil
 }
 
@@ -440,7 +440,7 @@ func (m *mockEventDelegate) NotifyMemberUpdate(peerAttribute babuzapb.RaftPeerAt
 
 }
 
-func (m *mockEventDelegate) NotifyMemberLeave(peerId uint64) {
+func (m *mockEventDelegate) NotifyMemberLeave(peerID uint64) {
 
 }
 
@@ -477,7 +477,7 @@ func (c *mockPubTransClient) Close() error { return nil }
 func newTestRaft(nodeId uint64) *Raft {
 	return &Raft{
 		config: BabuzaConfig{
-			LocalPeerId: nodeId,
+			LocalPeerID: nodeId,
 			RaftConfig: RaftConfig{
 				LogicalTickMs: 100,
 			},

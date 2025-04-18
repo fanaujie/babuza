@@ -45,9 +45,8 @@ func (r *Replica) ProcessReady() {
 			applyData := poolGetApplyEntry()
 			applyData.entries = rd.CommittedEntries
 			applyData.snapshot = rd.Snapshot
-			if err := r.applyJobQueue.Put(r.raftGroup.ID, func() error {
+			if err := r.applyJobQueue.Put(r.raftGroup.ID, func() {
 				r.doApplyJob(applyData)
-				return nil
 			}); err != nil {
 				r.logger.Panicf("gid[%d] raft[id=%d] apply job queue put failed: %v", r.raftGroup.ID,
 					r.cluster.LocalPeerID(), err)

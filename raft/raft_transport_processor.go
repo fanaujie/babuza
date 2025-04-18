@@ -12,8 +12,8 @@ type transportProcessor struct {
 }
 
 func (d *transportProcessor) ProcessBatchMessage(msg babuzapb.BatchMessage) {
-	if msg.ClusterId != d.cluster.ClusterId() {
-		d.logger.Warningf("raft[id=%d] received batch message with different cluster id(%d)", d.cluster.LocalPeerID(), msg.ClusterId)
+	if msg.ClusterID != d.cluster.ClusterID() {
+		d.logger.Warningf("raft[id=%d] received batch message with different cluster id(%d)", d.cluster.LocalPeerID(), msg.ClusterID)
 		return
 	}
 	for i := 0; i < len(msg.Messages); i++ {
@@ -32,8 +32,8 @@ func (d *transportProcessor) ProcessBatchMessage(msg babuzapb.BatchMessage) {
 }
 
 func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage) {
-	if msg.ClusterId != d.cluster.ClusterId() {
-		d.logger.Warningf("raft[id=%d] received snapshot message with different cluster id(%d)", d.cluster.LocalPeerID(), msg.ClusterId)
+	if msg.ClusterID != d.cluster.ClusterID() {
+		d.logger.Warningf("raft[id=%d] received snapshot message with different cluster id(%d)", d.cluster.LocalPeerID(), msg.ClusterID)
 		return
 	}
 	if !d.isPeerInCluster(msg.From) {
@@ -55,20 +55,20 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 }
 
 func (d *transportProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	if req.ClusterId != d.cluster.ClusterId() {
-		d.logger.Warningf("raft[id=%d] received get cluster peers request with different cluster id(%d)", d.cluster.LocalPeerID(), req.ClusterId)
+	if req.ClusterID != d.cluster.ClusterID() {
+		d.logger.Warningf("raft[id=%d] received get cluster peers request with different cluster id(%d)", d.cluster.LocalPeerID(), req.ClusterID)
 		return babuzapb.GetClusterPeersResponse{
 			Status:  babuzapb.FAILED,
 			Message: "cluster id not match"}
 	}
-	if !d.isPeerInCluster(req.FromId) {
-		d.logger.Warningf("raft[id=%d] received get cluster peers request from unknown peer id(%d)", d.cluster.LocalPeerID(), req.FromId)
+	if !d.isPeerInCluster(req.From) {
+		d.logger.Warningf("raft[id=%d] received get cluster peers request from unknown peer id(%d)", d.cluster.LocalPeerID(), req.From)
 		return babuzapb.GetClusterPeersResponse{
 			Status:  babuzapb.FAILED,
 			Message: "peer not in cluster"}
 	}
-	if req.ToId != d.cluster.LocalPeerID() {
-		d.logger.Warningf("raft[id=%d] received get cluster peers request with different peer id(%d)", d.cluster.LocalPeerID(), req.ToId)
+	if req.To != d.cluster.LocalPeerID() {
+		d.logger.Warningf("raft[id=%d] received get cluster peers request with different peer id(%d)", d.cluster.LocalPeerID(), req.To)
 		return babuzapb.GetClusterPeersResponse{
 			Status:  babuzapb.FAILED,
 			Message: "peer id not match"}
@@ -80,20 +80,20 @@ func (d *transportProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeers
 }
 
 func (d *transportProcessor) PublishApplicationServiceRequest(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
-	if req.ClusterId != d.cluster.ClusterId() {
-		d.logger.Warningf("raft[id=%d] received publish application service request with different cluster id(%d)", d.cluster.LocalPeerID(), req.ClusterId)
+	if req.ClusterID != d.cluster.ClusterID() {
+		d.logger.Warningf("raft[id=%d] received publish application service request with different cluster id(%d)", d.cluster.LocalPeerID(), req.ClusterID)
 		return babuzapb.PublishApplicationServiceResponse{
 			Status:  babuzapb.FAILED,
 			Message: "cluster id not match"}
 	}
-	if !d.isPeerInCluster(req.FromId) {
-		d.logger.Warningf("raft[id=%d] received publish application service request from unknown peer id(%d)", d.cluster.LocalPeerID(), req.FromId)
+	if !d.isPeerInCluster(req.From) {
+		d.logger.Warningf("raft[id=%d] received publish application service request from unknown peer id(%d)", d.cluster.LocalPeerID(), req.From)
 		return babuzapb.PublishApplicationServiceResponse{
 			Status:  babuzapb.FAILED,
 			Message: "peer not in cluster"}
 	}
-	if req.ToId != d.cluster.LocalPeerID() {
-		d.logger.Warningf("raft[id=%d] received publish application service request with different peer id(%d)", d.cluster.LocalPeerID(), req.ToId)
+	if req.To != d.cluster.LocalPeerID() {
+		d.logger.Warningf("raft[id=%d] received publish application service request with different peer id(%d)", d.cluster.LocalPeerID(), req.To)
 		return babuzapb.PublishApplicationServiceResponse{
 			Status:  babuzapb.FAILED,
 			Message: "peer id not match"}
@@ -101,10 +101,10 @@ func (d *transportProcessor) PublishApplicationServiceRequest(req babuzapb.Publi
 
 	normalRequest := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: req.ProposalReplyId,
+			ReplyID: req.ProposalReplyID,
 		},
 		PubAppService: &babuzapb.PubAppServiceRequest{
-			PubServicePeerId:    req.FromId,
+			PubServicePeerID:    req.From,
 			AppServiceAddresses: req.AppServiceAddresses,
 		},
 	}
@@ -127,6 +127,8 @@ func (d *transportProcessor) PublishApplicationServiceRequest(req babuzapb.Publi
 }
 
 func (d *transportProcessor) ReportUnreachable(id uint64) {
+	// 找出是哪一個group
+
 	d.raftNode.ReportUnreachable(id)
 }
 func (d *transportProcessor) ReportSnapshot(id uint64, status raft.SnapshotStatus) {

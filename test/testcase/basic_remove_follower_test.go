@@ -27,10 +27,10 @@ func (c *BasicRemoveFollower) Run(tc *testcluster.BabuzaCluster, a any) {
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
-	followerId := (leaderId % 3) + 1
+	followerId := (leaderID % 3) + 1
 	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
 	assert.Nil(c.t, err)
 	defer func() {
@@ -41,18 +41,18 @@ func (c *BasicRemoveFollower) Run(tc *testcluster.BabuzaCluster, a any) {
 	connectGroup.Remove(followerId)
 
 	assert.Error(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId, makeSingleStandardPeer(followerId, false))
+		return tc.CheckPeerExists(ctx, leaderID, makeSingleStandardPeer(followerId, false))
 	}))
 
-	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID2, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	assert.Equal(c.t, leaderId, leaderId2)
+	assert.Equal(c.t, leaderID, leaderID2)
 
 	// Test failure cases
 
 	// Try to join a removed peer
 	connectGroup.Add(followerId)
-	assert.Equal(c.t, cluster.ErrPeerIDRemoved, tc.JoinPeerToCluster(wait, kvClient, makeSingleStandardPeer(followerId, false), connectGroup.GetIds()))
+	assert.Equal(c.t, cluster.ErrPeerIDRemoved, tc.JoinPeerToCluster(wait, kvClient, makeSingleStandardPeer(followerId, false), connectGroup.GetIDs()))
 
 	// Try to remove a non-existent peer
 	assert.Equal(c.t, cluster.ErrPeerIDNotFound, tc.RemovePeerFromCluster(wait, kvClient, 100))

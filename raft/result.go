@@ -36,6 +36,14 @@ type PublishApplicationServiceResult interface {
 	Wait() error
 }
 
+type ErrorResult interface {
+	ProposedResult
+	ShutdownResult
+	TransferLeaderResult
+	ManualSnapshotResult
+	PublishApplicationServiceResult
+}
+
 var (
 	proposalResPool sync.Pool
 )
@@ -52,39 +60,39 @@ func NewSnapshotResult(metadata babuzapb.SnapshotMetadata, err error) SnapshotRe
 	}
 }
 
-type ErrorResult struct {
+type errorResult struct {
 	e error
 }
 
-func NewErrorResult(err error) *ErrorResult {
-	return &ErrorResult{e: err}
+func NewErrorResult(err error) ErrorResult {
+	return &errorResult{e: err}
 }
 
-func (er *ErrorResult) Wait() error {
+func (er *errorResult) Wait() error {
 	return er.e
 }
 
-func (er *ErrorResult) Response() any {
+func (er *errorResult) Response() any {
 	return nil
 }
 
-func (er *ErrorResult) LogIndex() uint64 {
+func (er *errorResult) LogIndex() uint64 {
 	return 0
 }
 
-func (er *ErrorResult) Release() {
+func (er *errorResult) Release() {
 	er.e = nil
 }
 
-func (er *ErrorResult) SnapshotMetadata() babuzapb.SnapshotMetadata {
+func (er *errorResult) SnapshotMetadata() babuzapb.SnapshotMetadata {
 	return babuzapb.SnapshotMetadata{}
 }
 
-func (er *ErrorResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
+func (er *errorResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
 	return nil, er.e
 }
 
-type ProposalResult struct {
+type proposalResult struct {
 	ctx     context.Context
 	closer  *syncutil.Closer
 	resulCh chan ibabuza.ApplyResult
@@ -94,20 +102,20 @@ type ProposalResult struct {
 func NewProposalResult(ctx context.Context, closer *syncutil.Closer, resultCh chan ibabuza.ApplyResult) ProposedResult {
 	res := proposalResPool.Get()
 	if res == nil {
-		return &ProposalResult{
+		return &proposalResult{
 			ctx:     ctx,
 			closer:  closer,
 			resulCh: resultCh,
 		}
 	}
-	pr := res.(*ProposalResult)
+	pr := res.(*proposalResult)
 	pr.ctx = ctx
 	pr.closer = closer
 	pr.resulCh = resultCh
 	return pr
 }
 
-func (p *ProposalResult) Wait() error {
+func (p *proposalResult) Wait() error {
 	if p.resulCh == nil {
 		panic("proposalResult already released")
 	}
@@ -128,7 +136,7 @@ func (p *ProposalResult) Wait() error {
 	}
 }
 
-func (p *ProposalResult) Response() any {
+func (p *proposalResult) Response() any {
 	if p.resulCh == nil {
 		panic("proposalResult already released")
 	}
@@ -138,7 +146,7 @@ func (p *ProposalResult) Response() any {
 	return p.ar.Response
 }
 
-func (p *ProposalResult) LogIndex() uint64 {
+func (p *proposalResult) LogIndex() uint64 {
 	if p.resulCh == nil {
 		panic("proposalResult already released")
 	}
@@ -148,7 +156,7 @@ func (p *ProposalResult) LogIndex() uint64 {
 	return p.ar.LogIndex
 }
 
-func (p *ProposalResult) Release() {
+func (p *proposalResult) Release() {
 	p.resulCh = nil
 	p.ctx = nil
 	p.closer = nil

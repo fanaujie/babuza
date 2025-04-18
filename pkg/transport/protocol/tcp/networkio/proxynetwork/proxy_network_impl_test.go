@@ -29,8 +29,8 @@ func (mockConn) SetDeadline(t time.Time) error      { return nil }
 func (mockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (mockConn) SetWriteDeadline(t time.Time) error { return nil }
 
-func getProxyInEndpoint(peerId uint64) string {
-	return fmt.Sprintf("127.0.0.1:%d", 14200+peerId)
+func getProxyInEndpoint(peerID uint64) string {
+	return fmt.Sprintf("127.0.0.1:%d", 14200+peerID)
 }
 
 func TestRaftNetwork_AddProxy(t *testing.T) {

@@ -137,8 +137,8 @@ func newMockApplyReplier() *mockApplyReplier {
 	return &mockApplyReplier{reply: make(map[uint64]ibabuza.ApplyResult)}
 }
 
-func (m *mockApplyReplier) SendResult(replyId uint64, ar ibabuza.ApplyResult) {
-	m.reply[replyId] = ar
+func (m *mockApplyReplier) SendResult(replyID uint64, ar ibabuza.ApplyResult) {
+	m.reply[replyID] = ar
 }
 
 type mockApplyStatus struct {
@@ -214,22 +214,22 @@ func (m *mockApplyCluster) Update(peer babuzapb.RaftPeerAttribute) error {
 	return nil
 }
 
-func (m *mockApplyCluster) UpdateAppServiceAddresses(peerId uint64, addresses []string) error {
+func (m *mockApplyCluster) UpdateAppServiceAddresses(peerID uint64, addresses []string) error {
 	return nil
 }
 
-func (m *mockApplyCluster) Remove(peerId uint64) error {
-	_, ok := m.peers[peerId]
+func (m *mockApplyCluster) Remove(peerID uint64) error {
+	_, ok := m.peers[peerID]
 	if !ok {
 		return errors.New("ErrPeerIDNotFound")
 	}
-	delete(m.peers, peerId)
-	m.removedIds[peerId] = struct{}{}
+	delete(m.peers, peerID)
+	m.removedIds[peerID] = struct{}{}
 	return nil
 }
 
-func (m *mockApplyCluster) Promote(peerId uint64) error {
-	p, ok := m.peers[peerId]
+func (m *mockApplyCluster) Promote(peerID uint64) error {
+	p, ok := m.peers[peerID]
 	if !ok {
 		return errors.New("ErrPeerIDNotFound")
 	}
@@ -237,7 +237,7 @@ func (m *mockApplyCluster) Promote(peerId uint64) error {
 		return errors.New("ErrPeerNotLearner")
 	}
 	p.RaftPeerAttr.IsLearner = false
-	m.peers[peerId] = p
+	m.peers[peerID] = p
 	return nil
 }
 
@@ -286,7 +286,7 @@ func TestApplier_DoExactlyOnce(t *testing.T) {
 
 	t.Run("expire session: not found session ", func(t *testing.T) {
 		toApply, getSession := a.doExactlyOnce(100, 1, babuzapb.RequestContext{
-			ReplyId:     10,
+			ReplyID:     10,
 			SessionID:   1,
 			SequenceNum: 1,
 		})
@@ -304,7 +304,7 @@ func TestApplier_DoExactlyOnce(t *testing.T) {
 		sessionMgr.sessions[1] = s
 		defer delete(sessionMgr.sessions, 1)
 		toApply, getSession := a.doExactlyOnce(100, 1, babuzapb.RequestContext{
-			ReplyId:                   10,
+			ReplyID:                   10,
 			SessionID:                 1,
 			SequenceNum:               2,
 			LowestSeqNumNotYetReplied: 2,
@@ -317,7 +317,7 @@ func TestApplier_DoExactlyOnce(t *testing.T) {
 
 	t.Run("no operation session", func(t *testing.T) {
 		toApply, getSession := a.doExactlyOnce(100, 1, babuzapb.RequestContext{
-			ReplyId: 10,
+			ReplyID: 10,
 		})
 		_, ok := getSession.(*session.NoOPSession)
 		assert.Equal(t, true, ok)
@@ -332,7 +332,7 @@ func TestApplier_DoExactlyOnce(t *testing.T) {
 		s.result[reqSeqNum] = ibabuza.ApplyResult{LogIndex: 100}
 		defer delete(sessionMgr.sessions, sid)
 		toApply, getSession := a.doExactlyOnce(101, 1, babuzapb.RequestContext{
-			ReplyId:     1,
+			ReplyID:     1,
 			SessionID:   sid,
 			SequenceNum: reqSeqNum,
 		})
@@ -390,7 +390,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 
 		req := babuzapb.NormalRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId: 1,
+				ReplyID: 1,
 			},
 			Register: &babuzapb.RegisterSessionRequest{},
 		}
@@ -408,7 +408,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 		assert.Equal(t, status.index, e.Index)
 		assert.Equal(t, status.term, e.Term)
 
-		ar, ok := replier.reply[req.Context.ReplyId]
+		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		assert.Equal(t, e.Index, ar.LogIndex)
 
@@ -431,7 +431,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 
 		req := babuzapb.NormalRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId:     1,
+				ReplyID:     1,
 				SessionID:   sId,
 				SequenceNum: seqNum,
 			},
@@ -463,7 +463,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 
 		req := babuzapb.NormalRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId:     1,
+				ReplyID:     1,
 				SessionID:   1,
 				SequenceNum: 1,
 			},
@@ -482,7 +482,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 		assert.Equal(t, status.term, e.Term)
 		assert.Equal(t, status.index, e.Index)
 
-		ar, ok := replier.reply[req.Context.ReplyId]
+		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		assert.Error(t, ar.Error)
 	})
@@ -506,7 +506,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 		sessionMgr.sessions[sId] = sess
 		req := babuzapb.NormalRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId:     1,
+				ReplyID:     1,
 				SessionID:   sId,
 				SequenceNum: seqNum,
 			},
@@ -524,7 +524,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 		assert.Nil(t, entry)
 		assert.Equal(t, status.term, e.Term)
 		assert.Equal(t, status.index, e.Index)
-		ar, ok := replier.reply[req.Context.ReplyId]
+		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		assert.Equal(t, "hello", ar.Response.(string))
 	})
@@ -541,7 +541,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 
 		req := babuzapb.NormalRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId: 1,
+				ReplyID: 1,
 			},
 			StateMachineLog: []byte{1},
 		}
@@ -573,7 +573,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 
 		req := babuzapb.NormalRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId: 1,
+				ReplyID: 1,
 			},
 			StateMachineLog: []byte{1},
 		}
@@ -633,10 +633,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		sessionMgr.sessions[sId] = sess
 
 		addPeerId := uint64(2)
-		replyId := uint64(1)
+		replyID := uint64(1)
 		req := babuzapb.ConfChangeRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId:     replyId,
+				ReplyID:     replyID,
 				SessionID:   sId,
 				SequenceNum: seqNum,
 			},
@@ -665,7 +665,7 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		assert.Equal(t, true, ok)
 		_, ok = trans.resolver[addPeerId]
 		assert.Equal(t, true, ok)
-		ar1, ok := replier.reply[req.Context.ReplyId]
+		ar1, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		ar2, ok := sess.GetResult(seqNum)
 		assert.Equal(t, true, ok)
@@ -686,10 +686,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		a.trans = trans
 		a.sessionMgr = sessionMgr
 
-		replyId := uint64(1)
+		replyID := uint64(1)
 		req := babuzapb.ConfChangeRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId:     replyId,
+				ReplyID:     replyID,
 				SessionID:   1,
 				SequenceNum: 1,
 			},
@@ -716,7 +716,7 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 
 		assert.Equal(t, status.index, e.Index)
 		assert.Equal(t, status.term, e.Term)
-		ar, ok := replier.reply[req.Context.ReplyId]
+		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		assert.Error(t, ar.Error)
 	})
@@ -746,10 +746,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		})
 		sessionMgr.sessions[sId] = sess
 
-		replyId := uint64(1)
+		replyID := uint64(1)
 		req := babuzapb.ConfChangeRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId:     replyId,
+				ReplyID:     replyID,
 				SessionID:   sId,
 				SequenceNum: seqNum,
 			},
@@ -775,7 +775,7 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		assert.Equal(t, false, removeSelf)
 		assert.Equal(t, status.index, e.Index)
 		assert.Equal(t, status.term, e.Term)
-		ar1, ok := replier.reply[req.Context.ReplyId]
+		ar1, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		ar2, ok := sess.GetResult(seqNum)
 		assert.Equal(t, true, ok)
@@ -797,10 +797,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		a.sessionMgr = sessionMgr
 
 		addPeerId := uint64(2)
-		replyId := uint64(1)
+		replyID := uint64(1)
 		req := babuzapb.ConfChangeRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId: replyId,
+				ReplyID: replyID,
 			},
 			RaftPeerAttr: babuzapb.RaftPeerAttribute{
 				Id:             addPeerId,
@@ -828,11 +828,11 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		assert.Equal(t, true, ok)
 		_, ok = trans.resolver[addPeerId]
 		assert.Equal(t, true, ok)
-		_, ok = replier.reply[req.Context.ReplyId]
+		_, ok = replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 
 		// failure: verify cluster
-		req.Context.ReplyId = 2
+		req.Context.ReplyID = 2
 		data, err = req.Marshal()
 		assert.Nil(t, err)
 
@@ -850,7 +850,7 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		assert.Equal(t, status.index, e.Index)
 		assert.Equal(t, status.term, e.Term)
 
-		ar, ok := replier.reply[req.Context.ReplyId]
+		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		assert.Equal(t, uint64(2), ar.LogIndex)
 		assert.Error(t, ar.Error)
@@ -877,10 +877,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 			Id: 2,
 		})
 		removePeerId := uint64(1)
-		replyId := uint64(1)
+		replyID := uint64(1)
 		req := babuzapb.ConfChangeRequest{
 			Context: babuzapb.RequestContext{
-				ReplyId: replyId,
+				ReplyID: replyID,
 			},
 			RaftPeerAttr: babuzapb.RaftPeerAttribute{
 				Id: removePeerId,
@@ -907,7 +907,7 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 		assert.Equal(t, false, ok)
 		_, ok = trans.resolver[removePeerId]
 		assert.Equal(t, false, ok)
-		_, ok = replier.reply[req.Context.ReplyId]
+		_, ok = replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 	})
 	close(closeCh)

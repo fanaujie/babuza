@@ -282,7 +282,7 @@ func (r *MockSnapshotFileReader) ForEachFile(visitor func(reader io.Reader, meta
 
 // Test cases for ToRaftPeer
 func TestRaftPeerNew(t *testing.T) {
-	peerId := uint64(2)
+	peerID := uint64(2)
 	cfg := RaftPeerConfig{
 		LimiterMaxBatchMessageSize: 1024,
 		SnapshotChunkSize:          256,
@@ -298,7 +298,7 @@ func TestRaftPeerNew(t *testing.T) {
 	clientFactory := NewMockTransportClientFactory(false)
 	transportClient, err := clientFactory.CreateTransportClient()
 	assert.NoError(t, err)
-	peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+	peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 	assert.NotNil(t, peer, "Peer should not be nil")
 	// Sleep briefly to allow goroutine to start
 	time.Sleep(100 * time.Millisecond)
@@ -308,7 +308,7 @@ func TestRaftPeerNew(t *testing.T) {
 }
 
 func TestRaftPeerSendRaftMessage(t *testing.T) {
-	peerId := uint64(2)
+	peerID := uint64(2)
 	cfg := RaftPeerConfig{
 		LimiterMaxBatchMessageSize: 1024,
 		SnapshotChunkSize:          256,
@@ -325,7 +325,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
@@ -335,7 +335,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		// Send a message
 		msg := &raftpb.Message{
 			Type:  raftpb.MsgApp,
-			To:    peerId,
+			To:    peerID,
 			From:  1,
 			Index: 10,
 		}
@@ -374,21 +374,21 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		// Set breaker to not ready
 		breaker.Fail()
 
-		peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
 		// Send a message
 		msg := &raftpb.Message{
 			Type:  raftpb.MsgApp,
-			To:    peerId,
+			To:    peerID,
 			From:  1,
 			Index: 10,
 		}
 
 		err = peer.SendRaftMessage(msg)
 		assert.ErrorIs(t, err, ErrPeerBreakerNotReady, "Should return breaker not ready error")
-		assert.True(t, report.IsUnreachableReported(peerId), "Should report peer as unreachable")
+		assert.True(t, report.IsUnreachableReported(peerID), "Should report peer as unreachable")
 	})
 
 	t.Run("memory limit exceeded", func(t *testing.T) {
@@ -399,14 +399,14 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
 		// Create a message that will exceed the memory limit
 		msg := &raftpb.Message{
 			Type:    raftpb.MsgApp,
-			To:      peerId,
+			To:      peerID,
 			From:    1,
 			Index:   10,
 			Entries: make([]raftpb.Entry, 100), // Make it large
@@ -414,7 +414,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 
 		err = peer.SendRaftMessage(msg)
 		assert.ErrorIs(t, err, ErrPeerReachMaxTotalSendMsgSize, "Should return memory limit error")
-		assert.True(t, report.IsUnreachableReported(peerId), "Should report peer as unreachable")
+		assert.True(t, report.IsUnreachableReported(peerID), "Should report peer as unreachable")
 	})
 
 	t.Run("peer stopped", func(t *testing.T) {
@@ -425,7 +425,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		// Stop the peer
 		peer.Stop()
@@ -433,7 +433,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		// Send a message
 		msg := &raftpb.Message{
 			Type:  raftpb.MsgApp,
-			To:    peerId,
+			To:    peerID,
 			From:  1,
 			Index: 10,
 		}
@@ -457,14 +457,14 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
 		// Send first message to create the queue
 		msg1 := &raftpb.Message{
 			Type:  raftpb.MsgApp,
-			To:    peerId,
+			To:    peerID,
 			From:  1,
 			Index: 10,
 		}
@@ -479,7 +479,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			msg2 := &raftpb.Message{
 				Type:  raftpb.MsgApp,
-				To:    peerId,
+				To:    peerID,
 				From:  1,
 				Index: 11 + uint64(i),
 			}
@@ -493,7 +493,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 }
 
 func TestRaftPeerMessageBatching(t *testing.T) {
-	peerId := uint64(2)
+	peerID := uint64(2)
 	cfg := RaftPeerConfig{
 		LimiterMaxBatchMessageSize: 50, // Small batch size to force batching
 		SnapshotChunkSize:          256,
@@ -509,7 +509,7 @@ func TestRaftPeerMessageBatching(t *testing.T) {
 	clientFactory := NewMockTransportClientFactory(false)
 	transportClient, err := clientFactory.CreateTransportClient()
 	assert.NoError(t, err)
-	peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+	peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 	defer peer.Stop()
 
@@ -517,7 +517,7 @@ func TestRaftPeerMessageBatching(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		msg := &raftpb.Message{
 			Type:  raftpb.MsgApp,
-			To:    peerId,
+			To:    peerID,
 			From:  1,
 			Index: 10 + uint64(i),
 			Entries: []raftpb.Entry{
@@ -539,7 +539,7 @@ func TestRaftPeerMessageBatching(t *testing.T) {
 	assert.GreaterOrEqual(t, len(sentBatches), 2, "Should have sent at least two batches")
 }
 func TestRaftPeerSendSnapshot(t *testing.T) {
-	peerId := uint64(2)
+	peerID := uint64(2)
 	cfg := RaftPeerConfig{
 		LimiterMaxBatchMessageSize: 1024,
 		SnapshotChunkSize:          4, // Small chunk size for testing
@@ -556,13 +556,13 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		// Create snapshot message and reader
 		snapReader := NewMockSnapshotFileReader(1, 100)
 		snapMsg := &raftpb.Message{
 			Type:  raftpb.MsgSnap,
-			To:    peerId,
+			To:    peerID,
 			From:  1,
 			Index: 100,
 			Snapshot: raftpb.Snapshot{
@@ -579,7 +579,7 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		// Stop the peer
 		peer.Stop()
 		// Check snapshot status
-		status, exists := report.GetSnapshotStatus(peerId)
+		status, exists := report.GetSnapshotStatus(peerID)
 		assert.True(t, exists, "Snapshot report should exist")
 		assert.Equal(t, raft.SnapshotFinish, status, "Should report snapshot finished")
 
@@ -615,7 +615,7 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(true) // Use failing clientFactory
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
@@ -623,7 +623,7 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		snapReader := NewMockSnapshotFileReader(1, 100)
 		snapMsg := &raftpb.Message{
 			Type:  raftpb.MsgSnap,
-			To:    peerId,
+			To:    peerID,
 			From:  1,
 			Index: 100,
 			Snapshot: raftpb.Snapshot{
@@ -640,12 +640,12 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		// Stop the peer
 		peer.Stop()
 		// Check snapshot status
-		status, exists := report.GetSnapshotStatus(peerId)
+		status, exists := report.GetSnapshotStatus(peerID)
 		assert.True(t, exists, "Snapshot report should exist")
 		assert.Equal(t, raft.SnapshotFailure, status, "Should report snapshot failure")
 
 		// Check if unreachable was reported
-		assert.True(t, report.IsUnreachableReported(peerId), "Should report peer as unreachable")
+		assert.True(t, report.IsUnreachableReported(peerID), "Should report peer as unreachable")
 
 		// Check if breaker was marked as failed
 		assert.False(t, breaker.Ready(), "Breaker should be marked as not ready")
@@ -653,7 +653,7 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 }
 
 func TestRaftPeerUpdateRaftReport(t *testing.T) {
-	peerId := uint64(2)
+	peerID := uint64(2)
 	cfg := RaftPeerConfig{
 		LimiterMaxBatchMessageSize: 1024,
 		SnapshotChunkSize:          256,
@@ -669,7 +669,7 @@ func TestRaftPeerUpdateRaftReport(t *testing.T) {
 	clientFactory := NewMockTransportClientFactory(false)
 	transportClient, err := clientFactory.CreateTransportClient()
 	assert.NoError(t, err)
-	peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+	peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 	defer peer.Stop()
 
@@ -680,13 +680,13 @@ func TestRaftPeerUpdateRaftReport(t *testing.T) {
 	peer.UpdateRaftReport(newReport)
 
 	// Test that the new report is used
-	newReport.ReportUnreachable(peerId)
-	assert.True(t, newReport.IsUnreachableReported(peerId), "New report should be used")
-	assert.False(t, report.IsUnreachableReported(peerId), "Old report should not be affected")
+	newReport.ReportUnreachable(peerID)
+	assert.True(t, newReport.IsUnreachableReported(peerID), "New report should be used")
+	assert.False(t, report.IsUnreachableReported(peerID), "Old report should not be affected")
 }
 
 func TestRaftPeerStop(t *testing.T) {
-	peerId := uint64(2)
+	peerID := uint64(2)
 	cfg := RaftPeerConfig{
 		LimiterMaxBatchMessageSize: 1024,
 		SnapshotChunkSize:          256,
@@ -702,7 +702,7 @@ func TestRaftPeerStop(t *testing.T) {
 	clientFactory := NewMockTransportClientFactory(false)
 	transportClient, err := clientFactory.CreateTransportClient()
 	assert.NoError(t, err)
-	peer := New(100, 0, peerId, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+	peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 	// Stop the peer
 	peer.Stop()
@@ -710,7 +710,7 @@ func TestRaftPeerStop(t *testing.T) {
 	// Try to send a message after stopping
 	msg := &raftpb.Message{
 		Type:  raftpb.MsgApp,
-		To:    peerId,
+		To:    peerID,
 		From:  1,
 		Index: 10,
 	}

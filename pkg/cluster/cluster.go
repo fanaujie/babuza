@@ -16,8 +16,8 @@ const (
 )
 
 type Cluster struct {
-	clusterId   uint64
-	localPeerId uint64
+	clusterID   uint64
+	localPeerID uint64
 	store       pb.Store
 	logger      ibabuza.Logger
 	mu          *sync.RWMutex
@@ -35,22 +35,22 @@ func NewCluster(logger ibabuza.Logger) *Cluster {
 	}
 }
 
-func (c *Cluster) SetClusterId(clusterId uint64) {
+func (c *Cluster) SetClusterID(clusterID uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.clusterId = clusterId
+	c.clusterID = clusterID
 }
 
-func (c *Cluster) SetLocalPeerId(localPeerId uint64) {
+func (c *Cluster) SetLocalPeerID(localPeerID uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.localPeerId = localPeerId
+	c.localPeerID = localPeerID
 }
 
-func (c *Cluster) Peer(peerId uint64) (babuzapb.Peer, error) {
+func (c *Cluster) Peer(peerID uint64) (babuzapb.Peer, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	p, ok := c.store.Peers[peerId]
+	p, ok := c.store.Peers[peerID]
 	if !ok {
 		return babuzapb.Peer{}, ErrPeerIDNotFound
 	}
@@ -68,10 +68,10 @@ func (c *Cluster) Snapshot(w io.Writer) error {
 	if err = fileutil.FileWriteUint64(w, buf, storeVersion); err != nil {
 		return err
 	}
-	if err = fileutil.FileWriteUint64(w, buf, c.clusterId); err != nil {
+	if err = fileutil.FileWriteUint64(w, buf, c.clusterID); err != nil {
 		return err
 	}
-	// skip localPeerId
+	// skip localPeerID
 	if err = fileutil.FileWriteUint64(w, buf, uint64(len(storeData))); err != nil {
 		return err
 	}
@@ -91,11 +91,11 @@ func (c *Cluster) Restore(r io.Reader) error {
 	if ver != storeVersion {
 		return fmt.Errorf("Cluster: mismatch store version. expected (version=%d) real(version=%d)", storeVersion, ver)
 	}
-	c.clusterId, err = fileutil.FileReadUint64(r, buf)
+	c.clusterID, err = fileutil.FileReadUint64(r, buf)
 	if err != nil {
 		return err
 	}
-	// skip localPeerId
+	// skip localPeerID
 	dataSize, err := fileutil.FileReadUint64(r, buf)
 	if err != nil {
 		return err
@@ -125,16 +125,16 @@ func (c *Cluster) Peers() []babuzapb.Peer {
 	return peers
 }
 
-func (c *Cluster) ClusterId() uint64 {
+func (c *Cluster) ClusterID() uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.clusterId
+	return c.clusterID
 }
 
 func (c *Cluster) LocalPeerID() uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.localPeerId
+	return c.localPeerID
 }
 
 func (c *Cluster) Add(peer babuzapb.RaftPeerAttribute) error {
@@ -174,33 +174,33 @@ func (c *Cluster) Update(peer babuzapb.RaftPeerAttribute) error {
 	return nil
 }
 
-func (c *Cluster) UpdateAppServiceAddresses(peerId uint64, addresses []string) error {
+func (c *Cluster) UpdateAppServiceAddresses(peerID uint64, addresses []string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	p, ok := c.store.Peers[peerId]
+	p, ok := c.store.Peers[peerID]
 	if !ok {
 		return ErrPeerIDNotFound
 	}
 	p.AppServiceAddresses = addresses
-	c.store.Peers[peerId] = p
+	c.store.Peers[peerID] = p
 	return nil
 }
 
-func (c *Cluster) Remove(peerId uint64) error {
+func (c *Cluster) Remove(peerID uint64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.store.Peers[peerId]; !ok {
+	if _, ok := c.store.Peers[peerID]; !ok {
 		return ErrPeerIDNotFound
 	}
-	delete(c.store.Peers, peerId)
-	c.store.RemovedIds[peerId] = true
+	delete(c.store.Peers, peerID)
+	c.store.RemovedIds[peerID] = true
 	return nil
 }
 
-func (c *Cluster) Promote(peerId uint64) error {
+func (c *Cluster) Promote(peerID uint64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	p, ok := c.store.Peers[peerId]
+	p, ok := c.store.Peers[peerID]
 	if !ok {
 		return ErrPeerIDNotFound
 	}
@@ -208,7 +208,7 @@ func (c *Cluster) Promote(peerId uint64) error {
 		return ErrPeerNotLearner
 	}
 	p.RaftPeerAttr.IsLearner = false
-	c.store.Peers[peerId] = p
+	c.store.Peers[peerID] = p
 	return nil
 }
 

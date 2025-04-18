@@ -24,9 +24,9 @@ var (
 )
 
 type RaftPeer struct {
-	clusterId                  uint64
-	localPeerId                uint64
-	peerId                     uint64
+	clusterID                  uint64
+	localPeerID                uint64
+	peerID                     uint64
 	limiterMaxBatchMessageSize int64
 	snapshotChunkSize          int64
 	raftQueueSize              int64
@@ -42,14 +42,14 @@ type RaftPeer struct {
 	mu                         sync.RWMutex
 }
 
-func New(clusterId, localPeerId, peerId uint64, cfg RaftPeerConfig, raftReport ibabuza.RaftStatusReporter,
+func New(clusterID, localPeerID, peerID uint64, cfg RaftPeerConfig, raftReport ibabuza.RaftStatusReporter,
 	memoryLimiter limiter.ResourceLimiter, chunkRateLimiter limiter.RateLimiter, breaker breaker.Breaker,
 	transportClient ibabuza.TransportClient, logger ibabuza.Logger) *RaftPeer {
 	closer := syncutil.NewCloser()
 	r := &RaftPeer{
-		clusterId:                  clusterId,
-		localPeerId:                localPeerId,
-		peerId:                     peerId,
+		clusterID:                  clusterID,
+		localPeerID:                localPeerID,
+		peerID:                     peerID,
 		limiterMaxBatchMessageSize: cfg.LimiterMaxBatchMessageSize,
 		snapshotChunkSize:          cfg.SnapshotChunkSize,
 		raftQueueSize:              cfg.RaftMsgQueueSize,
@@ -101,13 +101,13 @@ func (p *RaftPeer) SendSnapshot(snapMsg *raftpb.Message, snapReader SnapshotFile
 		if err := p.sendSnapshotMessageLoop(snapMsg, snapReader); err != nil {
 			if !errors.Is(err, ErrPeerStopped) {
 				p.breaker.Fail()
-				p.raftReport.ReportUnreachable(p.peerId)
-				p.raftReport.ReportSnapshot(p.peerId, raft.SnapshotFailure)
+				p.raftReport.ReportUnreachable(p.peerID)
+				p.raftReport.ReportSnapshot(p.peerID, raft.SnapshotFailure)
 			}
-			p.logger.Errorf("Local peer[%d] send snapshot message to peerId=%d error: %v", p.localPeerId, p.peerId, err)
+			p.logger.Errorf("Local peer[%d] send snapshot message to peerID=%d error: %v", p.localPeerID, p.peerID, err)
 			return
 		}
-		p.raftReport.ReportSnapshot(p.peerId, raft.SnapshotFinish)
+		p.raftReport.ReportSnapshot(p.peerID, raft.SnapshotFinish)
 	})
 }
 
@@ -117,11 +117,6 @@ func (p *RaftPeer) UpdateRaftReport(report ibabuza.RaftStatusReporter) {
 
 func (p *RaftPeer) Stop() {
 	p.closer.Close()
-}
-
-func (p *RaftPeer) UpdatePeer() {
-	p.closer.Close()
-	//restart
 }
 
 func (p *RaftPeer) getQueue() (chan *raftpb.Message, error) {
@@ -150,9 +145,9 @@ func (p *RaftPeer) processRaftMessage() {
 			if err := p.sendRaftMessageLoop(msgCh); err != nil {
 				if !errors.Is(err, ErrPeerStopped) {
 					p.breaker.Fail()
-					p.raftReport.ReportUnreachable(p.peerId)
+					p.raftReport.ReportUnreachable(p.peerID)
 				}
-				p.logger.Warningf("Local peer[%d] send raft message to peerId=%d error: %v", p.localPeerId, p.peerId, err)
+				p.logger.Warningf("Local peer[%d] send raft message to peerID=%d error: %v", p.localPeerID, p.peerID, err)
 			}
 			p.mu.Lock()
 			p.currentMsgCh = nil
@@ -164,7 +159,7 @@ func (p *RaftPeer) processRaftMessage() {
 
 func (p *RaftPeer) sendRaftMessageLoop(msgCh chan *raftpb.Message) error {
 	var batchMsg = babuzapb.BatchMessage{
-		ClusterId: p.clusterId,
+		ClusterID: p.clusterID,
 	}
 	var nextBatch bool
 	var maxBatchSize int64
@@ -235,7 +230,7 @@ func (p *RaftPeer) sendSnapshotMessageLoop(snapMsg *raftpb.Message,
 	}
 
 	m := babuzapb.SnapshotMessage{
-		ClusterId: p.clusterId,
+		ClusterID: p.clusterID,
 		From:      snapMsg.From,
 		To:        snapMsg.To,
 		Term:      snapMsg.Snapshot.Metadata.Term,

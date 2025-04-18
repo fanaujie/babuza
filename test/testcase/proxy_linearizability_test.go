@@ -238,7 +238,7 @@ func (c *LinearizabilityWithKvStoreTestCase) CreateTestComponents() []BabuzaComp
 						// Due to the append operation in tests requiring idempotence, sessions must be used.
 						b := customBabuzaComponent(builder.LRUSession, walType, builder.DurableSnapshot,
 							transportType, proxyNet).
-							SetClusterId(config.BubuzaConfig.ClusterId).
+							SetClusterId(config.BubuzaConfig.ClusterID).
 							SetStorageRootDir(storageDir).
 							AddLruSessionOptions(session.SetLruMgrOptionsWithMaxSessions(100))
 						return *config, *b.Build()
@@ -264,10 +264,10 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
 	// Connect all peers
-	assert.Nil(c.t, tc.SetPartition(connectGroup.GetIds()))
+	assert.Nil(c.t, tc.SetPartition(connectGroup.GetIDs()))
 
 	// Wait for leader election
-	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 	rs := tc.GetAllRaft()
 
@@ -379,7 +379,7 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 
 				// Create random partitions
 				partitions := make(map[uint64]int)
-				for _, id := range connectGroup.GetIds() {
+				for _, id := range connectGroup.GetIDs() {
 					partitions[id] = rand.Int() % 2
 				}
 
@@ -413,8 +413,8 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 		<-partitionDoneCh
 
 		//Reconnect all nodes
-		assert.Nil(c.t, tc.SetPartition(connectGroup.GetIds()))
-		_, err = tc.CheckOneLeader(wait, connectGroup.GetIds())
+		assert.Nil(c.t, tc.SetPartition(connectGroup.GetIDs()))
+		_, err = tc.CheckOneLeader(wait, connectGroup.GetIDs())
 		assert.Nil(c.t, err)
 		// Stop client operations
 		close(clientStopCh)

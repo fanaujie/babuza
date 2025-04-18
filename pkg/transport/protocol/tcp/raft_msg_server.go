@@ -42,7 +42,7 @@ func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, listener
 
 func (r *RaftMsgServer) Start() error {
 	var err error
-	r.logger.Infof("tcp[raft server] peerId(%d) Start", r.cfg.PeerId)
+	r.logger.Infof("tcp[raft server] peerID(%d) Start", r.cfg.PeerId)
 	r.listener, err = r.tcpListener.Listen(r.cfg.TLSConfig, r.cfg.PeerAddress)
 	if err != nil {
 		return err
@@ -73,11 +73,11 @@ func (r *RaftMsgServer) Start() error {
 				default:
 				}
 			} else {
-				r.logger.Infof("tcp[raft server] peerId(%d) accept conn from %s", r.cfg.PeerId, c.RemoteAddr().String())
+				r.logger.Infof("tcp[raft server] peerID(%d) accept conn from %s", r.cfg.PeerId, c.RemoteAddr().String())
 				s := r.newSession(c)
 				r.closer.Run(func() {
 					if sErr := s.start(); sErr != nil {
-						r.logger.Warningf("tcp[raft server]: failed to decode session. peerId(%d) endpoint(%s) err(%s)",
+						r.logger.Warningf("tcp[raft server]: failed to decode session. peerID(%d) endpoint(%s) err(%s)",
 							r.cfg.PeerId, r.cfg.PeerAddress, sErr.Error())
 					}
 				})
@@ -89,7 +89,7 @@ func (r *RaftMsgServer) Start() error {
 
 func (r *RaftMsgServer) Stop() error {
 	if err := r.listener.Close(); err != nil {
-		r.logger.Warningf("tcp[raft server]: failed to close. peerId(%d) endpoint(%s )err(%s)",
+		r.logger.Warningf("tcp[raft server]: failed to close. peerID(%d) endpoint(%s )err(%s)",
 			r.cfg.PeerId, r.cfg.PeerAddress, err.Error())
 	}
 	r.closer.Close()

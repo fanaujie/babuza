@@ -25,9 +25,9 @@ func TestRaft_PubAppService_FindLeader(t *testing.T) {
 			closer: closer,
 		}
 		r.status.SetSoftState(raft.SoftState{Lead: 1})
-		leaderId, err := r.findLeader(context.Background(), time.Millisecond*100)
+		leaderID, err := r.findLeader(context.Background(), time.Millisecond*100)
 		assert.Nil(t, err)
-		assert.Equal(t, uint64(1), leaderId)
+		assert.Equal(t, uint64(1), leaderID)
 	})
 
 	t.Run("raft stop: find leader", func(t *testing.T) {
@@ -89,7 +89,7 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		m.errorPropose = ErrNotLeader
 		log := &logger.Mock{}
 		cl := cluster.NewCluster(log)
-		cl.SetClusterId(1)
+		cl.SetClusterID(1)
 		r := &Raft{
 			raftNode:         m,
 			cluster:          cl,
@@ -133,7 +133,7 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 		}
 		log := &logger.Mock{}
 		cl := cluster.NewCluster(log)
-		cl.SetClusterId(1)
+		cl.SetClusterID(1)
 		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
 			cluster:          cl,
@@ -166,7 +166,7 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 		}
 		log := &logger.Mock{}
 		cl := cluster.NewCluster(log)
-		cl.SetClusterId(1)
+		cl.SetClusterID(1)
 		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
 			cluster:          cl,
@@ -218,14 +218,14 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 		}
 		log := &logger.Mock{}
 		cl := cluster.NewCluster(log)
-		cl.SetClusterId(1)
+		cl.SetClusterID(1)
 		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
 			idGenerator: &mockIdGenerator{
 				id: 1,
 			},
 			config: BabuzaConfig{
-				LocalPeerId: 1,
+				LocalPeerID: 1,
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: true,
 				}},
@@ -258,7 +258,7 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 				id: 1,
 			},
 			config: BabuzaConfig{
-				LocalPeerId: 10,
+				LocalPeerID: 10,
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: true,
 				}},
@@ -288,7 +288,7 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 				id: 1,
 			},
 			config: BabuzaConfig{
-				LocalPeerId: 1,
+				LocalPeerID: 1,
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: false,
 				}},
@@ -319,7 +319,7 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 				id: 1,
 			},
 			config: BabuzaConfig{
-				LocalPeerId: 1,
+				LocalPeerID: 1,
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: false,
 				}},

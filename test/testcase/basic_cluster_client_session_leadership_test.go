@@ -81,7 +81,7 @@ func leadershipSessionTestComponents() []BabuzaComponent {
 					return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
 						b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
 							transport, proxyNet).
-							SetClusterId(config.BubuzaConfig.ClusterId).
+							SetClusterId(config.BubuzaConfig.ClusterID).
 							SetStorageRootDir(storageDir)
 						return *config, *b.Build()
 					}
@@ -112,7 +112,7 @@ func (c *BasicValidClientSessionLeaderShutdown) Run(tc *testcluster.BabuzaCluste
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
 	// Identify the current leader
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Create a client with automatic incrementing session
@@ -151,16 +151,16 @@ func (c *BasicValidClientSessionLeaderShutdown) Run(tc *testcluster.BabuzaCluste
 	// Wait for the signal to stop the leader
 	<-stopLeaderCh
 	// Shutdown the current leader
-	assert.Nil(c.t, tc.ShutdownPeer(leaderId))
+	assert.Nil(c.t, tc.ShutdownPeer(leaderID))
 	// Wait for election to complete
 	time.Sleep(wait)
 	// Remove the old leader from the connection group
-	connectGroup.Remove(leaderId)
+	connectGroup.Remove(leaderID)
 
 	// Check that a new leader is elected
-	leaderId1, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID1, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	assert.NotEqual(c.t, leaderId, leaderId1)
+	assert.NotEqual(c.t, leaderID, leaderID1)
 	// Wait for all operations to complete
 	<-doneCh
 	// Verify all values were correctly stored

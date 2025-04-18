@@ -40,8 +40,8 @@ type AppliedCluster interface {
 	LocalPeerID() uint64
 	Add(babuzapb.RaftPeerAttribute) error
 	Update(babuzapb.RaftPeerAttribute) error
-	Remove(peerId uint64) error
-	Promote(peerId uint64) error
+	Remove(peerID uint64) error
+	Promote(peerID uint64) error
 	UpdateAppServiceAddresses(uint64, []string) error
 }
 
@@ -118,7 +118,7 @@ func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry {
 	return NewEntry(
 		e.Index,
 		e.Term,
-		req.Context.ReplyId,
+		req.Context.ReplyID,
 		req.Context.SequenceNum,
 		reqTime,
 		req.StateMachineLog,
@@ -158,7 +158,7 @@ func (a *appliedFacadeImpl) doExactlyOnce(index uint64, requestTime int64, ctx b
 	a.sessionMgr.ExpireSession(requestTime)
 	sess, err := a.sessionMgr.GetSession(ctx.SessionID)
 	if err != nil {
-		a.replier.SendResult(ctx.ReplyId, ibabuza.ApplyResult{
+		a.replier.SendResult(ctx.ReplyID, ibabuza.ApplyResult{
 			LogIndex: index,
 			Error:    err,
 		})
@@ -168,12 +168,12 @@ func (a *appliedFacadeImpl) doExactlyOnce(index uint64, requestTime int64, ctx b
 	if sess.RepeatSequenceNum(ctx.SequenceNum) {
 		if ar, ok := sess.GetResult(ctx.SequenceNum); ok == false {
 			err = fmt.Errorf("seesion id(%d) seqence nume(%d): not found apply result", ctx.SessionID, ctx.SequenceNum)
-			a.replier.SendResult(ctx.ReplyId, ibabuza.ApplyResult{
+			a.replier.SendResult(ctx.ReplyID, ibabuza.ApplyResult{
 				LogIndex: index,
 				Error:    err,
 			})
 		} else {
-			a.replier.SendResult(ctx.ReplyId, ar)
+			a.replier.SendResult(ctx.ReplyID, ar)
 		}
 		return false, nil
 	}
@@ -284,12 +284,12 @@ func (a *appliedFacadeImpl) sendConfChangeResult(session ibabuza.Session, ctx ba
 		Error:    err,
 	}
 	_ = session.AddResult(ctx.SequenceNum, time.Now().UnixNano(), ar)
-	a.replier.SendResult(ctx.ReplyId, ar)
+	a.replier.SendResult(ctx.ReplyID, ar)
 }
 
 func (a *appliedFacadeImpl) handleSessionRegister(e raftpb.Entry, req babuzapb.NormalRequest, reqTime int64) {
 	a.sessionMgr.Register(e.Index, reqTime)
-	a.replier.SendResult(req.Context.ReplyId, ibabuza.ApplyResult{
+	a.replier.SendResult(req.Context.ReplyID, ibabuza.ApplyResult{
 		LogIndex: e.Index,
 	})
 	a.updateAppliedIndexAndTerm(e.Index, e.Term)
@@ -297,11 +297,11 @@ func (a *appliedFacadeImpl) handleSessionRegister(e raftpb.Entry, req babuzapb.N
 
 func (a *appliedFacadeImpl) handlePubAppService(e raftpb.Entry, req babuzapb.NormalRequest) {
 	result := a.cluster.UpdateAppServiceAddresses(
-		req.PubAppService.PubServicePeerId,
+		req.PubAppService.PubServicePeerID,
 		req.PubAppService.AppServiceAddresses,
 	)
 
-	a.replier.SendResult(req.Context.ReplyId, ibabuza.ApplyResult{
+	a.replier.SendResult(req.Context.ReplyID, ibabuza.ApplyResult{
 		LogIndex: e.Index,
 		Response: result,
 	})

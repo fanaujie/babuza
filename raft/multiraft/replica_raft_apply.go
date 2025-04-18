@@ -40,7 +40,7 @@ func (r *Replica) applySnapshot(snap raftpb.Snapshot) {
 	}
 	//r.trans.RemovePeers()
 	for _, p := range r.cluster.Peers() {
-		if p.RaftPeerAttr.Id == r.cluster.ClusterId() {
+		if p.RaftPeerAttr.Id == r.cluster.ClusterID() {
 			continue
 		}
 		//	r.trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)

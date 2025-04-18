@@ -29,8 +29,8 @@ func NewRaftMsgClient(pool connpool.Pool[*grpc.ClientConn], resolver ibabuza.Tra
 	}
 }
 
-func (r *RaftMsgClient) getConnection(peerId uint64) (*grpc.ClientConn, error) {
-	addr, err := r.resolver.ResolvePeerAddress(peerId)
+func (r *RaftMsgClient) getConnection(peerID uint64) (*grpc.ClientConn, error) {
+	addr, err := r.resolver.ResolvePeerAddress(peerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve peer address: %w", err)
 	}
@@ -88,7 +88,7 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
 	var res babuzapb.GetClusterPeersResponse
 
-	conn, err := r.getConnection(request.ToId)
+	conn, err := r.getConnection(request.To)
 	if err != nil {
 		res.Status = babuzapb.FAILED
 		res.Message = err.Error()
@@ -115,7 +115,7 @@ func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest)
 func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	var res babuzapb.PublishApplicationServiceResponse
 
-	conn, err := r.getConnection(request.ToId)
+	conn, err := r.getConnection(request.To)
 	if err != nil {
 		res.Status = babuzapb.FAILED
 		res.Message = err.Error()

@@ -12,9 +12,9 @@ import (
 
 func TestRaft_WaitReadIndexResponse(t *testing.T) {
 
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	raftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.config.LinearizedReadRequestTimeout = time.Second * 2
 	tr.raftNode = raftNode
 	tr.status = status.New()
@@ -38,7 +38,7 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 		}()
 		time.Sleep(tr.config.LinearizedReadRequestTimeout / 2)
 		tr.updateLeadership(raft.SoftState{
-			Lead:      localPeerId,
+			Lead:      localPeerID,
 			RaftState: raft.StateLeader,
 		})
 		assert.ErrorIs(t, <-resultCh, ErrLeaderChange)
@@ -60,12 +60,12 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 }
 
 func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.config.LinearizedReadRequestTimeout = time.Second * 2
 	tr.raftNode = etcdRaftNode
-	tr.idGenerator = idgenerator.New(localPeerId, 10000)
+	tr.idGenerator = idgenerator.New(localPeerID, 10000)
 	tr.status = status.New()
 	defer tr.closer.Close()
 	tr.closer.Run(func() {
@@ -127,7 +127,7 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 		default:
 		}
 		tr.updateLeadership(raft.SoftState{
-			Lead:      localPeerId,
+			Lead:      localPeerID,
 			RaftState: raft.StateLeader,
 		})
 		<-n.GetCh()
@@ -136,11 +136,11 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 }
 
 func TestRaft_ProcessRaftLinearizedRead_Timeout_AppliedIndexIsNotEqualToCommittedIndex(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = etcdRaftNode
-	tr.idGenerator = idgenerator.New(localPeerId, 10000)
+	tr.idGenerator = idgenerator.New(localPeerID, 10000)
 	tr.status = status.New()
 	tr.completionReplier = replier.NewCompletion()
 	defer tr.closer.Close()

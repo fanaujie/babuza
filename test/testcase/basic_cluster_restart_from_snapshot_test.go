@@ -128,7 +128,7 @@ func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 							chunkSize := 5 * 1024 * 1024
 							b := customBabuzaComponent(sessionType, builder.BabuzaWal, snapshotType,
 								transportType, proxyNet).
-								SetClusterId(config.BubuzaConfig.ClusterId).
+								SetClusterId(config.BubuzaConfig.ClusterID).
 								SetStorageRootDir(storageDir).
 								AddTransportOptions(transport.SetTransportOptionsWithPeerSnapshotChunkSize(
 									int64(chunkSize))).SetCustomLogger(&logger.Mock{})
@@ -184,7 +184,7 @@ func (c *BasicRestartFromSnapshot) Run(tc *testcluster.BabuzaCluster, testParams
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 	// Identify the current leader
-	oldLeaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	oldLeaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Create a client with automatic incrementing session
@@ -207,7 +207,7 @@ func (c *BasicRestartFromSnapshot) Run(tc *testcluster.BabuzaCluster, testParams
 	}
 
 	// Verify all peers have consistent state
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 
 	// Record snapshot metadata from leader for later verification
 	lastSnapshotIndex := uint64(0)
@@ -226,7 +226,7 @@ func (c *BasicRestartFromSnapshot) Run(tc *testcluster.BabuzaCluster, testParams
 	time.Sleep(time.Second * 5) // Wait for election to complete
 	connectGroup.Remove(oldLeaderId)
 	// Ensure new leader is elected
-	newLeaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	newLeaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Write more data with the new leader
@@ -247,14 +247,14 @@ func (c *BasicRestartFromSnapshot) Run(tc *testcluster.BabuzaCluster, testParams
 	// 1. Rejoins the cluster as a follower
 	// 2. Has the correct snapshot information
 	connectGroup.Add(oldLeaderId)
-	assert.Nil(c.t, tc.RestartPeer(wait, makeSingleStandardPeer(oldLeaderId, false), connectGroup.GetIds()))
+	assert.Nil(c.t, tc.RestartPeer(wait, makeSingleStandardPeer(oldLeaderId, false), connectGroup.GetIDs()))
 	assert.Nil(c.t, tc.CheckStatus(wait, oldLeaderId, func(s babuza.Status) bool {
 		return s.LastSnapshotIndex == lastSnapshotIndex &&
 			s.LastSnapshotTerm == lastSnapshotTerm && s.State == babuza.FollowerState
 	}))
 
 	// Verify all peers (including restarted old leader) have consistent state
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 	assert.NotEqual(c.t, oldLeaderId, newLeaderId)
 
 	// Part 2: Test restart again to verify consistency is maintained
@@ -279,14 +279,14 @@ func (c *BasicRestartFromSnapshot) Run(tc *testcluster.BabuzaCluster, testParams
 	// 1. Rejoins as a follower
 	// 2. Has the same snapshot information as before
 	// 3. Successfully catches up with new data
-	assert.Nil(c.t, tc.RestartPeer(wait, makeSingleStandardPeer(oldLeaderId, false), connectGroup.GetIds()))
+	assert.Nil(c.t, tc.RestartPeer(wait, makeSingleStandardPeer(oldLeaderId, false), connectGroup.GetIDs()))
 	assert.Nil(c.t, tc.CheckStatus(wait, oldLeaderId, func(s babuza.Status) bool {
 		return s.LastSnapshotIndex == lastSnapshotIndex &&
 			s.LastSnapshotTerm == lastSnapshotTerm && s.State == babuza.FollowerState
 	}))
 
 	// Final verification that all nodes have identical state
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestRestartFromSnapshot(t *testing.T) {

@@ -87,8 +87,8 @@ func NewBabuzaComponentBuilder(config *BabuzaComponentConfig) *BabuzaComponentBu
 	}
 }
 
-func (b *BabuzaComponentBuilder) SetClusterId(clusterId uint64) *BabuzaComponentBuilder {
-	b.config.ClusterId = clusterId
+func (b *BabuzaComponentBuilder) SetClusterId(clusterID uint64) *BabuzaComponentBuilder {
+	b.config.ClusterId = clusterID
 	return b
 }
 

@@ -20,17 +20,17 @@ func makeVotingStandardPeers(totalPeers int) ([]testcluster.Peer, *testcluster.C
 	var peers []testcluster.Peer
 	var peerIDs []uint64
 	for i := 0; i < totalPeers; i++ {
-		peerId := uint64(i + 1)
-		peerIDs = append(peerIDs, peerId)
-		peers = append(peers, makeSingleStandardPeer(peerId, false))
+		peerID := uint64(i + 1)
+		peerIDs = append(peerIDs, peerID)
+		peers = append(peers, makeSingleStandardPeer(peerID, false))
 	}
 	return peers, testcluster.NewConnectedGroup(peerIDs)
 }
-func makeSingleStandardPeer(peerId uint64, isLearner bool) testcluster.Peer {
+func makeSingleStandardPeer(peerID uint64, isLearner bool) testcluster.Peer {
 	return &testcluster.StandardPeer{
-		Id:                  peerId,
-		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerId),
-		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerId)},
+		Id:                  peerID,
+		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerID),
+		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerID)},
 		IsLearner:           isLearner,
 	}
 }
@@ -39,19 +39,19 @@ func makeVotingProxyPeers(count int) ([]testcluster.Peer, *testcluster.Connected
 	var peers []testcluster.Peer
 	var peerIDs []uint64
 	for i := 0; i < count; i++ {
-		peerId := uint64(i + 1)
-		peerIDs = append(peerIDs, peerId)
-		peers = append(peers, makeSingleProxyPeer(peerId, false))
+		peerID := uint64(i + 1)
+		peerIDs = append(peerIDs, peerID)
+		peers = append(peers, makeSingleProxyPeer(peerID, false))
 	}
 	return peers, testcluster.NewConnectedGroup(peerIDs)
 }
 
-func makeSingleProxyPeer(peerId uint64, isLearner bool) testcluster.Peer {
+func makeSingleProxyPeer(peerID uint64, isLearner bool) testcluster.Peer {
 	return &testcluster.BabuzaPeer{
-		Id:                  peerId,
-		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerId),
-		ProxyListenAddr:     fmt.Sprintf("127.0.0.1:%d", 24200+peerId),
-		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerId)},
+		Id:                  peerID,
+		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerID),
+		ProxyListenAddr:     fmt.Sprintf("127.0.0.1:%d", 24200+peerID),
+		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerID)},
 		IsLearner:           isLearner,
 	}
 }
@@ -91,7 +91,7 @@ func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
 						config.BubuzaConfig.RaftConfig.DisableProposalForwarding = disableProposalForwarding
 						b := customBabuzaComponent(builder.NoOpSession, walType, builder.DurableSnapshot,
 							transportType, proxyNet).
-							SetClusterId(config.BubuzaConfig.ClusterId).
+							SetClusterId(config.BubuzaConfig.ClusterID).
 							SetStorageRootDir(storageDir)
 						return *config, *b.Build()
 					}
@@ -121,7 +121,7 @@ func proxyClusterComponents(checkQuorum, preVote bool) []BabuzaComponent {
 						config.BubuzaConfig.RaftConfig.PreVote = preVote
 						b := customBabuzaComponent(builder.NoOpSession, walType, builder.DurableSnapshot,
 							transportType, proxyNet).
-							SetClusterId(config.BubuzaConfig.ClusterId).
+							SetClusterId(config.BubuzaConfig.ClusterID).
 							SetStorageRootDir(storageDir)
 						return *config, *b.Build()
 					}

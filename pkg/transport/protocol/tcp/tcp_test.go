@@ -87,7 +87,7 @@ func (m *byteSliceEncode) Size() int {
 // 實現 ibabuza.TransportResolver 接口的類型
 type peerAddressResolver string
 
-func (r peerAddressResolver) ResolvePeerAddress(peerId uint64) (string, error) {
+func (r peerAddressResolver) ResolvePeerAddress(peerID uint64) (string, error) {
 	return string(r), nil
 }
 
@@ -460,7 +460,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				},
 			}
 			mockTransport.clusterRes = res
-			getRes := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterId: 100, ToId: 1})
+			getRes := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterID: 100, To: 1})
 			assert.Equal(t, res, getRes)
 		}
 		nodeDoneMsg := <-mockTransport.notifyNodeDoneCh

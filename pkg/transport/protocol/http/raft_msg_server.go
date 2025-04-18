@@ -55,7 +55,7 @@ func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, raft iba
 
 func (r *RaftMsgServer) Start() error {
 	var err error
-	r.logger.Infof("http[raft server] peerId(%d) Start", r.cfg.PeerId)
+	r.logger.Infof("http[raft server] peerID(%d) Start", r.cfg.PeerId)
 
 	tlsCfg, err := netutil.GetServerTlsConfig(r.cfg.TLSConfig)
 	if err != nil {

@@ -19,14 +19,14 @@ func NewJoinCommand(kvClient *client.KvStoreClient) *JoinCommand {
 
 func (jc *JoinCommand) Execute(args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("error: join command requires 2 arguments: peerId and raftListenAddr")
+		return fmt.Errorf("error: join command requires 2 arguments: peerID and raftListenAddr")
 	}
-	peerId, err := strconv.ParseUint(args[0], 10, 64)
+	peerID, err := strconv.ParseUint(args[0], 10, 64)
 	if err != nil {
-		return fmt.Errorf("error: invalid peerId")
+		return fmt.Errorf("error: invalid peerID")
 	}
 	raftListenAddr := args[1]
-	err = jc.kvClient.Join(context.Background(), peerId, raftListenAddr, false)
+	err = jc.kvClient.Join(context.Background(), peerID, raftListenAddr, false)
 	if err != nil {
 		return fmt.Errorf("error: failed to join %v", err)
 	} else {
@@ -36,5 +36,5 @@ func (jc *JoinCommand) Execute(args []string) error {
 }
 
 func (jc *JoinCommand) Help() string {
-	return "join <peerId> <raftListenAddr> - Join a new peer to the cluster"
+	return "join <peerID> <raftListenAddr> - Join a new peer to the cluster"
 }

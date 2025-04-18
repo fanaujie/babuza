@@ -29,7 +29,7 @@ type RaftNodeHandler interface {
 }
 
 type TransportResolver interface {
-	ResolvePeerAddress(peerId uint64) (string, error)
+	ResolvePeerAddress(peerID uint64) (string, error)
 }
 
 type Transport interface {

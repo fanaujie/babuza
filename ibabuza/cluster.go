@@ -10,17 +10,17 @@ type ClusterRestoreSnapshot interface {
 }
 
 type Cluster interface {
-	SetClusterId(clusterId uint64)
-	SetLocalPeerId(localPeerId uint64)
-	Peer(peerId uint64) (babuzapb.Peer, error)
+	SetClusterID(clusterID uint64)
+	SetLocalPeerID(localPeerID uint64)
+	Peer(peerID uint64) (babuzapb.Peer, error)
 	Snapshot(io.Writer) error
 	Restore(io.Reader) error
 	Peers() []babuzapb.Peer
-	ClusterId() uint64
+	ClusterID() uint64
 	LocalPeerID() uint64
 	Add(babuzapb.RaftPeerAttribute) error
 	Update(babuzapb.RaftPeerAttribute) error
-	Remove(peerId uint64) error
-	Promote(peerId uint64) error
-	UpdateAppServiceAddresses(peerId uint64, addresses []string) error
+	Remove(peerID uint64) error
+	Promote(peerID uint64) error
+	UpdateAppServiceAddresses(peerID uint64, addresses []string) error
 }

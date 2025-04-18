@@ -10,8 +10,8 @@ func genKey(sessionBit, seqNum, memberId uint64) uint64 {
 
 func TestReplyID(t *testing.T) {
 	var seed uint64 = 100
-	var peerId uint64 = 1
-	a := New(peerId, seed)
+	var peerID uint64 = 1
+	a := New(peerID, seed)
 	seed++
 	var expected uint64 = 0x65001
 	iter := 1000
@@ -20,7 +20,7 @@ func TestReplyID(t *testing.T) {
 			t.Fatalf("expected key=%d, real key=%d", expected, k)
 		}
 		seed++
-		expected = genKey(0, seed, peerId)
+		expected = genKey(0, seed, peerID)
 	}
 
 }

@@ -34,11 +34,11 @@ func (c *QuorumFollowerDisconnectionCluster) Run(tc *testcluster.BabuzaCluster, 
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
 	// Check initial leader election
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Disconnect 3 followers to break quorum (more than half of the cluster)
-	follower1Id := (leaderId % 5) + 1
+	follower1Id := (leaderID % 5) + 1
 	follower2Id := (follower1Id % 5) + 1
 	follower3Id := (follower2Id % 5) + 1
 
@@ -73,7 +73,7 @@ func (c *QuorumFollowerDisconnectionCluster) Run(tc *testcluster.BabuzaCluster, 
 	connectGroup.Add(follower3Id)
 
 	// Check leader election after reconnection
-	_, err = tc.CheckOneLeader(wait, connectGroup.GetIds())
+	_, err = tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Execute commands after restoring quorum
@@ -88,7 +88,7 @@ func (c *QuorumFollowerDisconnectionCluster) Run(tc *testcluster.BabuzaCluster, 
 	}))
 
 	// Verify data consistency across all peers
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestQuorumFollowerDisconnectionCluster(t *testing.T) {

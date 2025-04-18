@@ -126,8 +126,8 @@ type RaftConfig struct {
 }
 
 type BabuzaConfig struct {
-	ClusterId         uint64
-	LocalPeerId       uint64
+	ClusterID         uint64
+	LocalPeerID       uint64
 	RaftListenAddress string
 	Join              bool
 	EnableWalNoSync   bool
@@ -139,10 +139,10 @@ type BabuzaConfig struct {
 	LinearizedReadRetryTimeout   time.Duration
 }
 
-func DefaultBabuzaConfig(ClusterId, localPeerId uint64, raftListenAddr string) BabuzaConfig {
+func DefaultBabuzaConfig(ClusterId, localPeerID uint64, raftListenAddr string) BabuzaConfig {
 	return BabuzaConfig{
-		ClusterId:                    ClusterId,
-		LocalPeerId:                  localPeerId,
+		ClusterID:                    ClusterId,
+		LocalPeerID:                  localPeerID,
 		RaftListenAddress:            raftListenAddr,
 		SnapshotCount:                10000,
 		RaftConfig:                   DefaultRaftConfig(),
@@ -170,7 +170,7 @@ func DefaultRaftConfig() RaftConfig {
 
 func (c *BabuzaConfig) convertToRaftConfig(logger raft.Logger, ms raft.Storage) raft.Config {
 	return raft.Config{
-		ID:                        c.LocalPeerId,
+		ID:                        c.LocalPeerID,
 		ElectionTick:              c.ElectionTicks,
 		HeartbeatTick:             c.HeartbeatTicks,
 		Storage:                   ms,

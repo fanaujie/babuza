@@ -46,8 +46,8 @@ type MockPeerFactory struct {
 	mock.Mock
 }
 
-func (f *MockPeerFactory) CreatePeer(peerId uint64) peer.Peer {
-	args := f.Called(peerId)
+func (f *MockPeerFactory) CreatePeer(peerID uint64) peer.Peer {
+	args := f.Called(peerID)
 	return args.Get(0).(peer.Peer)
 }
 
@@ -71,20 +71,20 @@ func TestManagerImpl_AddPeer(t *testing.T) {
 	mockPeer.On("Run").Return()
 
 	// Test adding new peer
-	peerId := uint64(1)
+	peerID := uint64(1)
 	peerAddress := "localhost:10001"
-	factory.On("CreatePeer", peerId).Return(mockPeer)
+	factory.On("CreatePeer", peerID).Return(mockPeer)
 
-	err := manager.AddPeer(peerId, peerAddress, factory)
+	err := manager.AddPeer(peerID, peerAddress, factory)
 	assert.NoError(t, err)
 
 	// Verify the peer was added
-	assert.Equal(t, mockPeer, manager.peers[peerId])
-	assert.Equal(t, peerAddress, manager.addresses[peerId])
-	factory.AssertCalled(t, "CreatePeer", peerId)
+	assert.Equal(t, mockPeer, manager.peers[peerID])
+	assert.Equal(t, peerAddress, manager.addresses[peerID])
+	factory.AssertCalled(t, "CreatePeer", peerID)
 
 	// Test adding duplicate peer
-	err = manager.AddPeer(peerId, peerAddress, factory)
+	err = manager.AddPeer(peerID, peerAddress, factory)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already exists")
 }
@@ -97,16 +97,16 @@ func TestManagerImpl_GetPeer(t *testing.T) {
 	mockPeer := new(MockPeer)
 	mockPeer.On("Run").Return()
 
-	peerId := uint64(1)
+	peerID := uint64(1)
 	peerAddress := "localhost:10001"
-	factory.On("CreatePeer", peerId).Return(mockPeer)
+	factory.On("CreatePeer", peerID).Return(mockPeer)
 
 	// Add peer
-	err := manager.AddPeer(peerId, peerAddress, factory)
+	err := manager.AddPeer(peerID, peerAddress, factory)
 	assert.NoError(t, err)
 
 	// Test getting existing peer
-	p := manager.GetPeer(peerId)
+	p := manager.GetPeer(peerID)
 	assert.Equal(t, mockPeer, p)
 
 	// Test getting non-existent peer
@@ -121,16 +121,16 @@ func TestManagerImpl_UpdatePeer(t *testing.T) {
 	// Setup
 	mockPeer := new(MockPeer)
 
-	peerId := uint64(1)
+	peerID := uint64(1)
 	peerAddress := "localhost:10001"
-	factory.On("CreatePeer", peerId).Return(mockPeer)
+	factory.On("CreatePeer", peerID).Return(mockPeer)
 
 	// Add peer
-	err := manager.AddPeer(peerId, peerAddress, factory)
+	err := manager.AddPeer(peerID, peerAddress, factory)
 	assert.NoError(t, err)
 
 	// Test updating with same address (no restart)
-	err = manager.UpdatePeer(peerId, peerAddress)
+	err = manager.UpdatePeer(peerID, peerAddress)
 	assert.NoError(t, err)
 
 	// Verify peer not restarted
@@ -140,9 +140,9 @@ func TestManagerImpl_UpdatePeer(t *testing.T) {
 	newAddress := "localhost:10002"
 
 	// Test updating with new address (should restart)
-	err = manager.UpdatePeer(peerId, newAddress)
+	err = manager.UpdatePeer(peerID, newAddress)
 	assert.NoError(t, err)
-	assert.Equal(t, newAddress, manager.addresses[peerId])
+	assert.Equal(t, newAddress, manager.addresses[peerID])
 
 	// Test updating non-existent peer
 	err = manager.UpdatePeer(999, peerAddress)
@@ -159,27 +159,27 @@ func TestManagerImpl_RemovePeer(t *testing.T) {
 	mockPeer.On("Run").Return()
 	mockPeer.On("Stop").Return()
 
-	peerId := uint64(1)
+	peerID := uint64(1)
 	peerAddress := "localhost:10001"
-	factory.On("CreatePeer", peerId).Return(mockPeer)
+	factory.On("CreatePeer", peerID).Return(mockPeer)
 
 	// Add peer
-	err := manager.AddPeer(peerId, peerAddress, factory)
+	err := manager.AddPeer(peerID, peerAddress, factory)
 	assert.NoError(t, err)
 
 	// Test removing peer
-	err = manager.RemovePeer(peerId)
+	err = manager.RemovePeer(peerID)
 	assert.NoError(t, err)
 
 	// Verify peer stopped and removed
 	mockPeer.AssertCalled(t, "Stop")
-	_, peerExists := manager.peers[peerId]
-	_, addrExists := manager.addresses[peerId]
+	_, peerExists := manager.peers[peerID]
+	_, addrExists := manager.addresses[peerID]
 	assert.False(t, peerExists)
 	assert.False(t, addrExists)
 
 	// Test removing non-existent peer
-	err = manager.RemovePeer(peerId)
+	err = manager.RemovePeer(peerID)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -189,10 +189,10 @@ func TestManagerImpl_RemoveAllPeers(t *testing.T) {
 	manager := NewPeerManager().(*ManagerImpl)
 
 	// Setup multiple peers
-	peerIds := []uint64{1, 2, 3}
-	mockPeers := make([]*MockPeer, len(peerIds))
+	peerIDs := []uint64{1, 2, 3}
+	mockPeers := make([]*MockPeer, len(peerIDs))
 
-	for i, id := range peerIds {
+	for i, id := range peerIDs {
 		mockPeer := new(MockPeer)
 		mockPeer.On("Run").Return()
 		mockPeer.On("Stop").Return()
@@ -211,7 +211,7 @@ func TestManagerImpl_RemoveAllPeers(t *testing.T) {
 	// Verify all peers stopped and removed
 	for i, p := range mockPeers {
 		p.AssertCalled(t, "Stop")
-		id := peerIds[i]
+		id := peerIDs[i]
 		_, peerExists := manager.peers[id]
 		_, addrExists := manager.addresses[id]
 		assert.False(t, peerExists)
@@ -230,16 +230,16 @@ func TestManagerImpl_GetPeerAddress(t *testing.T) {
 	mockPeer := new(MockPeer)
 	mockPeer.On("Run").Return()
 
-	peerId := uint64(1)
+	peerID := uint64(1)
 	peerAddress := "localhost:10001"
-	factory.On("CreatePeer", peerId).Return(mockPeer)
+	factory.On("CreatePeer", peerID).Return(mockPeer)
 
 	// Add peer
-	err := manager.AddPeer(peerId, peerAddress, factory)
+	err := manager.AddPeer(peerID, peerAddress, factory)
 	assert.NoError(t, err)
 
 	// Test getting address of existing peer
-	address, err := manager.ResolvePeerAddress(peerId)
+	address, err := manager.ResolvePeerAddress(peerID)
 	assert.NoError(t, err)
 	assert.Equal(t, peerAddress, address)
 
@@ -254,10 +254,10 @@ func TestManagerImpl_UpdatePeerRaftReport(t *testing.T) {
 	manager := NewPeerManager().(*ManagerImpl)
 
 	// Setup multiple peers
-	peerIds := []uint64{1, 2, 3}
-	mockPeers := make([]*MockPeer, len(peerIds))
+	peerIDs := []uint64{1, 2, 3}
+	mockPeers := make([]*MockPeer, len(peerIDs))
 
-	for i, id := range peerIds {
+	for i, id := range peerIDs {
 		mockPeer := new(MockPeer)
 		mockPeer.On("Run").Return()
 		mockPeers[i] = mockPeer

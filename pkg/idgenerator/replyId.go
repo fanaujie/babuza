@@ -18,16 +18,16 @@ const (
 
 type ReplyId struct {
 	seqNum uint64 //must use atomic operations to access; keep 64-bit aligned
-	peerId uint64
+	peerID uint64
 }
 
-func New(peerId uint64, seed uint64) *ReplyId {
+func New(peerID uint64, seed uint64) *ReplyId {
 	return &ReplyId{
 		seqNum: seed,
-		peerId: peerId & memberBitsMask,
+		peerID: peerID & memberBitsMask,
 	}
 }
 
 func (a *ReplyId) Next() uint64 {
-	return (atomic.AddUint64(&a.seqNum, 1)&sequenceBitsMask)<<memberBits | a.peerId
+	return (atomic.AddUint64(&a.seqNum, 1)&sequenceBitsMask)<<memberBits | a.peerID
 }

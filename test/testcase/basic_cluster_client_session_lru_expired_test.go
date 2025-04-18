@@ -57,7 +57,7 @@ func sessionLruExpirationTestComponents() []BabuzaComponent {
 				return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
 					b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
 						builder.TcpTransport, proxyNet).
-						SetClusterId(config.BubuzaConfig.ClusterId).
+						SetClusterId(config.BubuzaConfig.ClusterID).
 						SetStorageRootDir(storageDir).
 						AddLruSessionOptions(session.SetLruMgrOptionsWithMaxSessions(2))
 
@@ -88,7 +88,7 @@ func (c *BasicClientSessionLruExpiredResponse) Run(tc *testcluster.BabuzaCluster
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
-	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewAutoIncrementSession())

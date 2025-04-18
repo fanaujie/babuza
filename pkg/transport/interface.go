@@ -7,14 +7,14 @@ import (
 
 type PeerManager interface {
 	GetPeer(id uint64) peer.Peer
-	AddPeer(peerId uint64, peerAddress string, factory PeerFactory) error
-	UpdatePeer(peerId uint64, peerAddress string) error
-	RemovePeer(peerId uint64) error
+	AddPeer(peerID uint64, peerAddress string, factory PeerFactory) error
+	UpdatePeer(peerID uint64, peerAddress string) error
+	RemovePeer(peerID uint64) error
 	RemoveAllPeers()
 	ResolvePeerAddress(id uint64) (string, error)
 	UpdatePeerRaftReport(raft ibabuza.RaftStatusReporter)
 }
 
 type PeerFactory interface {
-	CreatePeer(peerId uint64) peer.Peer
+	CreatePeer(peerID uint64) peer.Peer
 }

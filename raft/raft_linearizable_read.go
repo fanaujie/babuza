@@ -82,7 +82,7 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 				if len(rs.RequestCtx) == 8 {
 					id2 = binary.BigEndian.Uint64(rs.RequestCtx)
 				}
-				r.logger.Warningf("raft[%d] ignored out-of-date read index response; local node read indexes queueing up and waiting to be in sync with leader, id1: %d, id2: %d", r.cluster.ClusterId(), id1, id2)
+				r.logger.Warningf("raft[%d] ignored out-of-date read index response; local node read indexes queueing up and waiting to be in sync with leader, id1: %d, id2: %d", r.cluster.ClusterID(), id1, id2)
 				r.metricsCollector.IncrementSlowReadIndex()
 				continue
 			}

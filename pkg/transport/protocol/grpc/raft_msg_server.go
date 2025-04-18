@@ -39,7 +39,7 @@ func NewRaftMsgServer(
 
 func (r *RaftMsgServer) Start() error {
 	var err error
-	r.logger.Infof("grpc[raft server] peerId(%d) Start", r.cfg.PeerId)
+	r.logger.Infof("grpc[raft server] peerID(%d) Start", r.cfg.PeerId)
 
 	r.server, err = r.grpcNetwork.NewServer(r.cfg.TLSConfig)
 	if err != nil {
@@ -62,13 +62,13 @@ func (r *RaftMsgServer) Start() error {
 }
 
 func (r *RaftMsgServer) Stop() error {
-	r.logger.Infof("grpc[raft server] peerId(%d) Stop", r.cfg.PeerId)
+	r.logger.Infof("grpc[raft server] peerID(%d) Stop", r.cfg.PeerId)
 
 	r.server.GracefulStop()
 
 	if r.listener != nil {
 		if err := r.listener.Close(); err != nil {
-			r.logger.Warningf("grpc[raft server]: failed to close listener. peerId(%d) endpoint(%s) err(%s)",
+			r.logger.Warningf("grpc[raft server]: failed to close listener. peerID(%d) endpoint(%s) err(%s)",
 				r.cfg.PeerId, r.cfg.PeerAddress, err.Error())
 		}
 	}

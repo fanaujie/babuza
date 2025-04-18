@@ -78,7 +78,7 @@ func idempotencyTestComponents() []BabuzaComponent {
 					return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
 						b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
 							transport, proxyNet).
-							SetClusterId(config.BubuzaConfig.ClusterId).
+							SetClusterId(config.BubuzaConfig.ClusterID).
 							SetStorageRootDir(storageDir)
 						return *config, *b.Build()
 					}
@@ -108,7 +108,7 @@ func (c *BasicClientRequestIdempotency) Run(tc *testcluster.BabuzaCluster, a any
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 	// Identify the current leader
-	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Create a client with manual session control so we can test idempotency

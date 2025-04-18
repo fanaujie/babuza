@@ -21,5 +21,4 @@ type Peer interface {
 	SendSnapshot(snapMsg *raftpb.Message, snapReader SnapshotFileReader)
 	UpdateRaftReport(report ibabuza.RaftStatusReporter)
 	Stop()
-	UpdatePeer()
 }

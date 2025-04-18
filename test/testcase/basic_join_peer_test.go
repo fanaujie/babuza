@@ -28,7 +28,7 @@ func (c *BasicJoinPeer) Run(tc *testcluster.BabuzaCluster, a any) {
 	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 	joinPeer := makeSingleStandardPeer(4, false)
 	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
@@ -44,24 +44,24 @@ func (c *BasicJoinPeer) Run(tc *testcluster.BabuzaCluster, a any) {
 		}))
 	}
 	connectGroup.Add(joinPeer.ID())
-	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIDs()))
 
 	assert.Nil(c.t, runWithCtxTimeout(time.Second*3, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId, joinPeer)
+		return tc.CheckPeerExists(ctx, leaderID, joinPeer)
 	}))
 
-	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID2, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	assert.Equal(c.t, leaderId, leaderId2)
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Equal(c.t, leaderID, leaderID2)
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 
 	// failure
 	joinPeer.SetRaftListenAddress("127.0.0.1:34200")
-	assert.Equal(c.t, cluster.ErrPeerIDExists, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIds()))
-	leader := makeSingleStandardPeer(leaderId, false)
+	assert.Equal(c.t, cluster.ErrPeerIDExists, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIDs()))
+	leader := makeSingleStandardPeer(leaderID, false)
 	joinPeer = makeSingleStandardPeer(5, false)
 	joinPeer.SetRaftListenAddress(leader.RaftListenAddress(false))
-	assert.Equal(c.t, cluster.ErrPeerRaftListenAddrExists, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIds()))
+	assert.Equal(c.t, cluster.ErrPeerRaftListenAddrExists, tc.JoinPeerToCluster(wait, kvClient, joinPeer, connectGroup.GetIDs()))
 }
 
 func TestJoinPeer(t *testing.T) {

@@ -147,7 +147,7 @@ func (r *Raft) updateLeadership(currentState raft.SoftState) {
 	} else {
 		r.metricsCollector.SetHasLeader(1)
 	}
-	if currentState.Lead == r.config.LocalPeerId {
+	if currentState.Lead == r.config.LocalPeerID {
 		r.status.SetLeader(true)
 		r.metricsCollector.SetIsLeader(1)
 		r.leaderCh <- true

@@ -32,8 +32,8 @@ func NewRaftMsgClient(client *http.Client, resolver ibabuza.TransportResolver, e
 	}
 }
 
-func (r *RaftMsgClient) getUrl(peerId uint64, path string) (*url.URL, error) {
-	addr, err := r.resolver.ResolvePeerAddress(peerId)
+func (r *RaftMsgClient) getUrl(peerID uint64, path string) (*url.URL, error) {
+	addr, err := r.resolver.ResolvePeerAddress(peerID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 	return nil
 }
 func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	u, err := r.getUrl(request.ToId, raftClusterPeersPrefix)
+	u, err := r.getUrl(request.To, raftClusterPeersPrefix)
 	if err != nil {
 		return babuzapb.GetClusterPeersResponse{
 			Status:  babuzapb.FAILED,
@@ -125,9 +125,9 @@ func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest)
 		}
 	}
 	q := req.URL.Query()
-	q.Add("clusterId", fmt.Sprintf("%d", request.ClusterId))
-	q.Add("from", fmt.Sprintf("%d", request.FromId))
-	q.Add("to", fmt.Sprintf("%d", request.ToId))
+	q.Add("clusterID", fmt.Sprintf("%d", request.ClusterID))
+	q.Add("from", fmt.Sprintf("%d", request.From))
+	q.Add("to", fmt.Sprintf("%d", request.To))
 	req.URL.RawQuery = q.Encode()
 	res, err := r.client.Do(req)
 	if err != nil {
@@ -155,7 +155,7 @@ func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest)
 
 func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 
-	u, err := r.getUrl(request.ToId, raftAppServiceUrlsPrefix)
+	u, err := r.getUrl(request.To, raftAppServiceUrlsPrefix)
 	if err != nil {
 		return babuzapb.PublishApplicationServiceResponse{
 			Status:  babuzapb.FAILED,

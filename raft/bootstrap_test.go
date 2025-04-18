@@ -12,7 +12,7 @@ import (
 )
 
 //type mockRemoteCluster struct {
-//	clusterId     uint64
+//	clusterID     uint64
 //	localNodeId   uint64
 //	peerEndpoint  string
 //	cluster       map[uint64]iBabuza.Peer
@@ -29,7 +29,7 @@ import (
 //		cl = append(cl, p)
 //	}
 //	return iBabuza.RemoteCluster{
-//		RemoteClusterId: m.clusterId,
+//		RemoteClusterId: m.clusterID,
 //		RemotePeers:     cl,
 //	}, nil
 //}
@@ -52,7 +52,7 @@ import (
 //	for _, tc := range []testCase{
 //		{
 //			mockRemoteCluster: mockRemoteCluster{
-//				clusterId:     100,
+//				clusterID:     100,
 //				localNodeId:   2,
 //				peerEndpoint:  "localhost:14201",
 //				cluster:       cl,
@@ -65,7 +65,7 @@ import (
 //		},
 //		{
 //			mockRemoteCluster: mockRemoteCluster{
-//				clusterId:     100,
+//				clusterID:     100,
 //				localNodeId:   2,
 //				peerEndpoint:  "localhost:14201",
 //				cluster:       cl,
@@ -102,7 +102,7 @@ import (
 //	for _, tc := range []testCase{
 //		{
 //			mockRemoteCluster: mockRemoteCluster{
-//				clusterId:     100,
+//				clusterID:     100,
 //				localNodeId:   2,
 //				peerAddr:      "localhost:14201",
 //				cluster:       map[uint64]string{1: "localhost:14200", 2: "localhost:14201", 3: "localhost:14202"},
@@ -112,7 +112,7 @@ import (
 //		},
 //		{
 //			mockRemoteCluster: mockRemoteCluster{
-//				clusterId:     101,
+//				clusterID:     101,
 //				localNodeId:   2,
 //				peerAddr:      "localhost:14201",
 //				cluster:       map[uint64]string{1: "localhost:14200", 2: "localhost:14201", 3: "localhost:14202"},
@@ -122,7 +122,7 @@ import (
 //		},
 //		{
 //			mockRemoteCluster: mockRemoteCluster{
-//				clusterId:     100,
+//				clusterID:     100,
 //				localNodeId:   2,
 //				peerAddr:      "localhost:14201",
 //				cluster:       map[uint64]string{1: "localhost:14200", 2: "localhost:14201"},
@@ -132,7 +132,7 @@ import (
 //		},
 //		{
 //			mockRemoteCluster: mockRemoteCluster{
-//				clusterId:     100,
+//				clusterID:     100,
 //				localNodeId:   2,
 //				peerAddr:      "localhost:14201",
 //				cluster:       map[uint64]string{1: "localhost:14200", 2: "localhost:14201", 3: "192.168.0.1:14202"},
@@ -356,8 +356,8 @@ func TestBootstrap_ListRaftConfChangeAddNodeIds(t *testing.T) {
 		result = genConfChangeEntry(5, 50, raftpb.ConfChangeUpdateNode, result)
 		result = genConfChangeEntry(6, 51, raftpb.ConfChangeUpdateNode, result)
 		_, w, err := ws.CreateWal(babuzapb.WalMetadata{
-			ClusterId:   100,
-			LocalPeerId: 2,
+			ClusterID:   100,
+			LocalPeerID: 2,
 		})
 		assert.Nil(t, err)
 		assert.Nil(t, w.Save(raftpb.HardState{
@@ -413,8 +413,8 @@ func TestBootstrap_CreateRaftConfigChangeEntries(t *testing.T) {
 			result = genConfChangeEntry(5, 4, raftpb.ConfChangeAddLearnerNode, result)
 			result = genConfChangeEntry(6, 5, raftpb.ConfChangeAddNode, result)
 			_, w, err := ws.CreateWal(babuzapb.WalMetadata{
-				ClusterId:   100,
-				LocalPeerId: newLocalId,
+				ClusterID:   100,
+				LocalPeerID: newLocalId,
 			})
 			assert.Nil(t, err)
 			assert.Nil(t, w.Save(raftpb.HardState{
@@ -452,8 +452,8 @@ func TestBootstrap_CreateRaftConfigChangeEntries(t *testing.T) {
 			result = genConfChangeEntry(5, 4, raftpb.ConfChangeAddLearnerNode, result)
 			result = genConfChangeEntry(6, 5, raftpb.ConfChangeAddNode, result)
 			_, w, err := ws.CreateWal(babuzapb.WalMetadata{
-				ClusterId:   100,
-				LocalPeerId: removePeerId,
+				ClusterID:   100,
+				LocalPeerID: removePeerId,
 			})
 			assert.Nil(t, err)
 			assert.Nil(t, w.Save(raftpb.HardState{

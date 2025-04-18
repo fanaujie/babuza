@@ -20,10 +20,10 @@ type EmbeddedApp interface {
 }
 
 type EmbeddedClient interface {
-	Join(ctx context.Context, peerId uint64, raftListenAddr string, isLearner bool) error
-	Update(ctx context.Context, peerId uint64, raftListenAddr string) error
-	Remove(ctx context.Context, peerId uint64) error
-	PromoteLearner(ctx context.Context, peerId uint64) error
+	Join(ctx context.Context, peerID uint64, raftListenAddr string, isLearner bool) error
+	Update(ctx context.Context, peerID uint64, raftListenAddr string) error
+	Remove(ctx context.Context, peerID uint64) error
+	PromoteLearner(ctx context.Context, peerID uint64) error
 	TransferLeader(ctx context.Context, transferee uint64) error
 }
 
@@ -49,7 +49,7 @@ func (a *appController) wait() error {
 }
 
 type BabuzaCluster struct {
-	clusterId         uint64
+	clusterID         uint64
 	storageRootDir    string
 	config            babuza.BabuzaConfig
 	createEmbeddedApp CreateEmbeddedApp
@@ -59,13 +59,13 @@ type BabuzaCluster struct {
 	useProxyNetwork   bool // New flag to control proxy network usage
 }
 
-func CreateTestCluster(clusterId uint64, storageRootDir string, proxyNetwork ibabuza.ProxyNetwork,
+func CreateTestCluster(clusterID uint64, storageRootDir string, proxyNetwork ibabuza.ProxyNetwork,
 	createEmbeddedApp CreateEmbeddedApp) *BabuzaCluster {
 	config := babuza.DefaultBabuzaConfig(0, 0, "")
 	useProxyNetwork := proxyNetwork != nil
 
 	return &BabuzaCluster{
-		clusterId:         clusterId,
+		clusterID:         clusterID,
 		config:            config,
 		storageRootDir:    storageRootDir,
 		createEmbeddedApp: createEmbeddedApp,
@@ -164,9 +164,9 @@ func (c *BabuzaCluster) GetAllAppServiceAddresses() map[uint64][]string {
 	return result
 }
 
-func (c *BabuzaCluster) GetAppServiceAddresses(peerIds []uint64) map[uint64][]string {
+func (c *BabuzaCluster) GetAppServiceAddresses(peerIDs []uint64) map[uint64][]string {
 	result := make(map[uint64][]string)
-	for _, id := range peerIds {
+	for _, id := range peerIDs {
 		controller, ok := c.appControllers[id]
 		if !ok {
 			continue
@@ -207,7 +207,7 @@ func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedCli
 	cfg, appStorageDir, err := c.genPeerConfig(peer, true)
 	if !peer.IsPeerLearner() {
 		if err = c.votingPeersCfg.AddPeer(peer.ID(), raftListenAddr); err != nil {
-			return fmt.Errorf("test cluster: failed to add peer to votingPeersCfg (peerId=%d) (endpoint=%s). err=%s",
+			return fmt.Errorf("test cluster: failed to add peer to votingPeersCfg (peerID=%d) (endpoint=%s). err=%s",
 				peer.ID(), raftListenAddr, err)
 		}
 	}
@@ -248,47 +248,47 @@ func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedCli
 	return nil
 }
 
-func (c *BabuzaCluster) RemovePeerFromCluster(wait time.Duration, client EmbeddedClient, peerId uint64) error {
+func (c *BabuzaCluster) RemovePeerFromCluster(wait time.Duration, client EmbeddedClient, peerID uint64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
-	if err := client.Remove(ctx, peerId); err != nil {
+	if err := client.Remove(ctx, peerID); err != nil {
 		return err
 	}
 
 	if c.useProxyNetwork {
-		if err := c.proxyNetwork.DeleteProxy(peerId); err != nil {
+		if err := c.proxyNetwork.DeleteProxy(peerID); err != nil {
 			return err
 		}
 	}
 
-	c.votingPeersCfg.RemovePeer(peerId)
-	controller, ok := c.appControllers[peerId]
+	c.votingPeersCfg.RemovePeer(peerID)
+	controller, ok := c.appControllers[peerID]
 	me := multierror.New()
 	if !ok {
-		return fmt.Errorf("test cluster: not found app (id=%d)", peerId)
+		return fmt.Errorf("test cluster: not found app (id=%d)", peerID)
 	}
 	me.Append(controller.stop())
 	me.Append(controller.wait())
-	delete(c.appControllers, peerId)
+	delete(c.appControllers, peerID)
 	return me.Get()
 }
 
-func (c *BabuzaCluster) ShutdownPeer(peerId uint64) error {
-	controller, ok := c.appControllers[peerId]
+func (c *BabuzaCluster) ShutdownPeer(peerID uint64) error {
+	controller, ok := c.appControllers[peerID]
 	if !ok {
-		return fmt.Errorf("test cluster: not found app (id=%d)", peerId)
+		return fmt.Errorf("test cluster: not found app (id=%d)", peerID)
 	}
 	me := multierror.New()
 
 	if c.useProxyNetwork {
-		if err := c.proxyNetwork.DeleteProxy(peerId); err != nil {
+		if err := c.proxyNetwork.DeleteProxy(peerID); err != nil {
 			me.Append(err)
 		}
 	}
 
 	me.Append(controller.stop())
 	me.Append(controller.wait())
-	delete(c.appControllers, peerId)
+	delete(c.appControllers, peerID)
 	return me.Get()
 }
 
@@ -336,36 +336,36 @@ func (c *BabuzaCluster) RestartPeer(wait time.Duration, peer Peer, connectedGrou
 	return nil
 }
 
-func (c *BabuzaCluster) ExecutePeerRaftOperation(peerId uint64, raftOperation func(r *babuza.Raft) error) error {
-	controller, ok := c.appControllers[peerId]
+func (c *BabuzaCluster) ExecutePeerRaftOperation(peerID uint64, raftOperation func(r *babuza.Raft) error) error {
+	controller, ok := c.appControllers[peerID]
 	if !ok {
-		return fmt.Errorf("test cluster: not found app (id=%d)", peerId)
+		return fmt.Errorf("test cluster: not found app (id=%d)", peerID)
 	}
 	return raftOperation(controller.app.Raft())
 }
 
-func (c *BabuzaCluster) DisconnectPeer(peerId uint64) error {
+func (c *BabuzaCluster) DisconnectPeer(peerID uint64) error {
 	if c.useProxyNetwork {
-		return c.proxyNetwork.DisconnectProxy(peerId)
+		return c.proxyNetwork.DisconnectProxy(peerID)
 	}
 	return nil // No operation needed in direct connection mode
 }
 
-func (c *BabuzaCluster) ConnectPeer(peerId uint64) error {
+func (c *BabuzaCluster) ConnectPeer(peerID uint64) error {
 	if c.useProxyNetwork {
-		return c.proxyNetwork.ConnectProxy(peerId)
+		return c.proxyNetwork.ConnectProxy(peerID)
 	}
 	return nil // No operation needed in direct connection mode
 }
 
-func (c *BabuzaCluster) SetPartition(peerIds []uint64) error {
+func (c *BabuzaCluster) SetPartition(peerIDs []uint64) error {
 	if c.useProxyNetwork {
-		return c.proxyNetwork.SetPartition(peerIds)
+		return c.proxyNetwork.SetPartition(peerIDs)
 	}
 	return nil // No operation needed in direct connection mode
 }
 
-func (c *BabuzaCluster) CheckPeerExists(ctx context.Context, leaderID uint64, peer Peer) error {
+func (c *BabuzaCluster) CheckPeerExists(ctx context.Context, ClusterID uint64, peer Peer) error {
 	raftListenAddr := peer.RaftListenAddress(c.useProxyNetwork)
 	for {
 		select {
@@ -373,13 +373,13 @@ func (c *BabuzaCluster) CheckPeerExists(ctx context.Context, leaderID uint64, pe
 			return ctx.Err()
 		case <-time.After(time.Second):
 
-			controller, ok := c.appControllers[leaderID]
+			controller, ok := c.appControllers[ClusterID]
 			if !ok {
-				return fmt.Errorf("test cluster: not found leader (id=%d)", leaderID)
+				return fmt.Errorf("test cluster: not found leader (id=%d)", ClusterID)
 			}
 			clusterCfg := controller.app.Raft().ClusterConfiguration()
-			if clusterCfg.LeaderID != leaderID {
-				return fmt.Errorf("test cluster: leader id mismatch. expected=%d, actual=%d", leaderID, clusterCfg.LeaderID)
+			if clusterCfg.LeaderID != ClusterID {
+				return fmt.Errorf("test cluster: leader id mismatch. expected=%d, actual=%d", ClusterID, clusterCfg.LeaderID)
 			}
 			for _, p := range clusterCfg.Peers {
 				if p.RaftPeerAttr.Id == peer.ID() && p.RaftPeerAttr.IsLearner == peer.IsPeerLearner() &&
@@ -402,8 +402,8 @@ func (c *BabuzaCluster) CheckOneLeader(wait time.Duration, connectedGroup []uint
 	for {
 		select {
 		case <-checkT.C:
-			if leaderId, _, ok := c.findConsensusLeader(connectedGroup); ok {
-				return leaderId, nil
+			if leaderID, _, ok := c.findConsensusLeader(connectedGroup); ok {
+				return leaderID, nil
 			}
 		case <-ctx.Done():
 			return 0, ctx.Err()
@@ -449,14 +449,14 @@ func (c *BabuzaCluster) CheckPeersConsistency(wait time.Duration, connectedGroup
 	}
 }
 
-func (c *BabuzaCluster) CheckStatus(wait time.Duration, peerId uint64, matchFunc func(s babuza.Status) bool) error {
+func (c *BabuzaCluster) CheckStatus(wait time.Duration, peerID uint64, matchFunc func(s babuza.Status) bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	checkT := time.NewTicker(c.getCheckTimeout())
 	defer checkT.Stop()
-	controller, ok := c.appControllers[peerId]
+	controller, ok := c.appControllers[peerID]
 	if !ok {
-		return fmt.Errorf("test cluster: not found app (id=%d)", peerId)
+		return fmt.Errorf("test cluster: not found app (id=%d)", peerID)
 	}
 	for {
 		select {
@@ -476,19 +476,19 @@ func (c *BabuzaCluster) getCheckTimeout() time.Duration {
 
 func (c *BabuzaCluster) genPeerConfig(peer Peer, join bool) (babuza.BabuzaConfig, string, error) {
 	cfg := c.config
-	cfg.ClusterId = c.clusterId
-	cfg.LocalPeerId = peer.ID()
+	cfg.ClusterID = c.clusterID
+	cfg.LocalPeerID = peer.ID()
 	cfg.RaftListenAddress = peer.RaftListenAddress(false)
 	cfg.TLSConfig = peer.RaftTLSConfig()
 	cfg.Join = join
-	peerDir := filepath.Join(c.storageRootDir, fmt.Sprintf("%d-%d", c.clusterId, peer.ID()))
+	peerDir := filepath.Join(c.storageRootDir, fmt.Sprintf("%d-%d", c.clusterID, peer.ID()))
 	return cfg, peerDir, nil
 }
 
-func (c *BabuzaCluster) findConsensusLeader(peerIds []uint64) (uint64, uint64, bool) {
-	var leaderId, term uint64
+func (c *BabuzaCluster) findConsensusLeader(peerIDs []uint64) (uint64, uint64, bool) {
+	var leaderID, term uint64
 
-	for _, id := range peerIds {
+	for _, id := range peerIDs {
 		controller, ok := c.appControllers[id]
 		if !ok {
 			return 0, 0, false
@@ -501,31 +501,31 @@ func (c *BabuzaCluster) findConsensusLeader(peerIds []uint64) (uint64, uint64, b
 
 		if term == 0 {
 			term = status.RaftTerm
-			leaderId = status.LeaderId
+			leaderID = status.LeaderId
 			continue
 		}
 
-		if term != status.RaftTerm || leaderId != status.LeaderId {
+		if term != status.RaftTerm || leaderID != status.LeaderId {
 			return 0, 0, false
 		}
 	}
-	for _, id := range peerIds {
-		if id == leaderId {
-			return leaderId, term, true
+	for _, id := range peerIDs {
+		if id == leaderID {
+			return leaderID, term, true
 		}
 	}
 	return 0, 0, false
 }
 
-func (c *BabuzaCluster) hasLeader(peerIds []uint64) bool {
-	for _, id := range peerIds {
+func (c *BabuzaCluster) hasLeader(peerIDs []uint64) bool {
+	for _, id := range peerIDs {
 		controller, ok := c.appControllers[id]
 		if !ok {
 			continue
 		}
 		status := controller.app.Raft().Status()
 		if status.LeaderId != babuza.None {
-			for _, id = range peerIds {
+			for _, id = range peerIDs {
 				if id == status.LeaderId {
 					return true
 				}
@@ -535,8 +535,8 @@ func (c *BabuzaCluster) hasLeader(peerIds []uint64) bool {
 	return false
 }
 
-func (c *BabuzaCluster) areStateMachinesInSync(peerIds []uint64) bool {
-	hashMap := c.collectStateMachineHashes(peerIds)
+func (c *BabuzaCluster) areStateMachinesInSync(peerIDs []uint64) bool {
+	hashMap := c.collectStateMachineHashes(peerIDs)
 	if len(hashMap) == 0 {
 		return false
 	}
@@ -553,9 +553,9 @@ func (c *BabuzaCluster) areStateMachinesInSync(peerIds []uint64) bool {
 	return true
 }
 
-func (c *BabuzaCluster) collectStateMachineHashes(peerIds []uint64) map[uint64]uint32 {
-	hashes := make(map[uint64]uint32, len(peerIds))
-	for _, id := range peerIds {
+func (c *BabuzaCluster) collectStateMachineHashes(peerIDs []uint64) map[uint64]uint32 {
+	hashes := make(map[uint64]uint32, len(peerIDs))
+	for _, id := range peerIDs {
 		controller, ok := c.appControllers[id]
 		if !ok {
 			continue
