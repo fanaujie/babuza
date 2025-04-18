@@ -21,7 +21,7 @@ func (r *Replica) doApplyJob(applyData *applyEntry) {
 	term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
 	ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.session)
 	if err != nil {
-		r.logger.Panicf("gid[%d] raft[id=%d]: create snapshot context failed: %v", r.raftGroup.ID,
+		r.logger.Panicf("groupID[%d] raft[id=%d]: create snapshot context failed: %v", r.raftGroup.ID,
 			r.cluster.LocalPeerID(), err)
 	}
 	r.triggerSnapshot(ctx, nil)
@@ -32,7 +32,7 @@ func (r *Replica) applySnapshot(snap raftpb.Snapshot) {
 		return
 	}
 	if snap.Metadata.Index <= r.status.GetAppliedIndex() {
-		r.logger.Panicf("gid[%d] raft[id=%d]: apply snapshot index %d <= applied index %d", r.raftGroup.ID,
+		r.logger.Panicf("groupID[%d] raft[id=%d]: apply snapshot index %d <= applied index %d", r.raftGroup.ID,
 			r.cluster.LocalPeerID(), snap.Metadata.Index, r.status.GetAppliedIndex())
 	}
 	if err := r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.session); err != nil {
@@ -81,7 +81,7 @@ func (r *Replica) applyEntries(entries []raftpb.Entry) bool {
 					break
 				}
 			default:
-				r.logger.Panicf("gid[%d] raft[id=%d]: not support raft toApplyEntry type %d", r.raftGroup.ID,
+				r.logger.Panicf("groupID[%d] raft[id=%d]: not support raft toApplyEntry type %d", r.raftGroup.ID,
 					r.cluster.LocalPeerID(), uint64(entry.Type))
 			}
 		}

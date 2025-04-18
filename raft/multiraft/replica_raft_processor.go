@@ -2,6 +2,7 @@ package multiraft
 
 import (
 	"errors"
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -27,7 +28,7 @@ func (r *Replica) ProcessReady() {
 		waitWALSync := shouldWaitWALSync(rd)
 		if waitWALSync {
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-				r.logger.Panicf("gid[%d] raft[id=%d] save hard state, entries and snapshot failed: %v", r.raftGroup.ID,
+				r.logger.Panicf("groupID[%d] raft[id=%d] save hard state, entries and snapshot failed: %v", r.raftGroup.ID,
 					r.cluster.LocalPeerID(), err)
 			}
 		}
@@ -48,7 +49,7 @@ func (r *Replica) ProcessReady() {
 			if err := r.applyJobQueue.Put(r.raftGroup.ID, func() {
 				r.doApplyJob(applyData)
 			}); err != nil {
-				r.logger.Panicf("gid[%d] raft[id=%d] apply job queue put failed: %v", r.raftGroup.ID,
+				r.logger.Panicf("groupID[%d] raft[id=%d] apply job queue put failed: %v", r.raftGroup.ID,
 					r.cluster.LocalPeerID(), err)
 			}
 		}
@@ -58,19 +59,19 @@ func (r *Replica) ProcessReady() {
 
 		if !waitWALSync {
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-				r.logger.Panicf("gid[%d] raft[id=%d] save hard state, entries and snapshot failed: %v",
+				r.logger.Panicf("groupID[%d] raft[id=%d] save hard state, entries and snapshot failed: %v",
 					r.raftGroup.ID, r.cluster.LocalPeerID(), err)
 			}
 		}
 
 		if !emptySnapshot {
 			if err := r.storage.ApplyAndReleaseSnapshot(rd.Snapshot); err != nil {
-				r.logger.Panicf("gid[%d] raft[id=%d]: apply snapshot failed: %v", r.raftGroup.ID,
+				r.logger.Panicf("groupID[%d] raft[id=%d]: apply snapshot failed: %v", r.raftGroup.ID,
 					r.cluster.LocalPeerID(), err)
 			}
 		}
 		if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
-			r.logger.Panicf("gid[%d] raft[id=%d]: append entries failed: %v", r.raftGroup.ID,
+			r.logger.Panicf("groupID[%d] raft[id=%d]: append entries failed: %v", r.raftGroup.ID,
 				r.cluster.LocalPeerID(), err)
 		}
 		if !isLeader {
@@ -110,13 +111,13 @@ func (r *Replica) ProcessStep() {
 func (r *Replica) ProcessProposal() {
 	proposals, err := r.proposalQueue.Get(r.proposalQueue.Len())
 	if err != nil {
-		r.logger.Panicf("gid[%d] raft[id=%d]: error getting proposals: %v", r.raftGroup.ID,
+		r.logger.Panicf("groupID[%d] raft[id=%d]: error getting proposals: %v", r.raftGroup.ID,
 			r.cluster.LocalPeerID(), err)
 	}
 	for _, proposal := range proposals {
 		pd := proposal.(*proposalData)
 		if err = r.rawNode.Propose(pd.data); err != nil {
-			r.logger.Warningf("gid[%d] raft[id=%d]: error proposing: %v", r.raftGroup.ID,
+			r.logger.Warningf("groupID[%d] raft[id=%d]: error proposing: %v", r.raftGroup.ID,
 				r.cluster.LocalPeerID(), err)
 			r.resultReplier.CancelResult(pd.replyID)
 			if errors.Is(err, raft.ErrProposalDropped) {
@@ -124,7 +125,7 @@ func (r *Replica) ProcessProposal() {
 			} else if errors.Is(err, raft.ErrStopped) {
 				err = babuza.ErrStopped
 			}
-			r.logger.Warningf("gid[%d] raft[%d] propose failed, err: %v", r.raftGroup.ID,
+			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.raftGroup.ID,
 				r.cluster.LocalPeerID(), err)
 		}
 		poolReleaseProposal(pd)
@@ -134,13 +135,13 @@ func (r *Replica) ProcessProposal() {
 func (r *Replica) ProcessConfigChange() {
 	configChanges, err := r.configChangeQueue.Get(r.configChangeQueue.Len())
 	if err != nil {
-		r.logger.Panicf("gid[%d] raft[%d] error getting config change: %v", r.raftGroup.ID,
+		r.logger.Panicf("groupID[%d] raft[%d] error getting config change: %v", r.raftGroup.ID,
 			r.cluster.LocalPeerID(), err)
 	}
 	for _, configChang := range configChanges {
 		ccd := configChang.(*configChangeData)
 		if err = r.rawNode.ProposeConfChange(ccd.confChange); err != nil {
-			r.logger.Warningf("gid[%d] raft[%d] error config change: %v", r.raftGroup.ID,
+			r.logger.Warningf("groupID[%d] raft[%d] error config change: %v", r.raftGroup.ID,
 				r.cluster.LocalPeerID(), err)
 			r.resultReplier.CancelResult(ccd.replyID)
 			if errors.Is(err, raft.ErrProposalDropped) {
@@ -148,7 +149,7 @@ func (r *Replica) ProcessConfigChange() {
 			} else if errors.Is(err, raft.ErrStopped) {
 				err = babuza.ErrStopped
 			}
-			r.logger.Warningf("gid[%d] raft[%d] propose failed, err: %v", r.raftGroup.ID,
+			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.raftGroup.ID,
 				r.cluster.LocalPeerID(), err)
 		}
 		poolReleaseConfigChange(ccd)
@@ -157,7 +158,7 @@ func (r *Replica) ProcessConfigChange() {
 
 func (r *Replica) sendRaftMessage(msgs []raftpb.Message) {
 	appRespIndex := uint64(0)
-	//lastAppRespMsgIndex := 0
+	lastAppRespMsgIndex := 0
 	optimiseAppendEntryResp := false //optimise for MsgAppResp
 	for i := 0; i < len(msgs); i++ {
 		m := &msgs[i]
@@ -165,20 +166,33 @@ func (r *Replica) sendRaftMessage(msgs []raftpb.Message) {
 		case raftpb.MsgAppResp:
 			if !m.Reject && m.Index > appRespIndex {
 				appRespIndex = m.Index
-				//lastAppRespMsgIndex = i
+				lastAppRespMsgIndex = i
 				optimiseAppendEntryResp = true
 			} else {
-				//r.trans.Send(*m)
+				r.transport.SendSnapshot(babuzapb.MultiRaftMessage{
+					GroupID: uint64(r.raftGroup.ID),
+					Message: *m,
+				})
 			}
 		case raftpb.MsgSnap:
 			m.Snapshot.Metadata.ConfState = r.status.CloneConfState()
-			//r.trans.SendSnapshot(*m)
+			r.transport.SendSnapshot(babuzapb.MultiRaftMessage{
+				GroupID: uint64(r.raftGroup.ID),
+				Message: *m,
+			})
 		default:
-			//r.trans.Send(*m)
+			r.transport.Send(babuzapb.MultiRaftMessage{
+				GroupID: uint64(r.raftGroup.ID),
+				Message: *m,
+			})
 		}
 	}
 	if optimiseAppendEntryResp {
-		//r.trans.Send(msgs[lastAppRespMsgIndex])
+		r.transport.Send(
+			babuzapb.MultiRaftMessage{
+				GroupID: uint64(r.raftGroup.ID),
+				Message: msgs[lastAppRespMsgIndex],
+			})
 	}
 }
 

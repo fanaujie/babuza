@@ -333,7 +333,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		// Send a message
-		msg := &raftpb.Message{
+		msg := raftpb.Message{
 			Type:  raftpb.MsgApp,
 			To:    peerID,
 			From:  1,
@@ -379,7 +379,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		defer peer.Stop()
 
 		// Send a message
-		msg := &raftpb.Message{
+		msg := raftpb.Message{
 			Type:  raftpb.MsgApp,
 			To:    peerID,
 			From:  1,
@@ -404,7 +404,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		defer peer.Stop()
 
 		// Create a message that will exceed the memory limit
-		msg := &raftpb.Message{
+		msg := raftpb.Message{
 			Type:    raftpb.MsgApp,
 			To:      peerID,
 			From:    1,
@@ -431,7 +431,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		peer.Stop()
 
 		// Send a message
-		msg := &raftpb.Message{
+		msg := raftpb.Message{
 			Type:  raftpb.MsgApp,
 			To:    peerID,
 			From:  1,
@@ -462,7 +462,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		defer peer.Stop()
 
 		// Send first message to create the queue
-		msg1 := &raftpb.Message{
+		msg1 := raftpb.Message{
 			Type:  raftpb.MsgApp,
 			To:    peerID,
 			From:  1,
@@ -477,7 +477,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 
 		// Fill the queue completely
 		for i := 0; i < 10; i++ {
-			msg2 := &raftpb.Message{
+			msg2 := raftpb.Message{
 				Type:  raftpb.MsgApp,
 				To:    peerID,
 				From:  1,
@@ -515,7 +515,7 @@ func TestRaftPeerMessageBatching(t *testing.T) {
 
 	// Send multiple messages that will exceed batch size
 	for i := 0; i < 5; i++ {
-		msg := &raftpb.Message{
+		msg := raftpb.Message{
 			Type:  raftpb.MsgApp,
 			To:    peerID,
 			From:  1,
@@ -560,7 +560,7 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 
 		// Create snapshot message and reader
 		snapReader := NewMockSnapshotFileReader(1, 100)
-		snapMsg := &raftpb.Message{
+		snapMsg := raftpb.Message{
 			Type:  raftpb.MsgSnap,
 			To:    peerID,
 			From:  1,
@@ -595,10 +595,11 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		metadataSent := false
 		finishSent := false
 		for _, msg := range sentSnapMessages {
-			if msg.Metadata != nil {
+
+			if msg.Metadata.Files != nil {
 				metadataSent = true
 			}
-			if msg.FinishMessage != nil {
+			if msg.FinishMessage.To != 0 {
 				finishSent = true
 			}
 		}
@@ -621,7 +622,7 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 
 		// Create snapshot message and reader
 		snapReader := NewMockSnapshotFileReader(1, 100)
-		snapMsg := &raftpb.Message{
+		snapMsg := raftpb.Message{
 			Type:  raftpb.MsgSnap,
 			To:    peerID,
 			From:  1,
@@ -708,7 +709,7 @@ func TestRaftPeerStop(t *testing.T) {
 	peer.Stop()
 
 	// Try to send a message after stopping
-	msg := &raftpb.Message{
+	msg := raftpb.Message{
 		Type:  raftpb.MsgApp,
 		To:    peerID,
 		From:  1,

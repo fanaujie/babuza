@@ -36,9 +36,9 @@ message SnapshotMessage {
   uint64    to            = 3;
   uint64    term          = 4;
   uint64    index         = 5;
-  babuza.SnapshotMetadata metadata      = 6;
-  SnapshotChunkMessage    chunkMessage  = 7;
-  raftpb.Message          finishMessage = 8;
+  babuza.SnapshotMetadata metadata      = 6 [(gogoproto.nullable) = false];
+  SnapshotChunkMessage    chunkMessage  = 7 [(gogoproto.nullable) = false];
+  raftpb.Message          finishMessage = 8 [(gogoproto.nullable) = false];
 }
 
 enum RpcStatus {
@@ -70,4 +70,10 @@ message PublishApplicationServiceRequest {
 message PublishApplicationServiceResponse {
   RpcStatus status = 1;
   string   message = 2;
+}
+
+
+message MultiRaftMessage {
+  uint64  groupID = 1;
+  raftpb.Message  message = 2 [(gogoproto.nullable) = false];
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
+	"go.etcd.io/etcd/raft/v3/raftpb"
 	"net"
 	"time"
 )
@@ -135,9 +136,9 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 			return err
 		}
 		s.raft.ProcessSnapshotMessage(s.snapshotMsg)
-		s.snapshotMsg.Metadata = nil
-		s.snapshotMsg.ChunkMessage = nil
-		s.snapshotMsg.FinishMessage = nil
+		s.snapshotMsg.Metadata = babuzapb.SnapshotMetadata{}
+		s.snapshotMsg.ChunkMessage = babuzapb.SnapshotChunkMessage{}
+		s.snapshotMsg.FinishMessage = raftpb.Message{}
 	case frame.ClusterPeersReqType:
 		if err := s.getClusterPeersReq.Unmarshal(msgBuf); err != nil {
 			return err

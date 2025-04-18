@@ -48,7 +48,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 		d.logger.Warningf("raft[id=%d] failed to receiveSnapshotMessage. err(%s)", d.cluster.LocalPeerID(), err.Error())
 	} else if bFinish {
 		d.logger.Infof("raft[id=%d] received finish snapshot message (snapshot index=%d)", d.cluster.LocalPeerID(), msg.Index)
-		if err = d.raftNode.Step(context.TODO(), *msg.FinishMessage); err != nil {
+		if err = d.raftNode.Step(context.TODO(), msg.FinishMessage); err != nil {
 			d.logger.Warningf("raft[id=%d] step err(%s)", d.cluster.LocalPeerID(), err.Error())
 		}
 	}
@@ -127,8 +127,6 @@ func (d *transportProcessor) PublishApplicationServiceRequest(req babuzapb.Publi
 }
 
 func (d *transportProcessor) ReportUnreachable(id uint64) {
-	// 找出是哪一個group
-
 	d.raftNode.ReportUnreachable(id)
 }
 func (d *transportProcessor) ReportSnapshot(id uint64, status raft.SnapshotStatus) {

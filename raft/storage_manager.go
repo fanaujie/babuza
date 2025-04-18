@@ -248,13 +248,13 @@ func (s *storageManager) RestoreFromSnapshot(snapShotIndex uint64, restoreStateM
 }
 
 func (s *storageManager) ReceiveSnapshotMessage(msg babuzapb.SnapshotMessage) (bool, error) {
-	if msg.Metadata != nil {
+	if msg.Metadata.Files != nil {
 		if s.snapshotReceiver != nil {
 			if err := s.snapshotReceiver.DeleteDir(); err != nil {
 				return false, err
 			}
 		}
-		snapshotReceiver, err := s.snapshotManager.CreateAtomicSnapshotReceiver(*msg.Metadata)
+		snapshotReceiver, err := s.snapshotManager.CreateAtomicSnapshotReceiver(msg.Metadata)
 		if err != nil {
 			return false, err
 		}
@@ -264,12 +264,12 @@ func (s *storageManager) ReceiveSnapshotMessage(msg babuzapb.SnapshotMessage) (b
 	if s.snapshotReceiver == nil {
 		return false, fmt.Errorf("storage: received chunk message but snapshot receiver is nil (index=%d)", msg.Index)
 	}
-	if msg.ChunkMessage != nil {
-		if err := s.snapshotReceiver.SaveChunk(msg.Index, *msg.ChunkMessage); err != nil {
+	if msg.ChunkMessage.ContinueCrc32 != 0 {
+		if err := s.snapshotReceiver.SaveChunk(msg.Index, msg.ChunkMessage); err != nil {
 			return false, err
 		}
 		return false, nil
-	} else if msg.FinishMessage != nil {
+	} else if msg.FinishMessage.To != 0 {
 		if err := s.snapshotReceiver.Commit(msg.Index); err != nil {
 			return false, err
 		}

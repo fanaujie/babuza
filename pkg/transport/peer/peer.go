@@ -36,8 +36,8 @@ type RaftPeer struct {
 	breaker                    breaker.Breaker
 	transportClient            ibabuza.TransportClient
 	logger                     ibabuza.Logger
-	currentMsgCh               chan *raftpb.Message
-	msgQueueCh                 chan chan *raftpb.Message
+	currentMsgCh               chan raftpb.Message
+	msgQueueCh                 chan chan raftpb.Message
 	closer                     *syncutil.Closer
 	mu                         sync.RWMutex
 }
@@ -59,7 +59,7 @@ func New(clusterID, localPeerID, peerID uint64, cfg RaftPeerConfig, raftReport i
 		breaker:                    breaker,
 		transportClient:            transportClient,
 		logger:                     logger,
-		msgQueueCh:                 make(chan chan *raftpb.Message, 1),
+		msgQueueCh:                 make(chan chan raftpb.Message, 1),
 		closer:                     closer,
 	}
 	closer.Run(func() {
@@ -68,7 +68,7 @@ func New(clusterID, localPeerID, peerID uint64, cfg RaftPeerConfig, raftReport i
 	return r
 }
 
-func (p *RaftPeer) SendRaftMessage(msg *raftpb.Message) error {
+func (p *RaftPeer) SendRaftMessage(msg raftpb.Message) error {
 	if !p.breaker.Ready() {
 		p.raftReport.ReportUnreachable(msg.To)
 		return ErrPeerBreakerNotReady
@@ -96,7 +96,7 @@ func (p *RaftPeer) SendRaftMessage(msg *raftpb.Message) error {
 
 }
 
-func (p *RaftPeer) SendSnapshot(snapMsg *raftpb.Message, snapReader SnapshotFileReader) {
+func (p *RaftPeer) SendSnapshot(snapMsg raftpb.Message, snapReader SnapshotFileReader) {
 	p.closer.Run(func() {
 		if err := p.sendSnapshotMessageLoop(snapMsg, snapReader); err != nil {
 			if !errors.Is(err, ErrPeerStopped) {
@@ -119,13 +119,13 @@ func (p *RaftPeer) Stop() {
 	p.closer.Close()
 }
 
-func (p *RaftPeer) getQueue() (chan *raftpb.Message, error) {
+func (p *RaftPeer) getQueue() (chan raftpb.Message, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	msgCh := p.currentMsgCh
 	if msgCh == nil {
 		p.memoryLimiter.Reset()
-		msgCh = make(chan *raftpb.Message, p.raftQueueSize)
+		msgCh = make(chan raftpb.Message, p.raftQueueSize)
 		p.currentMsgCh = msgCh
 		select {
 		case <-p.closer.CloseCh():
@@ -157,7 +157,7 @@ func (p *RaftPeer) processRaftMessage() {
 	}
 }
 
-func (p *RaftPeer) sendRaftMessageLoop(msgCh chan *raftpb.Message) error {
+func (p *RaftPeer) sendRaftMessageLoop(msgCh chan raftpb.Message) error {
 	var batchMsg = babuzapb.BatchMessage{
 		ClusterID: p.clusterID,
 	}
@@ -169,7 +169,7 @@ func (p *RaftPeer) sendRaftMessageLoop(msgCh chan *raftpb.Message) error {
 		case <-p.closer.CloseCh():
 			return ErrPeerStopped
 		case msg := <-msgCh:
-			msgBuf = append(msgBuf, *msg)
+			msgBuf = append(msgBuf, msg)
 			mSize := int64(msg.Size())
 			maxBatchSize += mSize
 			p.memoryLimiter.Release(mSize)
@@ -178,7 +178,7 @@ func (p *RaftPeer) sendRaftMessageLoop(msgCh chan *raftpb.Message) error {
 				case <-p.closer.CloseCh():
 					return ErrPeerStopped
 				case msg = <-msgCh:
-					msgBuf = append(msgBuf, *msg)
+					msgBuf = append(msgBuf, msg)
 					mSize = int64(msg.Size())
 					p.memoryLimiter.Release(mSize)
 					if maxBatchSize+mSize > p.limiterMaxBatchMessageSize {
@@ -214,7 +214,7 @@ func (p *RaftPeer) sendRaftMessageLoop(msgCh chan *raftpb.Message) error {
 	}
 }
 
-func (p *RaftPeer) sendSnapshotMessageLoop(snapMsg *raftpb.Message,
+func (p *RaftPeer) sendSnapshotMessageLoop(snapMsg raftpb.Message,
 	snapFileReader SnapshotFileReader) error {
 
 	sendSnapshotMsg := func(msg babuzapb.SnapshotMessage) error {
@@ -240,16 +240,15 @@ func (p *RaftPeer) sendSnapshotMessageLoop(snapMsg *raftpb.Message,
 
 	//send metadata message
 	mt := snapFileReader.Metadata()
-	m.Metadata = &mt
+	m.Metadata = mt
 	if err := sendSnapshotMsg(m); err != nil {
 		return err
 	}
 	p.breaker.Success()
 	//send chunk message
-	m.Metadata = nil
+	m.Metadata = babuzapb.SnapshotMetadata{}
 	chunkBuf := make([]byte, p.snapshotChunkSize)
 	if err := snapFileReader.ForEachFile(func(reader io.Reader, metadata babuzapb.SnapshotFileDesc) error {
-		m.ChunkMessage = &babuzapb.SnapshotChunkMessage{}
 		m.ChunkMessage.FileTag = metadata.Tag
 		m.ChunkMessage.FileType = metadata.FileType
 		return p.sendSnapshotMsgWithChunk(reader, metadata.FileSize, m, chunkBuf, crcTable)
@@ -258,7 +257,7 @@ func (p *RaftPeer) sendSnapshotMessageLoop(snapMsg *raftpb.Message,
 	}
 
 	//send finish message
-	m.ChunkMessage = nil
+	m.ChunkMessage = babuzapb.SnapshotChunkMessage{}
 	m.FinishMessage = snapMsg
 	if err := sendSnapshotMsg(m); err != nil {
 		return err

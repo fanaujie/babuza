@@ -82,7 +82,7 @@ func (t *Transport) Send(msg raftpb.Message) {
 		t.logger.Warningf("transport[local id=%d] not found peerID=%d", t.localPeerID, msg.To)
 		return
 	}
-	if err := p.SendRaftMessage(&msg); err != nil {
+	if err := p.SendRaftMessage(msg); err != nil {
 		t.logger.Warningf("transport[local id=%d] failed to send raft message to [id=%d] err=%s", t.localPeerID, msg.To, err.Error())
 	}
 }
@@ -96,7 +96,7 @@ func (t *Transport) SendSnapshot(snapMsg raftpb.Message) {
 	if err != nil {
 		t.logger.Panicf("transport[local id=%d] can not create snapshot reader (index=%d)", t.localPeerID, snapMsg.Snapshot.Metadata.Index)
 	}
-	p.SendSnapshot(&snapMsg, snapReader)
+	p.SendSnapshot(snapMsg, snapReader)
 }
 
 func (t *Transport) SetupTransportConfig(cfg ibabuza.TransportConfig) error {

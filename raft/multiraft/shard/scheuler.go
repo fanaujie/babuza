@@ -28,14 +28,14 @@ type internalState struct {
 type Scheduler struct {
 	cfg           Config
 	rb            *queue.RingBuffer
-	raftProcessor ibabuza.RaftStateProcessor
+	raftProcessor ibabuza.MultiRaftStateProcessor
 	log           ibabuza.Logger
 	mu            sync.Mutex
 	groupState    map[ibabuza.RaftGroupID]internalState
 	closer        *syncutil.Closer
 }
 
-func NewScheduler(cfg Config, raftProcessor ibabuza.RaftStateProcessor, log ibabuza.Logger) *Scheduler {
+func NewScheduler(cfg Config, raftProcessor ibabuza.MultiRaftStateProcessor, log ibabuza.Logger) *Scheduler {
 	s := &Scheduler{
 		cfg:           cfg,
 		rb:            queue.NewRingBuffer(cfg.QueueSize),
@@ -56,12 +56,12 @@ func (s *Scheduler) Stop() {
 	s.closer.Close()
 }
 
-func (s *Scheduler) EnqueueState(gid ibabuza.RaftGroupID, state int) error {
+func (s *Scheduler) EnqueueState(groupID ibabuza.RaftGroupID, state int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if st, ok := s.groupState[gid]; !ok {
-		s.groupState[gid] = internalState{
+	if st, ok := s.groupState[groupID]; !ok {
+		s.groupState[groupID] = internalState{
 			state: state,
 		}
 	} else {
@@ -72,9 +72,9 @@ func (s *Scheduler) EnqueueState(gid ibabuza.RaftGroupID, state int) error {
 				st.ticks = s.cfg.MaxTicks
 			}
 		}
-		s.groupState[gid] = st
+		s.groupState[groupID] = st
 	}
-	full, err := s.rb.Offer(gid)
+	full, err := s.rb.Offer(groupID)
 	if err != nil {
 		return err
 	}
@@ -85,14 +85,14 @@ func (s *Scheduler) EnqueueState(gid ibabuza.RaftGroupID, state int) error {
 	return nil
 }
 
-func (s *Scheduler) EnqueueBatchTickState(gids []ibabuza.RaftGroupID) error {
-	gidsLen := len(gids)
+func (s *Scheduler) EnqueueBatchTickState(groupIDs []ibabuza.RaftGroupID) error {
+	groupIDsLen := len(groupIDs)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i := 0; i < gidsLen; i++ {
-		gid := gids[i]
-		if st, ok := s.groupState[gid]; !ok {
-			s.groupState[gid] = internalState{
+	for i := 0; i < groupIDsLen; i++ {
+		groupID := groupIDs[i]
+		if st, ok := s.groupState[groupID]; !ok {
+			s.groupState[groupID] = internalState{
 				state: StateTick,
 			}
 		} else {
@@ -100,13 +100,13 @@ func (s *Scheduler) EnqueueBatchTickState(gids []ibabuza.RaftGroupID) error {
 			st.ticks++
 			if st.ticks > s.cfg.MaxTicks {
 				st.ticks = s.cfg.MaxTicks
-				s.log.Warningf("gid=%d reach max ticks %d", gid, st.ticks)
+				s.log.Warningf("groupID=%d reach max ticks %d", groupID, st.ticks)
 			}
-			s.groupState[gid] = st
+			s.groupState[groupID] = st
 		}
 	}
-	for i := 0; i < gidsLen; i++ {
-		full, err := s.rb.Offer(gids[i])
+	for i := 0; i < groupIDsLen; i++ {
+		full, err := s.rb.Offer(groupIDs[i])
 		if err != nil {
 			return err
 		}
@@ -130,42 +130,42 @@ func (s *Scheduler) worker() {
 			s.log.Errorf("scheduler get from ringbuffer failed: %v", err)
 			return
 		}
-		gid := g.(ibabuza.RaftGroupID)
+		groupID := g.(ibabuza.RaftGroupID)
 		s.mu.Lock()
-		oldState, ok := s.groupState[gid]
-		s.groupState[gid] = internalState{}
+		oldState, ok := s.groupState[groupID]
+		s.groupState[groupID] = internalState{}
 		s.mu.Unlock()
 		if !ok {
 			continue
 		}
 		if oldState.state&StateProposal == StateProposal {
-			s.raftProcessor.ProcessProposal(gid)
+			s.raftProcessor.ProcessProposal(groupID)
 			oldState.state |= StateReady
 		}
 
 		if oldState.state&StateConfigChange == StateConfigChange {
-			s.raftProcessor.ProcessConfigChange(gid)
+			s.raftProcessor.ProcessConfigChange(groupID)
 			oldState.state |= StateReady
 		}
 
 		if oldState.state&StateStep == StateStep {
-			s.raftProcessor.ProcessStep(gid)
+			s.raftProcessor.ProcessStep(groupID)
 			oldState.state |= StateReady
 		}
 
 		if oldState.state&StateTick == StateTick {
 			for i := 0; i < oldState.ticks; i++ {
-				s.raftProcessor.ProcessTick(gid)
+				s.raftProcessor.ProcessTick(groupID)
 			}
 			oldState.state |= StateReady
 		}
 		if oldState.state&StateReady == StateReady {
-			s.raftProcessor.ProcessReady(gid)
+			s.raftProcessor.ProcessReady(groupID)
 		}
 		s.mu.Lock()
-		newState, _ := s.groupState[gid]
+		newState, _ := s.groupState[groupID]
 		if newState.state == 0 {
-			delete(s.groupState, gid)
+			delete(s.groupState, groupID)
 		}
 		s.mu.Unlock()
 	}
