@@ -22,9 +22,10 @@ import (
 )
 
 const (
-	transportTypeTcp  = 1
-	transportTypeHttp = 2
-	transportTypeGrpc = 3
+	transportTypeTcp           = 1
+	transportTypeHttp          = 2
+	transportTypeGrpc          = 3
+	transportTypeGrpcMultiRaft = 4
 )
 
 // mockRaftProcessor implements the ibabuza.RaftNodeHandler interface for testing

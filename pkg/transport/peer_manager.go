@@ -13,7 +13,7 @@ type ManagerImpl struct {
 	mu        sync.RWMutex
 }
 
-func NewPeerManager() PeerManager {
+func NewPeerManager() *ManagerImpl {
 	return &ManagerImpl{
 		peers:     make(map[uint64]peer.Peer),
 		addresses: make(map[uint64]string),

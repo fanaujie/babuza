@@ -14,17 +14,16 @@ type multiRaftPeerFactory struct {
 }
 
 func (p *multiRaftPeerFactory) CreatePeer(peerID uint64) peer.MultiRaftPeer {
-	_, err := p.t.protocol.CreateClient(p.t.peerMgr)
+	c, err := p.t.protocol.CreateClient(p.t.peerMgr)
 	if err != nil {
-		p.t.logger.Panicf("transport[local id=%d] failed to create client for peerID=%d err=%s", p.t.localPeerID, peerID, err.Error())
+		p.t.logger.Panicf("transport[local id=%d] failed to create client for peerID=%d err=%s",
+			p.t.localPeerID, peerID, err.Error())
 	}
-	return nil
-	//return peer.New(p.t.clusterID, p.t.localPeerID, peerID, peer.RaftPeerConfig{
-	//	LimiterMaxBatchMessageSize: p.t.options.PeerLimiterMaxBatchMessageSize,
-	//	SnapshotChunkSize:          p.t.options.PeerSnapshotChunkSize,
-	//	RaftMsgQueueSize:           p.t.options.PeerQueueSize,
-	//	DialTimeout:                p.t.options.DialTimeout},
-	//	p.t.raftProcessor, p.t.memoryLimiter, p.t.chunkRateLimiter, p.t.breaker, c, p.t.logger)
+	return peer.NewMultiRaftPeer(p.t.localPeerID, peerID, peer.MultiRaftPeerConfig{
+		LimiterMaxBatchMessageSize: p.t.options.PeerLimiterMaxBatchMessageSize,
+		SnapshotChunkSize:          p.t.options.PeerSnapshotChunkSize,
+		RaftMsgQueueSize:           p.t.options.PeerQueueSize},
+		p.t.raftProcessor, p.t.memoryLimiter, p.t.chunkRateLimiter, p.t.breaker, c, p.t.logger)
 }
 
 type MultiRaftTransport struct {

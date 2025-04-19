@@ -2,73 +2,96 @@ package transport
 
 import (
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"go.etcd.io/etcd/raft/v3/raftpb"
 	"testing"
 )
 
-// MockPeer implements the Peer interface for testing
-type MockPeer struct {
+// MockMultiRaftPeer implements the MultiRaftPeer interface for testing
+type MockMultiRaftPeer struct {
 	mock.Mock
 	id uint64
 }
 
-func (m *MockPeer) UpdatePeer() {
+func (m *MockMultiRaftPeer) UpdatePeer() {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (m *MockPeer) SendRaftMessage(msg raftpb.Message) error {
+func (m *MockMultiRaftPeer) SendRaftMessage(msg babuzapb.MultiRaftMessage) error {
 	args := m.Called(msg)
 	return args.Error(0)
 }
 
-func (m *MockPeer) SendSnapshot(msg raftpb.Message, snapReader peer.SnapshotFileReader) {
+func (m *MockMultiRaftPeer) SendSnapshot(msg babuzapb.MultiRaftMessage, snapReader peer.SnapshotFileReader) {
 	m.Called(msg, snapReader)
 }
 
-func (m *MockPeer) UpdateRaftReport(report ibabuza.RaftStatusReporter) {
+func (m *MockMultiRaftPeer) UpdateRaftReport(report ibabuza.RaftStatusReporter) {
 	m.Called(report)
 }
 
-func (m *MockPeer) Stop() {
+func (m *MockMultiRaftPeer) Stop() {
 	m.Called()
 }
 
-func (m *MockPeer) Run() {
+func (m *MockMultiRaftPeer) Run() {
 	m.Called()
 }
 
-// MockPeerFactory implements PeerFactory interface for testing
-type MockPeerFactory struct {
+// MockMultiRaftPeerFactory implements MultiRaftPeerFactory interface for testing
+type MockMultiRaftPeerFactory struct {
 	mock.Mock
 }
 
-func (f *MockPeerFactory) CreatePeer(peerID uint64) peer.Peer {
+func (f *MockMultiRaftPeerFactory) CreatePeer(peerID uint64) peer.MultiRaftPeer {
 	args := f.Called(peerID)
-	return args.Get(0).(peer.Peer)
+	return args.Get(0).(peer.MultiRaftPeer)
 }
 
-func TestNewPeerManager(t *testing.T) {
-	manager := NewPeerManager()
+func TestNewMultiRaftPeerManager(t *testing.T) {
+	manager := NewMultiRaftPeerManager()
 
 	assert.NotNil(t, manager)
-	assert.IsType(t, &ManagerImpl{}, manager)
+	assert.IsType(t, &MultiRaftManagerImpl{}, manager)
 
 	managerImpl := manager
 	assert.NotNil(t, managerImpl.peers)
 	assert.NotNil(t, managerImpl.addresses)
 }
 
-func TestManagerImpl_AddPeer(t *testing.T) {
-	factory := new(MockPeerFactory)
-	manager := NewPeerManager()
+func TestMultiRaftManagerImpl_GetPeer(t *testing.T) {
+	factory := new(MockMultiRaftPeerFactory)
+	manager := NewMultiRaftPeerManager()
 
 	// Setup
-	mockPeer := new(MockPeer)
-	mockPeer.On("Run").Return()
+	mockPeer := new(MockMultiRaftPeer)
+
+	peerID := uint64(1)
+	peerAddress := "localhost:10001"
+	factory.On("CreatePeer", peerID).Return(mockPeer)
+
+	// Add peer
+	err := manager.AddPeer(peerID, peerAddress, factory)
+	assert.NoError(t, err)
+
+	// Test getting existing peer
+	p := manager.GetPeer(peerID)
+	assert.Equal(t, mockPeer, p)
+
+	// Test getting non-existent peer
+	p = manager.GetPeer(999)
+	assert.Nil(t, p)
+}
+
+func TestMultiRaftManagerImpl_AddPeer(t *testing.T) {
+	factory := new(MockMultiRaftPeerFactory)
+	manager := NewMultiRaftPeerManager()
+
+	// Setup
+	mockPeer := new(MockMultiRaftPeer)
 
 	// Test adding new peer
 	peerID := uint64(1)
@@ -89,13 +112,12 @@ func TestManagerImpl_AddPeer(t *testing.T) {
 	assert.Contains(t, err.Error(), "already exists")
 }
 
-func TestManagerImpl_GetPeer(t *testing.T) {
-	factory := new(MockPeerFactory)
-	manager := NewPeerManager()
+func TestMultiRaftManagerImpl_UpdatePeer(t *testing.T) {
+	factory := new(MockMultiRaftPeerFactory)
+	manager := NewMultiRaftPeerManager()
 
 	// Setup
-	mockPeer := new(MockPeer)
-	mockPeer.On("Run").Return()
+	mockPeer := new(MockMultiRaftPeer)
 
 	peerID := uint64(1)
 	peerAddress := "localhost:10001"
@@ -105,41 +127,8 @@ func TestManagerImpl_GetPeer(t *testing.T) {
 	err := manager.AddPeer(peerID, peerAddress, factory)
 	assert.NoError(t, err)
 
-	// Test getting existing peer
-	p := manager.GetPeer(peerID)
-	assert.Equal(t, mockPeer, p)
-
-	// Test getting non-existent peer
-	p = manager.GetPeer(999)
-	assert.Nil(t, p)
-}
-
-func TestManagerImpl_UpdatePeer(t *testing.T) {
-	factory := new(MockPeerFactory)
-	manager := NewPeerManager()
-
-	// Setup
-	mockPeer := new(MockPeer)
-
-	peerID := uint64(1)
-	peerAddress := "localhost:10001"
-	factory.On("CreatePeer", peerID).Return(mockPeer)
-
-	// Add peer
-	err := manager.AddPeer(peerID, peerAddress, factory)
-	assert.NoError(t, err)
-
-	// Test updating with same address (no restart)
-	err = manager.UpdatePeer(peerID, peerAddress)
-	assert.NoError(t, err)
-
-	// Verify peer not restarted
-	mockPeer.AssertNotCalled(t, "Stop")
-
-	// Setup for address change
+	// Test updating address
 	newAddress := "localhost:10002"
-
-	// Test updating with new address (should restart)
 	err = manager.UpdatePeer(peerID, newAddress)
 	assert.NoError(t, err)
 	assert.Equal(t, newAddress, manager.addresses[peerID])
@@ -150,13 +139,12 @@ func TestManagerImpl_UpdatePeer(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
-func TestManagerImpl_RemovePeer(t *testing.T) {
-	factory := new(MockPeerFactory)
-	manager := NewPeerManager()
+func TestMultiRaftManagerImpl_RemovePeer(t *testing.T) {
+	factory := new(MockMultiRaftPeerFactory)
+	manager := NewMultiRaftPeerManager()
 
 	// Setup
-	mockPeer := new(MockPeer)
-	mockPeer.On("Run").Return()
+	mockPeer := new(MockMultiRaftPeer)
 	mockPeer.On("Stop").Return()
 
 	peerID := uint64(1)
@@ -184,21 +172,20 @@ func TestManagerImpl_RemovePeer(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
-func TestManagerImpl_RemoveAllPeers(t *testing.T) {
-	factory := new(MockPeerFactory)
-	manager := NewPeerManager()
+func TestMultiRaftManagerImpl_RemoveAllPeers(t *testing.T) {
+	factory := new(MockMultiRaftPeerFactory)
+	manager := NewMultiRaftPeerManager()
 
 	// Setup multiple peers
 	peerIDs := []uint64{1, 2, 3}
-	mockPeers := make([]*MockPeer, len(peerIDs))
+	mockPeers := make([]*MockMultiRaftPeer, len(peerIDs))
 
 	for i, id := range peerIDs {
-		mockPeer := new(MockPeer)
-		mockPeer.On("Run").Return()
+		mockPeer := new(MockMultiRaftPeer)
 		mockPeer.On("Stop").Return()
 		mockPeers[i] = mockPeer
 
-		peerAddress := "localhost:" + string('0'+rune(i))
+		peerAddress := "localhost:1000" + string('0'+rune(i))
 		factory.On("CreatePeer", id).Return(mockPeer)
 
 		err := manager.AddPeer(id, peerAddress, factory)
@@ -222,13 +209,12 @@ func TestManagerImpl_RemoveAllPeers(t *testing.T) {
 	assert.Empty(t, manager.addresses)
 }
 
-func TestManagerImpl_GetPeerAddress(t *testing.T) {
-	factory := new(MockPeerFactory)
-	manager := NewPeerManager()
+func TestMultiRaftManagerImpl_ResolvePeerAddress(t *testing.T) {
+	factory := new(MockMultiRaftPeerFactory)
+	manager := NewMultiRaftPeerManager()
 
 	// Setup
-	mockPeer := new(MockPeer)
-	mockPeer.On("Run").Return()
+	mockPeer := new(MockMultiRaftPeer)
 
 	peerID := uint64(1)
 	peerAddress := "localhost:10001"
@@ -249,17 +235,16 @@ func TestManagerImpl_GetPeerAddress(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
-func TestManagerImpl_UpdatePeerRaftReport(t *testing.T) {
-	factory := new(MockPeerFactory)
-	manager := NewPeerManager()
+func TestMultiRaftManagerImpl_UpdatePeerRaftReport(t *testing.T) {
+	factory := new(MockMultiRaftPeerFactory)
+	manager := NewMultiRaftPeerManager()
 
 	// Setup multiple peers
 	peerIDs := []uint64{1, 2, 3}
-	mockPeers := make([]*MockPeer, len(peerIDs))
+	mockPeers := make([]*MockMultiRaftPeer, len(peerIDs))
 
 	for i, id := range peerIDs {
-		mockPeer := new(MockPeer)
-		mockPeer.On("Run").Return()
+		mockPeer := new(MockMultiRaftPeer)
 		mockPeers[i] = mockPeer
 
 		peerAddress := "localhost:1000" + string('0'+rune(i))

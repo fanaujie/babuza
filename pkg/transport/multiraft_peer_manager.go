@@ -14,7 +14,7 @@ type MultiRaftManagerImpl struct {
 	mu        sync.RWMutex
 }
 
-func NewMultiRaftPeerManager() MultiRaftPeerManager {
+func NewMultiRaftPeerManager() *MultiRaftManagerImpl {
 	return &MultiRaftManagerImpl{
 		peers:     make(map[uint64]peer.MultiRaftPeer),
 		addresses: make(map[uint64]string),

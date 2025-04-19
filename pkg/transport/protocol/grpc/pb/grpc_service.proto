@@ -21,3 +21,18 @@ service RaftTransport {
   // PublishApplicationService publishes application service addresses
   rpc PublishApplicationService(raft.PublishApplicationServiceRequest) returns (raft.PublishApplicationServiceResponse);
 }
+
+
+service MultiRaftTransport {
+  // SendBatchMessage sends stream of batch messages
+  rpc SendBatchMessage(stream raft.BatchMessage) returns (stream google.protobuf.Empty);
+
+  // SendSnapshotMessage sends a snapshot message
+  rpc SendSnapshotMessage(raft.SnapshotMessage) returns (google.protobuf.Empty);
+
+  // GetClusterPeers gets information about peers in the cluster
+  rpc GetClusterPeers(raft.GetClusterPeersRequest) returns (raft.GetClusterPeersResponse);
+
+  // PublishApplicationService publishes application service addresses
+  rpc PublishApplicationService(raft.PublishApplicationServiceRequest) returns (raft.PublishApplicationServiceResponse);
+}
