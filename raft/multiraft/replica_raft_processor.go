@@ -23,7 +23,9 @@ func (r *Replica) ProcessReady() {
 		if len(rd.ReadStates) != 0 {
 			//TODO: implement read state
 		}
-
+		if raft.IsEmptyHardState(rd.HardState) {
+			r.status.SetHardStateTerm(rd.HardState.Term)
+		}
 		r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
 		waitWALSync := shouldWaitWALSync(rd)
 		if waitWALSync {

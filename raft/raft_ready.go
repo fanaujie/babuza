@@ -31,12 +31,16 @@ func (r *Raft) processRaftReady() {
 				}
 			}
 
+			if raft.IsEmptyHardState(rd.HardState) {
+				r.status.SetHardStateTerm(rd.HardState.Term)
+			}
 			r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
 			waitWALSync := shouldWaitWALSync(rd)
 			if waitWALSync {
 				if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
 					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.cluster.LocalPeerID(), err)
 				}
+
 			}
 
 			emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
