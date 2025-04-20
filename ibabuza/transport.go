@@ -9,8 +9,8 @@ import (
 type RaftMessageHandler interface {
 	ProcessBatchMessage(babuzapb.BatchMessage)
 	ProcessSnapshotMessage(babuzapb.SnapshotMessage)
-	GetClusterPeersRequest(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse
-	PublishApplicationServiceRequest(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse
+	GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse
+	PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse
 }
 
 type RaftStatusReporter interface {

@@ -79,7 +79,7 @@ func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	res := h.raft.GetClusterPeersRequest(babuzapb.GetClusterPeersRequest{
+	res := h.raft.GetClusterPeer(babuzapb.GetClusterPeersRequest{
 		ClusterID: uint64(clusterID),
 		From:      uint64(fromId),
 		To:        uint64(toId),
@@ -111,7 +111,7 @@ func (h *handler) publishApplicationServiceFunc(w http.ResponseWriter, req *http
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	res := h.raft.PublishApplicationServiceRequest(appServiceUrlReq)
+	res := h.raft.PublishApplicationService(appServiceUrlReq)
 	var byteSlice *allocator.ByteSlice
 	byteSlice = allocator.Acquire(int(res.Size()))
 	defer allocator.Release(byteSlice)

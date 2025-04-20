@@ -12,7 +12,6 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"io"
@@ -22,15 +21,13 @@ import (
 )
 
 const (
-	transportTypeTcp           = 1
-	transportTypeHttp          = 2
-	transportTypeGrpc          = 3
-	transportTypeGrpcMultiRaft = 4
+	transportTypeTcp  = 1
+	transportTypeHttp = 2
+	transportTypeGrpc = 3
 )
 
 // mockRaftProcessor implements the ibabuza.RaftNodeHandler interface for testing
 type mockRaftProcessor struct {
-	mock.Mock
 	receivedMsg      map[uint64]raftpb.Message
 	receivedSnapMsg  map[uint64]babuzapb.SnapshotMessage
 	unreachable      map[uint64]struct{}
@@ -55,7 +52,6 @@ func newMockRaftProcessor() *mockRaftProcessor {
 func (mr *mockRaftProcessor) ProcessBatchMessage(message babuzapb.BatchMessage) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.Called(message)
 	for _, msg := range message.Messages {
 		mr.receivedMsg[msg.Index] = msg
 	}
@@ -64,7 +60,6 @@ func (mr *mockRaftProcessor) ProcessBatchMessage(message babuzapb.BatchMessage) 
 func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.Called(message)
 	mr.receivedSnapMsg[message.Index] = message
 
 	// Store snapshot data for validation
@@ -88,8 +83,7 @@ func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMes
 	}
 }
 
-func (mr *mockRaftProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	mr.Called(req)
+func (mr *mockRaftProcessor) GetClusterPeer(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
 	return babuzapb.GetClusterPeersResponse{
 		Peers: []babuzapb.Peer{
 			{
@@ -108,8 +102,7 @@ func (mr *mockRaftProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeers
 	}
 }
 
-func (mr *mockRaftProcessor) PublishApplicationServiceRequest(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
-	mr.Called(req)
+func (mr *mockRaftProcessor) PublishApplicationService(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	return babuzapb.PublishApplicationServiceResponse{
 		Status:  babuzapb.SUCCESS,
 		Message: "Success"}
@@ -118,20 +111,17 @@ func (mr *mockRaftProcessor) PublishApplicationServiceRequest(req babuzapb.Publi
 func (mr *mockRaftProcessor) ReportUnreachable(id uint64) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.Called(id)
 	mr.unreachable[id] = struct{}{}
 }
 
 func (mr *mockRaftProcessor) ReportSnapshot(id uint64, status raft.SnapshotStatus) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.Called(id, status)
 	mr.snapshotStatus[id] = status
 }
 
 func (mr *mockRaftProcessor) CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error) {
-	args := mr.Called(snapshotIndex)
-	return mr.snapshotReader, args.Error(1)
+	return mr.snapshotReader, nil
 }
 
 // mockSnapshotReader implements the ibabuza.SnapshotReader interface for testing
@@ -238,16 +228,7 @@ func newTestTransport(t *testing.T, transType int, nodeId uint64, listenAddress 
 			FileSize: 24,
 		},
 	})
-	// Mock expectations for the RaftNodeHandler
-	mockProc.On("CreateSnapshotReader", mock.Anything).Return(
-		mockProc.snapshotReader, nil)
-	mockProc.On("ProcessBatchMessage", mock.Anything).Return()
-	mockProc.On("ProcessSnapshotMessage", mock.Anything).Return()
-	mockProc.On("GetClusterPeersRequest", mock.Anything).Return()
-	mockProc.On("PublishApplicationServiceRequest", mock.Anything).Return()
-	mockProc.On("ReportUnreachable", mock.Anything).Return()
-	mockProc.On("ReportSnapshot", mock.Anything, mock.Anything).Return()
-
+	
 	switch transType {
 	case transportTypeTcp:
 		tranProtocol = protocol.NewTcp(networkio.NewTcpPhysicalIO(), &logger.Mock{},

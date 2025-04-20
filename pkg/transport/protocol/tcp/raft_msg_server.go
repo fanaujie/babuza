@@ -143,7 +143,7 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 		if err := s.getClusterPeersReq.Unmarshal(msgBuf); err != nil {
 			return err
 		}
-		res := s.raft.GetClusterPeersRequest(s.getClusterPeersReq)
+		res := s.raft.GetClusterPeer(s.getClusterPeersReq)
 		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
 			return err
 		}
@@ -152,7 +152,7 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 		if err := s.pubAppServiceReq.Unmarshal(msgBuf); err != nil {
 			return err
 		}
-		res := s.raft.PublishApplicationServiceRequest(s.pubAppServiceReq)
+		res := s.raft.PublishApplicationService(s.pubAppServiceReq)
 		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
 			return err
 		}

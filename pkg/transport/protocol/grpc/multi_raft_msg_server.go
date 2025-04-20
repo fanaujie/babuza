@@ -63,7 +63,7 @@ func (r *MultiRaftMsgServer) Start() error {
 func (r *MultiRaftMsgServer) Stop() error {
 	r.logger.Infof("grpc[multi-raft server] peerID(%d) Stop", r.cfg.PeerId)
 
-	r.server.GracefulStop()
+	r.server.Stop()
 
 	if r.listener != nil {
 		if err := r.listener.Close(); err != nil {
@@ -99,10 +99,10 @@ func (r *MultiRaftMsgServer) SendSnapshotMessage(ctx context.Context, msg *babuz
 }
 
 func (r *MultiRaftMsgServer) GetClusterPeers(ctx context.Context, req *babuzapb.GetClusterPeersRequest) (*babuzapb.GetClusterPeersResponse, error) {
-	res := r.raft.GetClusterPeersRequest(*req)
+	res := r.raft.GetClusterPeer(*req)
 	return &res, nil
 }
 func (r *MultiRaftMsgServer) PublishApplicationService(ctx context.Context, req *babuzapb.PublishApplicationServiceRequest) (*babuzapb.PublishApplicationServiceResponse, error) {
-	res := r.raft.PublishApplicationServiceRequest(*req)
+	res := r.raft.PublishApplicationService(*req)
 	return &res, nil
 }

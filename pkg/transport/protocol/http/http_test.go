@@ -116,11 +116,11 @@ func (m *mockTransportRaft) ProcessSnapshotMessage(message babuzapb.SnapshotMess
 	m.mu.Unlock()
 
 }
-func (m *mockTransportRaft) GetClusterPeersRequest(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+func (m *mockTransportRaft) GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
 	return m.clusterRes
 }
 
-func (m *mockTransportRaft) PublishApplicationServiceRequest(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+func (m *mockTransportRaft) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	return m.publishRes
 }
 

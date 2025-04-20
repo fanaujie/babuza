@@ -76,11 +76,11 @@ func (m *mockMultiRaftNodeHandler) ProcessSnapshotMessage(message babuzapb.Snaps
 	m.mu.Unlock()
 }
 
-func (m *mockMultiRaftNodeHandler) GetClusterPeersRequest(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+func (m *mockMultiRaftNodeHandler) GetClusterPeer(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
 	return m.clusterRes
 }
 
-func (m *mockMultiRaftNodeHandler) PublishApplicationServiceRequest(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+func (m *mockMultiRaftNodeHandler) PublishApplicationService(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	return babuzapb.PublishApplicationServiceResponse{}
 }
 

@@ -119,6 +119,7 @@ func (p *MultiRaftPeerImpl) UpdateRaftReport(report ibabuza.RaftStatusReporter) 
 }
 
 func (p *MultiRaftPeerImpl) Stop() {
+	_ = p.transportClient.Close()
 	p.closer.Close()
 }
 

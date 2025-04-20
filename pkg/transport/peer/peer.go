@@ -116,6 +116,7 @@ func (p *RaftPeer) UpdateRaftReport(report ibabuza.RaftStatusReporter) {
 }
 
 func (p *RaftPeer) Stop() {
+	p.transportClient.Close()
 	p.closer.Close()
 }
 

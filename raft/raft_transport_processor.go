@@ -54,7 +54,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 	}
 }
 
-func (d *transportProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+func (d *transportProcessor) GetClusterPeer(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
 	if req.ClusterID != d.cluster.ClusterID() {
 		d.logger.Warningf("raft[id=%d] received get cluster peers request with different cluster id(%d)", d.cluster.LocalPeerID(), req.ClusterID)
 		return babuzapb.GetClusterPeersResponse{
@@ -79,7 +79,7 @@ func (d *transportProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeers
 		Peers:   d.cluster.Peers()}
 }
 
-func (d *transportProcessor) PublishApplicationServiceRequest(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+func (d *transportProcessor) PublishApplicationService(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	if req.ClusterID != d.cluster.ClusterID() {
 		d.logger.Warningf("raft[id=%d] received publish application service request with different cluster id(%d)", d.cluster.LocalPeerID(), req.ClusterID)
 		return babuzapb.PublishApplicationServiceResponse{
