@@ -1,22 +1,11 @@
 package babuzawal
 
 import (
-	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
-	"github.com/fanaujie/babuza/pkg/utility/fileutil"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/player"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
-	"github.com/fanaujie/babuza/pkg/wal/walbase"
-	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
-	"io"
-	"os"
-	"strings"
 )
 
 type WalManager struct {
@@ -107,164 +96,20 @@ func NewWalManager(walDir string, logger ibabuza.Logger, setOptions ...SetOption
 }
 
 func (w *WalManager) FindSnapshot() ([]walpb.Snapshot, error) {
-	result := player.NewReplayResult(collection.NewNopEntry())
-	p, err := player.Create(w.walDir, EmptyWalpbSnapshot, w.cascade)
-	if err != nil {
-		return nil, err
-	}
-	if err = p.Replay(result, false); err != nil {
-		if !errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, err
-		}
-	}
-	hs := result.HardState()
-	var walSnapshots []walpb.Snapshot
-	for _, s := range result.WalSnapshots() {
-		if s.Index <= hs.Commit {
-			walSnapshots = append(walSnapshots, s)
-		}
-	}
-	return walSnapshots, nil
+	return findSnapshotInternal(w.walDir, w.cascade)
 }
 
 func (w *WalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.EntryStorage, ibabuza.Wal, error) {
-	if fileutil.Exist(w.walDir) {
-		if err := os.Remove(w.walDir); err != nil {
-			return nil, nil, err
-		}
-	}
-	if err := fileutil.CreateDirAndTouch(w.walDir); err != nil {
-		return nil, nil, err
-	}
-	md, err := metadata.Marshal()
-	if err != nil {
-		return nil, nil, err
-	}
-	logMgr, err := logfile.NewManager(logfile.ManagerConfig{
-		WalDir:            w.walDir,
-		LogFileChunkSize:  w.options.WalLogFileChunkSize,
-		AlignmentPageSize: w.options.WalAlignmentPageSize,
-		PageWriterBufSize: w.options.WalPageWriteBufferSize,
-		MaxKeepLogFiles:   w.options.WalMaxKeepLogFiles,
-	}, w.cascade)
-	if err != nil {
-		return nil, nil, err
-	}
-	wal, err := CreateWal(md, logMgr)
-	if err != nil {
-		return nil, nil, err
-	}
-	var entryStorage ibabuza.EntryStorage
-	if !w.options.DisableEntryIndex {
-		es := &storage.EntryStorage{
-			EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](logMgr),
-		}
-		wal.SetEntryIndexStorage(es)
-		entryStorage = es
-	} else {
-		entryStorage = raft.NewMemoryStorage()
-	}
-	return entryStorage, wal, nil
+	return createWalInternal(w.walDir, metadata, w.options, w.cascade)
 }
 
 func (w *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (
 	ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
-	walSnap := EmptyWalpbSnapshot
-	if snapshot != nil {
-		walSnap = walpb.Snapshot{
-			Index:     snapshot.Metadata.Index,
-			Term:      snapshot.Metadata.Term,
-			ConfState: &snapshot.Metadata.ConfState,
-		}
-	}
-	p, err := player.Create(w.walDir, walSnap, w.cascade)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	var result *player.ReplayResult
-	if !w.options.DisableEntryIndex {
-		result = player.NewReplayResult(collection.NewEntryIndex())
-	} else {
-		result = player.NewReplayResult(collection.NewEntry())
-	}
-	if err = p.Replay(result, true); err != nil {
-		if err != io.ErrUnexpectedEOF {
-			return nil, nil, nil, err
-		}
-	}
-	logMgr, err := logfile.NewManagerWithScan(logfile.ManagerConfig{
-		WalDir:            w.walDir,
-		LogFileChunkSize:  w.options.WalLogFileChunkSize,
-		AlignmentPageSize: w.options.WalAlignmentPageSize,
-		PageWriterBufSize: w.options.WalPageWriteBufferSize,
-		MaxKeepLogFiles:   w.options.WalMaxKeepLogFiles,
-	}, walSnap, w.cascade)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	wal, err := OpenWal(logMgr, result)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	var entryStorage ibabuza.EntryStorage
-	if !w.options.DisableEntryIndex {
-		es := &storage.EntryStorage{
-			EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](logMgr),
-		}
-		wal.SetEntryIndexStorage(es)
-		entryStorage = es
-		result.EntryCollection().(*collection.EntryIndex).SetReader(logMgr)
-	} else {
-		entryStorage = raft.NewMemoryStorage()
-	}
-	if snapshot != nil {
-		entryStorage.ApplySnapshot(*snapshot)
-	}
-	entryStorage.SetHardState(result.HardState())
-	if deleteUncommitted {
-		if err = result.EntryCollection().DeleteUncommittedEntry(result.HardState().Commit); err != nil {
-			return nil, nil, nil, err
-		}
-	}
-	ents, err := result.EntryCollection().Entries()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if !w.options.DisableEntryIndex {
-		if err = entryStorage.(*storage.EntryStorage).AppendEntryIndex(ents.([]walbase.EntryIndex[storage.EntryMetadata])); err != nil {
-			return nil, nil, nil, err
-		}
-	} else {
-		if err = entryStorage.Append(ents.([]raftpb.Entry)); err != nil {
-			return nil, nil, nil, err
-		}
-	}
-
-	//TODO: append to cache? if delete uncommitted entry
-	return entryStorage, wal, result, nil
+	return replayWalInternal(w.walDir, snapshot, deleteUncommitted, w.options, w.cascade)
 }
 
 func (w *WalManager) HasExistingWals() (bool, error) {
-	if fileutil.Exist(w.walDir) == false {
-		return false, nil
-	}
-	files, err := os.ReadDir(w.walDir)
-	if err != nil {
-		return false, err
-	}
-	for _, f := range files {
-		name := f.Name()
-		if f.IsDir() {
-			continue
-		}
-		if strings.HasSuffix(name, ".wal") {
-			return true, nil
-		}
-	}
-	return false, nil
+	return hasWalFilesInDir(w.walDir)
 }
 
-func (w *WalManager) PurgeWals(purgeCfg ibabuza.WalPurgeConfig) {
-
-}
+func (w *WalManager) PurgeWals(purgeCfg ibabuza.WalPurgeConfig) {}
