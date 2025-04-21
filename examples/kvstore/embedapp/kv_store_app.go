@@ -56,7 +56,6 @@ func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMac
 				} else {
 					app.isLeader = 0
 				}
-			case <-r.ClusterMemberEventCh():
 			}
 		}
 	}()

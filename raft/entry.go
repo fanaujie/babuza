@@ -20,12 +20,11 @@ type Entry struct {
 	seqNum     uint64
 	reqTime    int64
 	command    []byte
-	isReplay   bool
 	session    ibabuza.Session
 	sendResult NormalEntryResult
 }
 
-func NewEntry(index, term, replyID, seqNum uint64, reqTime int64, cmd []byte, isReplay bool,
+func NewEntry(index, term, replyID, seqNum uint64, reqTime int64, cmd []byte,
 	session ibabuza.Session, sendResult NormalEntryResult) *Entry {
 
 	e := entryPool.Get()
@@ -37,7 +36,6 @@ func NewEntry(index, term, replyID, seqNum uint64, reqTime int64, cmd []byte, is
 			seqNum:     seqNum,
 			reqTime:    reqTime,
 			command:    cmd,
-			isReplay:   isReplay,
 			session:    session,
 			sendResult: sendResult,
 		}
@@ -49,7 +47,6 @@ func NewEntry(index, term, replyID, seqNum uint64, reqTime int64, cmd []byte, is
 	ee.seqNum = seqNum
 	ee.reqTime = reqTime
 	ee.command = cmd
-	ee.isReplay = isReplay
 	ee.session = session
 	ee.sendResult = sendResult
 	return ee

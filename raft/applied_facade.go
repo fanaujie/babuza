@@ -19,7 +19,6 @@ type AppliedStatus interface {
 	SetAppliedTerm(uint64)
 	SetConfState(raftpb.ConfState)
 	GetHardStateTerm() uint64
-	IsLocalPeerPublishServiceMarkDone() bool
 }
 
 type AppliedFirstCommitInTermNotifier interface {
@@ -56,33 +55,49 @@ type AppliedTransport interface {
 }
 
 type appliedFacadeImpl struct {
-	storage              AppliedStorage
-	status               AppliedStatus
-	firstCommitNotifier  AppliedFirstCommitInTermNotifier
-	sessionMgr           AppliedSessionManager
-	replier              AppliedReplier
-	cluster              AppliedCluster
-	raftNode             AppliedRaftNode
-	trans                AppliedTransport
-	clusterMemberEventCh chan ClusterMemberEvent
-	log                  ibabuza.Logger
-	metricsCollector     ibabuza.MetricsCollector
+	storage             AppliedStorage
+	status              AppliedStatus
+	firstCommitNotifier AppliedFirstCommitInTermNotifier
+	sessionMgr          AppliedSessionManager
+	replier             AppliedReplier
+	cluster             AppliedCluster
+	raftNode            AppliedRaftNode
+	trans               AppliedTransport
+	log                 ibabuza.Logger
+	metricsCollector    ibabuza.MetricsCollector
+}
+
+func NewAppliedFacade(storage AppliedStorage, status AppliedStatus,
+	firstCommitNotifier AppliedFirstCommitInTermNotifier, sessionMgr AppliedSessionManager,
+	replier AppliedReplier, cluster AppliedCluster, raftNode AppliedRaftNode, trans AppliedTransport,
+	log ibabuza.Logger, metricsCollector ibabuza.MetricsCollector) InternalAppliedFacade {
+	return &appliedFacadeImpl{
+		storage:             storage,
+		status:              status,
+		firstCommitNotifier: firstCommitNotifier,
+		sessionMgr:          sessionMgr,
+		replier:             replier,
+		cluster:             cluster,
+		raftNode:            raftNode,
+		trans:               trans,
+		log:                 log,
+		metricsCollector:    metricsCollector,
+	}
 }
 
 func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 
 	return &appliedFacadeImpl{
-		storage:              r.storage,
-		status:               r.status,
-		firstCommitNotifier:  r.firstCommitInTermNotifier,
-		sessionMgr:           r.sessionMgr,
-		replier:              r.resultReplier,
-		cluster:              r.cluster,
-		raftNode:             r.raftNode,
-		trans:                r.trans,
-		clusterMemberEventCh: r.clusterMemberEventCh,
-		log:                  r.logger,
-		metricsCollector:     r.metricsCollector,
+		storage:             r.storage,
+		status:              r.status,
+		firstCommitNotifier: r.firstCommitInTermNotifier,
+		sessionMgr:          r.sessionMgr,
+		replier:             r.resultReplier,
+		cluster:             r.cluster,
+		raftNode:            r.raftNode,
+		trans:               r.trans,
+		log:                 r.logger,
+		metricsCollector:    r.metricsCollector,
 	}
 }
 
@@ -122,7 +137,6 @@ func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry {
 		req.Context.SequenceNum,
 		reqTime,
 		req.StateMachineLog,
-		a.status.IsLocalPeerPublishServiceMarkDone(),
 		session,
 		a,
 	)
@@ -225,7 +239,6 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 		return false, res
 	}
 
-	pubServiceDone := a.status.IsLocalPeerPublishServiceMarkDone()
 	a.status.SetConfState(*a.raftNode.ApplyConfChange(cc))
 
 	var removeSelf bool
@@ -234,12 +247,6 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 	case raftpb.ConfChangeAddNode, raftpb.ConfChangeAddLearnerNode:
 		if !confReq.PromoteLearner && confReq.RaftPeerAttr.Id != a.cluster.LocalPeerID() {
 			a.trans.AddPeer(confReq.RaftPeerAttr.Id, confReq.RaftPeerAttr.RaftListenAddr)
-		}
-		if pubServiceDone {
-			a.clusterMemberEventCh <- ClusterMemberEvent{
-				Event: MemberJoinEvent,
-				Peer:  confReq.RaftPeerAttr,
-			}
 		}
 		if confReq.RaftPeerAttr.Id == a.cluster.LocalPeerID() {
 			if cc.Type == raftpb.ConfChangeAddLearnerNode {
@@ -255,22 +262,9 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 		} else {
 			a.trans.RemovePeer(confReq.RaftPeerAttr.Id)
 		}
-		if pubServiceDone {
-			a.clusterMemberEventCh <- ClusterMemberEvent{
-				Event: MemberLeaveEvent,
-				Peer:  confReq.RaftPeerAttr,
-			}
-		}
-
 	case raftpb.ConfChangeUpdateNode:
 		if confReq.RaftPeerAttr.Id != a.cluster.LocalPeerID() {
 			a.trans.UpdatePeer(confReq.RaftPeerAttr.Id, confReq.RaftPeerAttr.RaftListenAddr)
-		}
-		if pubServiceDone {
-			a.clusterMemberEventCh <- ClusterMemberEvent{
-				Event: MemberUpdateEvent,
-				Peer:  confReq.RaftPeerAttr,
-			}
 		}
 	}
 

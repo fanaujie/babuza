@@ -12,16 +12,15 @@ type LeaderInfo struct {
 }
 
 type Status struct {
-	hardStateTerm      uint64 //must use atomic operations to access; keep 64-bit aligned
-	committedIndex     uint64 //must use atomic operations to access; keep 64-bit aligned
-	appliedIndex       uint64 //must use atomic operations to access; keep 64-bit aligned
-	appliedTerm        uint64 //must use atomic operations to access; keep 64-bit aligned
-	snapIndex          uint64 //must use atomic operations to access; keep 64-bit aligned
-	inflightSnapshots  int64  //must use atomic operations to access; keep 64-bit aligned
-	acquireLeader      uint64 //must use atomic operations to access; keep 64-bit aligned
-	publishServiceDone uint64 //must use atomic operations to access; keep 64-bit aligned
-	softState          atomic.Value
-	confState          atomic.Value
+	hardStateTerm     uint64 //must use atomic operations to access; keep 64-bit aligned
+	committedIndex    uint64 //must use atomic operations to access; keep 64-bit aligned
+	appliedIndex      uint64 //must use atomic operations to access; keep 64-bit aligned
+	appliedTerm       uint64 //must use atomic operations to access; keep 64-bit aligned
+	snapIndex         uint64 //must use atomic operations to access; keep 64-bit aligned
+	inflightSnapshots int64  //must use atomic operations to access; keep 64-bit aligned
+	acquireLeader     uint64 //must use atomic operations to access; keep 64-bit aligned
+	softState         atomic.Value
+	confState         atomic.Value
 }
 
 func New() *Status {
@@ -98,12 +97,4 @@ func (s *Status) SetLeader(leader bool) {
 }
 func (s *Status) IsLeader() bool {
 	return atomic.LoadUint64(&s.acquireLeader) == 1
-}
-
-func (s *Status) MarkPublishServiceDone() {
-	atomic.StoreUint64(&s.publishServiceDone, 1)
-}
-
-func (s *Status) IsLocalPeerPublishServiceMarkDone() bool {
-	return atomic.LoadUint64(&s.publishServiceDone) == 1
 }

@@ -56,7 +56,6 @@ func (r *Raft) applicationServiceStart(ctx context.Context,
 			r.logger.Warningf("Failed to publish application service addresses error: %v", err)
 			// continue
 		} else {
-			r.status.MarkPublishServiceDone()
 			pubDoneCh <- nil
 			break
 		}

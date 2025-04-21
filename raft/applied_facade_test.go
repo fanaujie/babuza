@@ -587,7 +587,7 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 		}
 		entry := a.ApplyNormalEntry(e)
 		assert.Nil(t, entry)
-		ne := NewEntry(11, 1, 0, 0, 0, nil, false, nil, nil)
+		ne := NewEntry(11, 1, 0, 0, 0, nil, nil, nil)
 		a.SendStateMachineAppliedResult(ne, ibabuza.ApplyResult{})
 		assert.Equal(t, uint64(11), a.storage.GetStateMachineAppliedIndex())
 		e.Index = 11

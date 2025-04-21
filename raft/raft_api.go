@@ -20,11 +20,6 @@ const (
 	MemberLeaveEvent  uint64 = 3
 )
 
-type ClusterMemberEvent struct {
-	Event uint64
-	Peer  babuzapb.RaftPeerAttribute
-}
-
 type ClientSession struct {
 	SessionID                         uint64
 	SequenceNumber                    uint64
@@ -103,7 +98,6 @@ type Raft struct {
 	shutdownCh                chan struct{}
 	removeSelfCh              chan struct{}
 	leaderCh                  chan bool
-	clusterMemberEventCh      chan ClusterMemberEvent
 	closeRaftOnce             sync.Once
 	linearizeReqNotifier      *syncutil.ErrNotifier
 	firstCommitInTermNotifier *syncutil.Notifier
@@ -134,7 +128,6 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		shutdownCh:                make(chan struct{}),
 		removeSelfCh:              make(chan struct{}),
 		leaderCh:                  make(chan bool, 1),
-		clusterMemberEventCh:      make(chan ClusterMemberEvent, 3),
 		linearizeReqNotifier:      syncutil.NewErrNotifier(),
 		firstCommitInTermNotifier: syncutil.NewNotifier(),
 		leaderChangeNotifier:      syncutil.NewNotifier(),
@@ -349,10 +342,6 @@ func (r *Raft) LinearizableRead(ctx context.Context) error {
 
 func (r *Raft) LeaderCh() chan bool {
 	return r.leaderCh
-}
-
-func (r *Raft) ClusterMemberEventCh() chan ClusterMemberEvent {
-	return r.clusterMemberEventCh
 }
 
 func (r *Raft) Shutdown() ShutdownResult {
