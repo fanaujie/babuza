@@ -65,6 +65,6 @@ type MultiRaftWalManager interface {
 	CreateWal(groupID RaftGroupID, metadata babuzapb.WalMetadata) (EntryStorage, Wal, error)
 	ReplayWal(groupID RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (EntryStorage,
 		Wal, ReplayWalResult, error)
-	HasExistingWals() (bool, error)
+	HasExistingWals() ([]RaftGroupID, error)
 	PurgeWals(WalPurgeConfig)
 }
