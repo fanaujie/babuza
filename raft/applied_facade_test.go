@@ -36,8 +36,8 @@ func (m *mockApplyNotifier) CloseAndRenew() {
 type mockApplyRaftNode struct {
 }
 
-func (m *mockApplyRaftNode) ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) *raftpb.ConfState {
-	return &raftpb.ConfState{}
+func (m *mockApplyRaftNode) ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) (*raftpb.ConfState, error) {
+	return &raftpb.ConfState{}, nil
 }
 
 type mockApplySession struct {

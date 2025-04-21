@@ -24,6 +24,11 @@ type applyEntry struct {
 	snapshot raftpb.Snapshot
 }
 
+type confChangeApplyJob struct {
+	cc       raftpb.ConfChangeI
+	resultCh chan *raftpb.ConfState
+}
+
 func poolGetProposal() *proposalData {
 	v := applyDataPool.Get()
 	if v == nil {
@@ -66,5 +71,20 @@ func poolGetApplyEntry() *applyEntry {
 func poolReleaseApplyEntry(value *applyEntry) {
 	value.entries = nil
 	value.snapshot = raftpb.Snapshot{}
+	applyDataPool.Put(value)
+}
+
+func poolGetConfChangeApplyJob() *confChangeApplyJob {
+	v := applyDataPool.Get()
+	if v == nil {
+		return &confChangeApplyJob{}
+	}
+
+	return v.(*confChangeApplyJob)
+}
+
+func poolReleaseConfChangeApplyJob(value *confChangeApplyJob) {
+	value.cc = nil
+	value.resultCh = nil
 	applyDataPool.Put(value)
 }

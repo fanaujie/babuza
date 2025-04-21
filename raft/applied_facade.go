@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"time"
@@ -46,7 +47,7 @@ type AppliedCluster interface {
 }
 
 type AppliedRaftNode interface {
-	ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) *raftpb.ConfState
+	ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) (*raftpb.ConfState, error)
 }
 
 type AppliedTransport interface {
@@ -234,12 +235,20 @@ func (a *appliedFacadeImpl) parseConfChangeEntry(entry raftpb.Entry) (raftpb.Con
 
 func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babuzapb.ConfChangeRequest) (bool, error) {
 	if err := a.clusterValidateAndApply(cc.Type, confReq); err != nil {
+		multiErr := multierror.New()
+		multiErr.Append(err)
 		cc.NodeID = raft.None
-		a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
+		_, aErr := a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
+		if aErr != nil {
+			multiErr.Append(aErr)
+		}
+		return false, multiErr.Get()
+	}
+	applyResult, err := a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
+	if err != nil {
 		return false, err
 	}
-
-	a.status.SetConfState(*a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc))
+	a.status.SetConfState(*applyResult)
 
 	var removeSelf bool
 

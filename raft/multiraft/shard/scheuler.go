@@ -4,7 +4,6 @@ import (
 	"errors"
 	"github.com/Workiva/go-datastructures/queue"
 	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"sync"
 )
 
@@ -13,11 +12,12 @@ var (
 )
 
 const (
-	StateTick         = 1
-	StateReady        = 2
-	StateStep         = 4
-	StateProposal     = 8
-	StateConfigChange = 16
+	StateTick            = 1
+	StateReady           = 2
+	StateStep            = 4
+	StateProposal        = 8
+	StateConfigChange    = 16
+	StateApplyConfChange = 32
 )
 
 type internalState struct {
@@ -27,39 +27,38 @@ type internalState struct {
 
 type Scheduler struct {
 	cfg           Config
-	rb            *queue.RingBuffer
+	q             []*queue.Queue
 	raftProcessor ibabuza.MultiRaftReplicaStateProcessor
 	log           ibabuza.Logger
 	mu            sync.Mutex
 	groupState    map[ibabuza.RaftGroupID]internalState
-	closer        *syncutil.Closer
+	start         bool
 }
 
 func NewScheduler(cfg Config, raftProcessor ibabuza.MultiRaftReplicaStateProcessor, log ibabuza.Logger) *Scheduler {
 	s := &Scheduler{
 		cfg:           cfg,
-		rb:            queue.NewRingBuffer(cfg.QueueSize),
 		raftProcessor: raftProcessor,
 		log:           log,
 		groupState:    make(map[ibabuza.RaftGroupID]internalState),
-		closer:        syncutil.NewCloser(),
 	}
-	for i := 0; i < cfg.WorkerNum; i++ {
-		s.closer.Run(func() {
-			s.worker()
-		})
+	for i := 0; i < s.cfg.WorkerNum; i++ {
+		q := queue.New(256)
+		s.q = append(s.q, q)
+		go s.worker(i, q)
 	}
 	return s
 }
 
 func (s *Scheduler) Stop() {
-	s.closer.Close()
+	for i := 0; i < s.cfg.WorkerNum; i++ {
+		s.q[i].Dispose()
+	}
 }
 
 func (s *Scheduler) EnqueueState(groupID ibabuza.RaftGroupID, state int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
 	if st, ok := s.groupState[groupID]; !ok {
 		s.groupState[groupID] = internalState{
 			state: state,
@@ -74,15 +73,7 @@ func (s *Scheduler) EnqueueState(groupID ibabuza.RaftGroupID, state int) error {
 		}
 		s.groupState[groupID] = st
 	}
-	full, err := s.rb.Offer(groupID)
-	if err != nil {
-		return err
-	}
-	if full {
-		s.log.Warning("scheduler ringbuffer is full")
-		return ErrSchedulerFull
-	}
-	return nil
+	return s.q[groupID%ibabuza.RaftGroupID(s.cfg.WorkerNum)].Put(groupID)
 }
 
 func (s *Scheduler) EnqueueBatchTickState(groupIDs []ibabuza.RaftGroupID) error {
@@ -106,67 +97,64 @@ func (s *Scheduler) EnqueueBatchTickState(groupIDs []ibabuza.RaftGroupID) error 
 		}
 	}
 	for i := 0; i < groupIDsLen; i++ {
-		full, err := s.rb.Offer(groupIDs[i])
-		if err != nil {
+		if err := s.q[groupIDs[i]%ibabuza.RaftGroupID(s.cfg.WorkerNum)].Put(groupIDs[i]); err != nil {
 			return err
-		}
-		if full {
-			s.log.Warning("scheduler ringbuffer is full")
-			return ErrSchedulerFull
 		}
 	}
 	return nil
 }
 
-func (s *Scheduler) worker() {
+func (s *Scheduler) worker(shardID int, q *queue.Queue) {
 	for {
-		select {
-		case <-s.closer.CloseCh():
-			return
-		default:
-		}
-		g, err := s.rb.Get()
+		items, err := q.Get(q.Len())
 		if err != nil {
 			s.log.Errorf("scheduler get from ringbuffer failed: %v", err)
 			return
 		}
-		groupID := g.(ibabuza.RaftGroupID)
-		s.mu.Lock()
-		oldState, ok := s.groupState[groupID]
-		s.groupState[groupID] = internalState{}
-		s.mu.Unlock()
-		if !ok {
-			continue
-		}
-		if oldState.state&StateProposal == StateProposal {
-			s.raftProcessor.ProcessProposal(groupID)
-			oldState.state |= StateReady
-		}
-
-		if oldState.state&StateConfigChange == StateConfigChange {
-			s.raftProcessor.ProcessConfigChange(groupID)
-			oldState.state |= StateReady
-		}
-
-		if oldState.state&StateStep == StateStep {
-			s.raftProcessor.ProcessStep(groupID)
-			oldState.state |= StateReady
-		}
-
-		if oldState.state&StateTick == StateTick {
-			for i := 0; i < oldState.ticks; i++ {
-				s.raftProcessor.ProcessTick(groupID)
+		for _, v := range items {
+			groupID := v.(ibabuza.RaftGroupID)
+			s.mu.Lock()
+			oldState, ok := s.groupState[groupID]
+			s.groupState[groupID] = internalState{}
+			s.mu.Unlock()
+			if !ok {
+				continue
 			}
-			oldState.state |= StateReady
+			if oldState.state&StateProposal == StateProposal {
+				s.raftProcessor.ProcessProposal(groupID)
+				oldState.state |= StateReady
+			}
+
+			if oldState.state&StateConfigChange == StateConfigChange {
+				s.raftProcessor.ProcessConfigChange(groupID)
+				oldState.state |= StateReady
+			}
+
+			if oldState.state&StateApplyConfChange == StateApplyConfChange {
+				s.raftProcessor.ProcessConfigChange(groupID)
+				oldState.state |= StateReady
+			}
+
+			if oldState.state&StateStep == StateStep {
+				s.raftProcessor.ProcessStep(groupID)
+				oldState.state |= StateReady
+			}
+
+			if oldState.state&StateTick == StateTick {
+				for i := 0; i < oldState.ticks; i++ {
+					s.raftProcessor.ProcessTick(groupID)
+				}
+				oldState.state |= StateReady
+			}
+			if oldState.state&StateReady == StateReady {
+				s.raftProcessor.ProcessReady(groupID)
+			}
+			s.mu.Lock()
+			newState, _ := s.groupState[groupID]
+			if newState.state == 0 {
+				delete(s.groupState, groupID)
+			}
+			s.mu.Unlock()
 		}
-		if oldState.state&StateReady == StateReady {
-			s.raftProcessor.ProcessReady(groupID)
-		}
-		s.mu.Lock()
-		newState, _ := s.groupState[groupID]
-		if newState.state == 0 {
-			delete(s.groupState, groupID)
-		}
-		s.mu.Unlock()
 	}
 }

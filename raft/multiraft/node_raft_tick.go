@@ -19,7 +19,7 @@ func (n *Node) raftTickStart() {
 			n.replicaSet.mu.RUnlock()
 			if len(groupIDs) > 0 {
 				if err := n.scheduler.EnqueueBatchTickState(groupIDs); err != nil {
-					n.log.Errorf("scheduler enqueue tick state error: %v", err)
+					n.logger.Errorf("scheduler enqueue tick state error: %v", err)
 					return
 				}
 			}

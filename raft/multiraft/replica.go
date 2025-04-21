@@ -16,35 +16,31 @@ type leaderChange struct {
 	isLeader bool
 }
 
-type Replica struct {
-	raftGroup            ibabuza.RaftGroup
-	config               ReplicaRaftConfig
-	applyJobQueue        ibabuza.MultiRaftReplicaApplyJobQueue
-	cluster              ibabuza.Cluster
-	transport            ibabuza.MultiRaftTransport
-	status               ibabuza.Status
-	session              ibabuza.SessionManager
-	storage              replicaStorage
-	appliedFacade        babuza.InternalAppliedFacade
-	rawNode              *raft.RawNode
-	idGenerator          babuza.InternalIdGenerator
-	resultReplier        babuza.InternalResultReplier
-	completionReplier    babuza.InternalCompletionReplier
-	leaderChangeNotifier *syncutil.Notifier
-	leaderCh             chan leaderChange
-	proposalQueue        *queue.Queue
-	configChangeQueue    *queue.Queue
-	logger               ibabuza.Logger
-	closer               *syncutil.Closer
+type replica struct {
+	raftGroup                 ibabuza.RaftGroup
+	config                    ReplicaRaftConfig
+	applyJobQueue             ibabuza.MultiRaftReplicaApplyJobQueue
+	cluster                   ibabuza.Cluster
+	transport                 ibabuza.MultiRaftTransport
+	status                    ibabuza.Status
+	session                   ibabuza.SessionManager
+	storage                   ReplicaStorage
+	appliedFacade             babuza.InternalAppliedFacade
+	rawNode                   *raft.RawNode
+	idGenerator               babuza.InternalIdGenerator
+	resultReplier             babuza.InternalResultReplier
+	completionReplier         babuza.InternalCompletionReplier
+	firstCommitInTermNotifier *syncutil.Notifier
+	leaderChangeNotifier      *syncutil.Notifier
+	leaderCh                  chan leaderChange
+	proposalQueue             *queue.Queue
+	configChangeQueue         *queue.Queue
+	applyConfChangeQueue      *queue.Queue
+	logger                    ibabuza.Logger
+	closer                    *syncutil.Closer
 }
 
-func NewReplica(raftGroup ibabuza.RaftGroup, rn *raft.RawNode, log ibabuza.Logger) *Replica {
-	return &Replica{
-		rawNode: rn,
-	}
-}
-
-func (r *Replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {
+func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {
 
 	replyID := r.idGenerator.Next()
 	data, err := babuza.EncodeProposedLog(replyID, session, log)
@@ -62,7 +58,7 @@ func (r *Replica) EnqueueProposal(ctx context.Context, session babuza.ClientSess
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
-func (r *Replica) EnqueueConfigChange(ctx context.Context, session babuza.ClientSession, changeType raftpb.ConfChangeType,
+func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.ClientSession, changeType raftpb.ConfChangeType,
 	raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) babuza.ProposedResult {
 
 	replyID := r.idGenerator.Next()
@@ -79,4 +75,11 @@ func (r *Replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 
 	ch, err := r.resultReplier.AcquireResultChan(replyID)
 	return babuza.NewProposalResult(ctx, r.closer, ch)
+}
+
+func (r *replica) EnqueueApplyConfChange(job confChangeApplyJob) {
+	if err := r.applyConfChangeQueue.Put(&job); err != nil {
+		r.logger.Errorf("failed to enqueue apply conf change job: %v", err)
+		return
+	}
 }

@@ -7,7 +7,7 @@ import (
 
 type ApplyJobQueue struct {
 	workerNum int
-	rb        []*queue.Queue
+	q         []*queue.Queue
 	log       ibabuza.Logger
 }
 
@@ -16,21 +16,21 @@ func NewApplyJobQueue(workerNum int, log ibabuza.Logger) *ApplyJobQueue {
 		workerNum: workerNum,
 		log:       log,
 	}
-	for i := 0; i < workerNum; i++ {
+	for i := 0; i < j.workerNum; i++ {
 		q := queue.New(256)
-		j.rb = append(j.rb, q)
+		j.q = append(j.q, q)
 		go j.worker(i, q)
 	}
 	return j
 }
 
-func (j *ApplyJobQueue) Put(groupID uint64, job ibabuza.MultiRaftReplicaApplyJob) error {
-	return j.rb[int(groupID)%j.workerNum].Put(job)
+func (j *ApplyJobQueue) Put(groupID ibabuza.RaftGroupID, job ibabuza.MultiRaftReplicaApplyJob) error {
+	return j.q[int(groupID)%j.workerNum].Put(job)
 }
 
 func (j *ApplyJobQueue) Stop() {
 	for i := 0; i < j.workerNum; i++ {
-		j.rb[i].Dispose()
+		j.q[i].Dispose()
 	}
 }
 

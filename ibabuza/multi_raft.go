@@ -2,18 +2,19 @@ package ibabuza
 
 import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"go.etcd.io/etcd/raft/v3/raftpb"
+	"go.etcd.io/etcd/server/v3/wal/walpb"
 )
 
 type RaftGroupID uint64
 type NodeID uint64
 
 type RaftGroup struct {
-	ID         RaftGroupID
-	RaftPeerID uint64
-	Metadata   []byte
+	GroupID RaftGroupID
+	PeerID  uint64
 }
 
-type MultiRaftScheduler interface {
+type MultiRaftSchedulerQueue interface {
 	EnqueueBatchTickState(groupIDs []RaftGroupID) error
 	EnqueueState(groupID RaftGroupID, state int) error
 	Stop()
@@ -32,11 +33,7 @@ type MultiRaftReplicaStateProcessor interface {
 	ProcessStep(groupID RaftGroupID)
 	ProcessProposal(groupID RaftGroupID)
 	ProcessConfigChange(groupID RaftGroupID)
-}
-
-type MultiRaftStatus interface {
-	Get(groupID RaftGroupID) Status
-	Set(groupID RaftGroupID)
+	ProcessApplyConfChange(groupID RaftGroupID)
 }
 
 type MultiRaftTransport interface {
@@ -61,4 +58,13 @@ type MultiRaftNodeHandler interface {
 	RaftMessageHandler
 	RaftStatusReporter
 	MultiSnapshotStorage
+}
+
+type MultiRaftWalManager interface {
+	FindSnapshot() (map[RaftGroupID][]walpb.Snapshot, error)
+	CreateWal(metadata babuzapb.WalMetadata) (EntryStorage, Wal, error)
+	ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (EntryStorage,
+		Wal, ReplayWalResult, error)
+	HasExistingWals() (bool, error)
+	PurgeWals(WalPurgeConfig)
 }

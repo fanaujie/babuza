@@ -5,25 +5,22 @@ import (
 	"sync"
 )
 
-type CreateStatusFactory func() ibabuza.Status
-
 type MultiRaftStatus struct {
-	mu      sync.RWMutex
-	store   map[ibabuza.RaftGroupID]ibabuza.Status
-	factory CreateStatusFactory
+	mu    sync.RWMutex
+	store map[ibabuza.RaftGroupID]ibabuza.Status
 }
 
-func NewMultiRaftStatus(factory CreateStatusFactory) *MultiRaftStatus {
+func NewMultiRaftStatus() *MultiRaftStatus {
 	return &MultiRaftStatus{
 		store: make(map[ibabuza.RaftGroupID]ibabuza.Status),
 	}
 }
 
-func (m *MultiRaftStatus) Set(id ibabuza.RaftGroupID) {
+func (m *MultiRaftStatus) Set(id ibabuza.RaftGroupID, s ibabuza.Status) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.store[id]; !ok {
-		m.store[id] = m.factory()
+		m.store[id] = s
 	}
 }
 
