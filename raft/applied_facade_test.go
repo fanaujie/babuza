@@ -36,7 +36,7 @@ func (m *mockApplyNotifier) CloseAndRenew() {
 type mockApplyRaftNode struct {
 }
 
-func (m *mockApplyRaftNode) ApplyConfChange(cc raftpb.ConfChangeI) *raftpb.ConfState {
+func (m *mockApplyRaftNode) ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) *raftpb.ConfState {
 	return &raftpb.ConfState{}
 }
 
@@ -183,6 +183,7 @@ func newMockApplyCluster() *mockApplyCluster {
 }
 
 func (m *mockApplyCluster) LocalPeerID() uint64 { return m.localId }
+func (m *mockApplyCluster) ClusterID() uint64   { return 0 }
 func (m *mockApplyCluster) Peers() []babuzapb.Peer {
 	var result []babuzapb.Peer
 	for _, p := range m.peers {

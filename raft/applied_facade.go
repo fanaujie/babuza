@@ -36,6 +36,7 @@ type AppliedReplier interface {
 }
 
 type AppliedCluster interface {
+	ClusterID() uint64
 	LocalPeerID() uint64
 	Add(babuzapb.RaftPeerAttribute) error
 	Update(babuzapb.RaftPeerAttribute) error
@@ -45,7 +46,7 @@ type AppliedCluster interface {
 }
 
 type AppliedRaftNode interface {
-	ApplyConfChange(cc raftpb.ConfChangeI) *raftpb.ConfState
+	ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) *raftpb.ConfState
 }
 
 type AppliedTransport interface {
@@ -94,7 +95,7 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 		sessionMgr:          r.sessionMgr,
 		replier:             r.resultReplier,
 		cluster:             r.cluster,
-		raftNode:            r.raftNode,
+		raftNode:            r,
 		trans:               r.trans,
 		log:                 r.logger,
 		metricsCollector:    r.metricsCollector,
@@ -232,14 +233,13 @@ func (a *appliedFacadeImpl) parseConfChangeEntry(entry raftpb.Entry) (raftpb.Con
 }
 
 func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babuzapb.ConfChangeRequest) (bool, error) {
-	res := a.clusterValidateAndApply(cc.Type, confReq)
-	if res != nil {
+	if err := a.clusterValidateAndApply(cc.Type, confReq); err != nil {
 		cc.NodeID = raft.None
-		a.raftNode.ApplyConfChange(cc)
-		return false, res
+		a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
+		return false, err
 	}
 
-	a.status.SetConfState(*a.raftNode.ApplyConfChange(cc))
+	a.status.SetConfState(*a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc))
 
 	var removeSelf bool
 

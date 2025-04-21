@@ -16,6 +16,10 @@ type manualSnapshot struct {
 	resultCh chan SnapshotResult
 }
 
+func (r *Raft) ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) *raftpb.ConfState {
+	return r.raftNode.ApplyConfChange(cc)
+}
+
 func (r *Raft) processStateMachine() {
 	for {
 		select {
