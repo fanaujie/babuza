@@ -6,39 +6,34 @@ import (
 )
 
 type ApplyJobQueue struct {
-	workerNum int
-	q         []*queue.Queue
-	log       ibabuza.Logger
+	groupID ibabuza.RaftGroupID
+	q       *queue.Queue
+	log     ibabuza.Logger
 }
 
-func NewApplyJobQueue(workerNum int, log ibabuza.Logger) *ApplyJobQueue {
+func NewApplyJobQueue(groupID ibabuza.RaftGroupID, queueSize int64, log ibabuza.Logger) *ApplyJobQueue {
 	j := &ApplyJobQueue{
-		workerNum: workerNum,
-		log:       log,
+		groupID: groupID,
+		q:       queue.New(queueSize),
+		log:     log,
 	}
-	for i := 0; i < j.workerNum; i++ {
-		q := queue.New(256)
-		j.q = append(j.q, q)
-		go j.worker(i, q)
-	}
+	go j.worker()
 	return j
 }
 
 func (j *ApplyJobQueue) Put(groupID ibabuza.RaftGroupID, job ibabuza.MultiRaftReplicaApplyJob) error {
-	return j.q[int(groupID)%j.workerNum].Put(job)
+	return j.q.Put(job)
 }
 
 func (j *ApplyJobQueue) Stop() {
-	for i := 0; i < j.workerNum; i++ {
-		j.q[i].Dispose()
-	}
+	j.q.Dispose()
 }
 
-func (j *ApplyJobQueue) worker(shardID int, q *queue.Queue) {
+func (j *ApplyJobQueue) worker() {
 	for {
-		v, err := q.Get(q.Len())
+		v, err := j.q.Get(j.q.Len())
 		if err != nil {
-			j.log.Errorf("apply job queue[%d] dispose %v", shardID, err)
+			j.log.Errorf("GroupID %d apply job queue dispose %v", j.groupID, err)
 			return
 		}
 		for _, job := range v {

@@ -152,7 +152,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 				PeerID:  config.NodeID,
 			},
 			config:                    replicaRaftConfig,
-			applyJobQueue:             n.applyJobQueue,
+			applyJobQueue:             shard.NewApplyJobQueue(groupID, config.ApplyJobQueueSize, logger),
 			cluster:                   replicaCluster,
 			transport:                 trans,
 			status:                    replicaStatus,
@@ -192,7 +192,6 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 		MaxTicks:  config.SchedulerMaxTicks,
 	}, n, logger)
 	n.scheduler = scheduler
-	n.applyJobQueue = shard.NewApplyJobQueue(config.ApplyJobQueueWorkerNum, logger)
 	n.replicaSet.replica = make(map[ibabuza.RaftGroupID]*replica)
 	return n
 }
@@ -305,7 +304,7 @@ func bootstrapNewReplica(node *Node, groupID ibabuza.RaftGroupID, configuration 
 			PeerID:  node.config.NodeID,
 		},
 		config:                    replicaRaftConfig,
-		applyJobQueue:             node.applyJobQueue,
+		applyJobQueue:             shard.NewApplyJobQueue(groupID, node.config.ApplyJobQueueSize, node.logger),
 		cluster:                   replicaCluster,
 		transport:                 node.trans,
 		status:                    replicaStatus,

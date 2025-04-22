@@ -23,7 +23,7 @@ type NodeConfig struct {
 	SchedulerMaxTicks  int
 
 	// setup apply job queue
-	ApplyJobQueueWorkerNum int
+	ApplyJobQueueSize int64
 }
 
 type ReplicaRaftConfig struct {

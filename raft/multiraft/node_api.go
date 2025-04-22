@@ -13,15 +13,14 @@ import (
 )
 
 type Node struct {
-	config        NodeConfig
-	trans         ibabuza.MultiRaftTransport
-	storage       BootstrapStorage
-	factory       ComponentsFactory
-	multiStatus   *status.MultiRaftStatus
-	logger        ibabuza.Logger
-	scheduler     ibabuza.MultiRaftSchedulerQueue
-	applyJobQueue ibabuza.MultiRaftReplicaApplyJobQueue
-	replicaSet    struct {
+	config      NodeConfig
+	trans       ibabuza.MultiRaftTransport
+	storage     BootstrapStorage
+	factory     ComponentsFactory
+	multiStatus *status.MultiRaftStatus
+	logger      ibabuza.Logger
+	scheduler   ibabuza.MultiRaftSchedulerQueue
+	replicaSet  struct {
 		mu      sync.RWMutex
 		replica map[ibabuza.RaftGroupID]*replica
 	}
