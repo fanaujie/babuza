@@ -1,6 +1,7 @@
 package multiraft
 
 import (
+	"context"
 	"fmt"
 	"github.com/Workiva/go-datastructures/queue"
 	"github.com/fanaujie/babuza/ibabuza"
@@ -13,21 +14,24 @@ import (
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/raft/multiraft/shard"
 	"go.etcd.io/etcd/raft/v3"
+	"path/filepath"
 	"time"
 )
 
+const (
+	stateMachineDir = "state_machine"
+)
+
 type ComponentsFactory interface {
-	CreateStateMachine(groupID ibabuza.RaftGroupID) ibabuza.BaseStateMachine
+	CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, error)
 	CreateCluster() ibabuza.Cluster
 	CreateSessionManager() ibabuza.SessionManager
-	CreateWalManager(walDir string) ibabuza.WalManager
-	CreateSnapshotManager(snapshotDir string) ibabuza.SnapshotManager
 }
 
-func NewBootstrapNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport,
-	logger ibabuza.Logger) (*Node, error) {
-	var storage StorageManager
-
+func NewBootstrapNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
+	snapshotManager ibabuza.MultiRaftSnapshotManager, logger ibabuza.Logger) (*Node, error) {
+	stateMachineRootDir := filepath.Join(cfg.NodeHostDir, stateMachineDir)
+	storage := newBootstrapStorage(stateMachineRootDir, factory, walManager, snapshotManager)
 	if err := trans.SetupTransportConfig(ibabuza.TransportConfig{
 		PeerId:      cfg.NodeID,
 		PeerAddress: cfg.RaftListenAddress,
@@ -47,23 +51,19 @@ func NewBootstrapNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.M
 	return startNode(cfg, trans, storage, factory, logger)
 }
 
-func startNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage StorageManager, factory ComponentsFactory,
+func startNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory,
 	logger ibabuza.Logger) (*Node, error) {
 	return newNode(config, trans, storage, factory, logger), nil
 }
 
 func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans ibabuza.MultiRaftTransport,
-	storage StorageManager, factory ComponentsFactory, logger ibabuza.Logger) (*Node, error) {
+	storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger) (*Node, error) {
 
 	n := newNode(config, trans, storage, factory, logger)
 
 	for _, groupID := range restartGroupIDs {
-		//create cluster
 		replicaCluster := factory.CreateCluster()
 		replicaStatus := status.New()
-		//create session
-		replicaSessionManager := factory.CreateSessionManager()
-
 		walSnapshots, err := storage.FindSnapshotFromWal(groupID)
 		if err != nil {
 			return nil, err
@@ -93,11 +93,22 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		replicaStatus.SetHardStateTerm(hs.Term)
 		replicaStatus.SetCommittedIndex(hs.Commit)
 
-		if err = storage.OpenStateMachine(groupID, snap); err != nil {
+		applyResultSerializer, err := storage.OpenStateMachine(groupID, snap)
+		if err != nil {
+			return nil, err
+		}
+		//create session
+		replicaSession := factory.CreateSessionManager()
+		if err = replicaSession.SetResponseSerializer(applyResultSerializer); err != nil {
 			return nil, err
 		}
 		if snap != nil {
-			if err = storage.RestoreFromSnapshot(groupID, snap.Metadata.Index, false, replicaCluster, replicaSessionManager); err != nil {
+			replicaStorage, err := storage.GetReplicaStorage(groupID)
+			if err != nil {
+				return nil, err
+			}
+			if err = replicaStorage.RestoreFromSnapshot(snap.Metadata.Index, false, replicaCluster,
+				replicaSession); err != nil {
 				return nil, err
 			}
 			if replicaCluster.ClusterID() != uint64(groupID) || replicaCluster.LocalPeerID() != config.NodeID {
@@ -115,6 +126,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		if config.EnableWalNoSync {
 			_ = storage.SetWalNoFSync(groupID)
 		}
+
 		replicaStorage, err := storage.GetReplicaStorage(groupID)
 		if err != nil {
 			return nil, err
@@ -131,17 +143,20 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		}
 		firstCommitInTermNotifier := syncutil.NewNotifier()
 		resultReplier := replier.NewResult[ibabuza.ApplyResult]()
-		appliedFacade := babuza.NewAppliedFacade(replicaStorage, replicaStatus, firstCommitInTermNotifier, replicaSessionManager,
+		appliedFacade := babuza.NewAppliedFacade(replicaStorage, replicaStatus, firstCommitInTermNotifier, replicaSession,
 			resultReplier, replicaCluster, n, trans, logger, metrics.NewMockMetricsCollector())
 
 		r := &replica{
-			raftGroup:                 ibabuza.RaftGroup{},
+			raftGroup: RaftGroup{
+				GroupID: groupID,
+				PeerID:  config.NodeID,
+			},
 			config:                    replicaRaftConfig,
 			applyJobQueue:             n.applyJobQueue,
 			cluster:                   replicaCluster,
 			transport:                 trans,
 			status:                    replicaStatus,
-			session:                   replicaSessionManager,
+			session:                   replicaSession,
 			storage:                   replicaStorage,
 			appliedFacade:             appliedFacade,
 			rawNode:                   rawNode,
@@ -162,7 +177,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 	return n, nil
 }
 
-func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage StorageManager, factory ComponentsFactory, logger ibabuza.Logger) *Node {
+func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger) *Node {
 	n := &Node{
 		config:      config,
 		trans:       trans,
@@ -180,4 +195,135 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Storag
 	n.applyJobQueue = shard.NewApplyJobQueue(config.ApplyJobQueueWorkerNum, logger)
 	n.replicaSet.replica = make(map[ibabuza.RaftGroupID]*replica)
 	return n
+}
+
+func bootstrapNewReplica(node *Node, groupID ibabuza.RaftGroupID, configuration *babuza.PeersConfiguration,
+	joinExistingRaftGroup bool) (*replica, error) {
+
+	replicaCluster := node.factory.CreateCluster()
+	replicaCluster.SetClusterID(uint64(groupID))      // clusterID is the same as group id
+	replicaCluster.SetLocalPeerID(node.config.NodeID) // localPeerID is the same as node id
+	replicaStatus := status.New()
+	// create state machine
+	stateMachineRootDir := filepath.Join(node.config.NodeHostDir, stateMachineDir)
+	stateMachine, err := node.factory.CreateStateMachine(stateMachineRootDir, groupID)
+	if err != nil {
+		return nil, err
+	}
+	replicaSession := node.factory.CreateSessionManager()
+
+	bsmInfo, err := babuza.NewBasedStateMachineInfo(stateMachine)
+	if err != nil {
+		return nil, err
+	}
+	var responseSerializer ibabuza.ResponseSerializer
+	if bsmInfo.SupportSession() {
+		responseSerializer = stateMachine.(ibabuza.SessionEnabledStateMachine).GetResponseSerializer()
+	}
+	if err = replicaSession.SetResponseSerializer(responseSerializer); err != nil {
+		return nil, err
+	}
+
+	var peers []raft.Peer
+
+	if err = configuration.Validate(); err != nil {
+		return nil, err
+	}
+	for _, raftPeerAttr := range configuration.RaftPeersAttribute() {
+		if raftPeerAttr.Id != node.config.NodeID {
+			node.trans.AddPeer(raftPeerAttr.Id, raftPeerAttr.RaftListenAddr)
+		}
+	}
+	if joinExistingRaftGroup {
+		client, err := node.trans.CreateTransportClient()
+		if err != nil {
+			return nil, err
+		}
+		if err = func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+			defer cancel()
+			return configuration.MatchRemoteCluster(ctx, uint64(groupID), node.config.NodeID, client)
+		}(); err != nil {
+			return nil, err
+		}
+	}
+
+	if err = node.storage.CreateWal(groupID, babuzapb.WalMetadata{
+		ClusterID:   uint64(groupID),
+		LocalPeerID: node.config.NodeID,
+	}); err != nil {
+		return nil, err
+	}
+	if node.config.EnableWalNoSync {
+		err = node.storage.SetWalNoFSync(groupID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	entryStorage, err := node.storage.GetEntryStorage(groupID)
+	if err != nil {
+		return nil, err
+	}
+	replicaRaftConfig := ReplicaRaftConfig{
+		EnableWalNoSync:     node.config.EnableWalNoSync,
+		SnapshotCount:       node.config.SnapshotCount,
+		RaftConfig:          node.config.RaftConfig,
+		LearnerReadyPercent: node.config.LearnerReadyPercent,
+	}
+
+	raftCfg := replicaRaftConfig.convertToRaftConfig(node.config.NodeID, node.logger, entryStorage)
+	rawNode, err := raft.NewRawNode(raftCfg)
+	if err != nil {
+		return nil, err
+	}
+	// joinExistingRaftGroup logic:
+	// When true: If the local peer ID is in the voting config, it joins as a voting peer.
+	//            Otherwise, it joins as a learner.
+	// When false: It indicates starting a new raft group from scratch.
+	if !joinExistingRaftGroup {
+		// as a learner will not bootstrap
+		peers, err = configuration.ToRaftPeers()
+		if err != nil {
+			return nil, err
+		}
+		if err = rawNode.Bootstrap(peers); err != nil {
+			return nil, err
+		}
+	}
+	firstCommitInTermNotifier := syncutil.NewNotifier()
+	resultReplier := replier.NewResult[ibabuza.ApplyResult]()
+	replicaStorage, err := node.storage.GetReplicaStorage(groupID)
+	if err != nil {
+		return nil, err
+	}
+	appliedFacade := babuza.NewAppliedFacade(replicaStorage, replicaStatus, firstCommitInTermNotifier, replicaSession,
+		resultReplier, replicaCluster, node, node.trans, node.logger, metrics.NewMockMetricsCollector())
+
+	r := &replica{
+		raftGroup: RaftGroup{
+			GroupID: groupID,
+			PeerID:  node.config.NodeID,
+		},
+		config:                    replicaRaftConfig,
+		applyJobQueue:             node.applyJobQueue,
+		cluster:                   replicaCluster,
+		transport:                 node.trans,
+		status:                    replicaStatus,
+		session:                   replicaSession,
+		storage:                   replicaStorage,
+		appliedFacade:             appliedFacade,
+		rawNode:                   rawNode,
+		idGenerator:               idgenerator.New(replicaCluster.LocalPeerID(), uint64(time.Now().Nanosecond())),
+		resultReplier:             resultReplier,
+		completionReplier:         replier.NewCompletion(),
+		firstCommitInTermNotifier: firstCommitInTermNotifier,
+		leaderChangeNotifier:      syncutil.NewNotifier(),
+		leaderCh:                  nil,
+		proposalQueue:             &queue.Queue{},
+		configChangeQueue:         &queue.Queue{},
+		applyConfChangeQueue:      &queue.Queue{},
+		logger:                    node.logger,
+		closer:                    syncutil.NewCloser(),
+	}
+	return r, nil
 }

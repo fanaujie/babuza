@@ -89,7 +89,7 @@ func (r *replica) applyEntries(entries []raftpb.Entry) bool {
 	return removeSelf
 }
 
-func (r *replica) triggerSnapshot(snapCtx babuza.InternalStorageSnapshotContext, snapshotResultCh chan babuza.SnapshotResult) {
+func (r *replica) triggerSnapshot(snapCtx babuza.StorageSnapshotContext, snapshotResultCh chan babuza.SnapshotResult) {
 	r.status.SetSnapshotIndex(snapCtx.Index())
 	doSnapshot := func() {
 		metadata, err := r.doSnapshot(snapCtx)
@@ -111,7 +111,7 @@ func (r *replica) triggerSnapshot(snapCtx babuza.InternalStorageSnapshotContext,
 
 }
 
-func (r *replica) doSnapshot(snapCtx babuza.InternalStorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
+func (r *replica) doSnapshot(snapCtx babuza.StorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
 	metadata, err := r.storage.SaveStateMachineSnapshot(snapCtx)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err

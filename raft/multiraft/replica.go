@@ -11,20 +11,25 @@ import (
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
+type RaftGroup struct {
+	GroupID ibabuza.RaftGroupID
+	PeerID  uint64
+}
+
 type leaderChange struct {
-	ibabuza.RaftGroup
+	RaftGroup
 	isLeader bool
 }
 
 type replica struct {
-	raftGroup                 ibabuza.RaftGroup
+	raftGroup                 RaftGroup
 	config                    ReplicaRaftConfig
 	applyJobQueue             ibabuza.MultiRaftReplicaApplyJobQueue
 	cluster                   ibabuza.Cluster
 	transport                 ibabuza.MultiRaftTransport
 	status                    ibabuza.Status
 	session                   ibabuza.SessionManager
-	storage                   ReplicaStorage
+	storage                   babuza.Storage
 	appliedFacade             babuza.InternalAppliedFacade
 	rawNode                   *raft.RawNode
 	idGenerator               babuza.InternalIdGenerator

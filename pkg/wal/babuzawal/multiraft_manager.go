@@ -12,6 +12,13 @@ import (
 	"strconv"
 )
 
+type MultiRaftWalManager struct {
+	WalRootDir string
+	options    Options
+	cascade    *allocator.TwoLevelPool
+	logger     ibabuza.Logger
+}
+
 func NewMultiRaftWalManager(walRootDir string, logger ibabuza.Logger, setOptions ...SetOptions) *MultiRaftWalManager {
 	opts := defaultOptions()
 	for _, opt := range setOptions {
@@ -25,13 +32,6 @@ func NewMultiRaftWalManager(walRootDir string, logger ibabuza.Logger, setOptions
 		cascade:    cascade,
 		logger:     logger,
 	}
-}
-
-type MultiRaftWalManager struct {
-	WalRootDir string
-	options    Options
-	cascade    *allocator.TwoLevelPool
-	logger     ibabuza.Logger
 }
 
 func (m *MultiRaftWalManager) getGroupWalDir(groupID ibabuza.RaftGroupID) string {
@@ -76,7 +76,6 @@ func (m *MultiRaftWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {
 			continue
 		}
 
-		// 检查该目录下是否有 WAL 文件
 		groupDir := filepath.Join(m.WalRootDir, groupIDStr)
 		hasWal, err := hasWalFilesInDir(groupDir)
 		if err != nil {

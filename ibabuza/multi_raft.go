@@ -9,11 +9,6 @@ import (
 type RaftGroupID uint64
 type NodeID uint64
 
-type RaftGroup struct {
-	GroupID RaftGroupID
-	PeerID  uint64
-}
-
 type MultiRaftSchedulerQueue interface {
 	EnqueueBatchTickState(groupIDs []RaftGroupID) error
 	EnqueueState(groupID RaftGroupID, state int) error
@@ -67,4 +62,15 @@ type MultiRaftWalManager interface {
 		Wal, ReplayWalResult, error)
 	HasExistingWals() ([]RaftGroupID, error)
 	PurgeWals(WalPurgeConfig)
+}
+
+type MultiRaftSnapshotManager interface {
+	ScanInstalledSnapshots(groupIDs []RaftGroupID, removeUnfinishedSnapshotDir bool) error
+	LoadLastValidSnapshot(groupID RaftGroupID, walSnaps []walpb.Snapshot) (*raftpb.Snapshot, error)
+	CreateAtomicSnapshotWriter(groupID RaftGroupID, snapshotTerm, snapshotIndex uint64) (AtomicSnapshotWriter, error)
+	CreateInstalledSnapshotReader(groupID RaftGroupID, snapshotIndex uint64, validateFsmFiles bool) (SnapshotReader, error)
+	CreateAtomicSnapshotReceiver(groupID RaftGroupID, metadata babuzapb.SnapshotMetadata) (AtomicSnapshotReceiver, error)
+	Purge(groupID RaftGroupID, snapshot raftpb.Snapshot) error
+	GetGroupSnapshot(groupID RaftGroupID) (SnapshotManager, bool)
+	Close() error
 }
