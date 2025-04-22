@@ -87,7 +87,7 @@ type Raft struct {
 	raftNode                  raft.Node
 	status                    ibabuza.Status
 	trans                     ibabuza.Transport
-	storage                   InternalStorage
+	storage                   Storage
 	logger                    ibabuza.Logger
 	metricsCollector          ibabuza.MetricsCollector
 	appliedFacade             InternalAppliedFacade

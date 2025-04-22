@@ -18,6 +18,7 @@ func TestRaft_Ready(t *testing.T) {
 	tr := newTestRaft(localPeerID)
 	tr.raftNode = etcdRaftNode
 	tr.storage = &mockStorageMgr{}
+	tr.status = status.New()
 	tr.closer.Run(func() {
 		tr.processRaftReady()
 	})

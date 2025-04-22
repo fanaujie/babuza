@@ -7,7 +7,7 @@ import (
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 )
 
-type InternalStorageSnapshotContext interface {
+type StorageSnapshotContext interface {
 	Term() uint64
 	Index() uint64
 	StateMachineSnapshotContext() ibabuza.StateMachineSnapshotContext
@@ -15,7 +15,7 @@ type InternalStorageSnapshotContext interface {
 	ConfState() *raftpb.ConfState
 }
 
-type InternalStorage interface {
+type BootstrapStorage interface {
 	ScanInstalledSnapshot() error
 	FindSnapshotFromWal() ([]walpb.Snapshot, error)
 	LoadLastValidFromSnapshot(walSnaps []walpb.Snapshot) (*raftpb.Snapshot, error)
@@ -23,26 +23,31 @@ type InternalStorage interface {
 	CreateWal(metadata babuzapb.WalMetadata) error
 	OpenWalAndReplay(snapshot *raftpb.Snapshot, deleteUnCommittedEntries bool) (ibabuza.ReplayWalResult, error)
 	SetWalNoFSync() error
+	OpenStateMachine(snapshot *raftpb.Snapshot) error
+	GetEntryStorage() (ibabuza.EntryStorage, error)
+	GetApplyResultSerializer() ibabuza.ResponseSerializer
+	GetRaftStorage() (Storage, error)
+}
+
+type Storage interface {
 	Save(hs raftpb.HardState, entries []raftpb.Entry, snapshot raftpb.Snapshot) error
 	CompactAndReleaseSnapshot(index uint64, snapshot raftpb.Snapshot) error
 	ApplyAndReleaseSnapshot(snapshot raftpb.Snapshot) error
-	GetEntryStorage() (ibabuza.EntryStorage, error)
 	EntryStorageAppend(entries []raftpb.Entry) error
 	EntryStorageInfo() (lastIndex uint64, lastTerm uint64, snapshot raftpb.Snapshot, err error)
-	OpenStateMachine(snapshot *raftpb.Snapshot) error
-	GetApplyResultSerializer() ibabuza.ResponseSerializer
 	CreateSnapshotContext(snapshotTerm, snapshotIndex uint64, confState raftpb.ConfState,
-		cluster ibabuza.Cluster, sessionMgr ibabuza.SessionManager) (InternalStorageSnapshotContext, error)
-	SaveStateMachineSnapshot(ctx InternalStorageSnapshotContext) (babuzapb.SnapshotMetadata, error)
+		cluster ibabuza.Cluster, sessionMgr ibabuza.SessionManager) (StorageSnapshotContext, error)
+	SaveStateMachineSnapshot(ctx StorageSnapshotContext) (babuzapb.SnapshotMetadata, error)
 	RestoreFromSnapshot(snapShotIndex uint64, restoreStateMachine bool, cluster ibabuza.Cluster, session ibabuza.SessionManager) error
 	ReceiveSnapshotMessage(msg babuzapb.SnapshotMessage) (bool, error)
-	Close() error
+
 	GetStateMachineAppliedIndex() uint64
 	SetStateMachineAppliedIndex(index uint64)
 	Apply(e ibabuza.Entry)
 	SupportConcurrentSnapshot() bool
 	CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error)
 	GetStateMachine() ibabuza.BaseStateMachine
+	Close() error
 }
 
 type InternalIdGenerator interface {

@@ -134,7 +134,7 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 	r.storage.SetStateMachineAppliedIndex(snap.Metadata.Index)
 }
 
-func (r *Raft) doSnapshot(snapCtx InternalStorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
+func (r *Raft) doSnapshot(snapCtx StorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
 	now := time.Now()
 	metadata, err := r.storage.SaveStateMachineSnapshot(snapCtx)
 	if err != nil {
@@ -158,7 +158,7 @@ func (r *Raft) doSnapshot(snapCtx InternalStorageSnapshotContext) (babuzapb.Snap
 	return metadata, nil
 }
 
-func (r *Raft) triggerSnapshot(snapCtx InternalStorageSnapshotContext, snapshotResultCh chan SnapshotResult) {
+func (r *Raft) triggerSnapshot(snapCtx StorageSnapshotContext, snapshotResultCh chan SnapshotResult) {
 	r.status.SetSnapshotIndex(snapCtx.Index())
 	doSnapshot := func() {
 		metadata, err := r.doSnapshot(snapCtx)

@@ -15,7 +15,7 @@ import (
 
 type BootstrapRaftCluster struct {
 	cluster          ibabuza.Cluster
-	storage          InternalStorage
+	storage          Storage
 	node             raft.Node
 	sessionMgr       ibabuza.SessionManager
 	trans            ibabuza.Transport
@@ -28,11 +28,11 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConf
 	cluster ibabuza.Cluster, raftNode ibabuza.RaftNode, sessions ibabuza.SessionManager, snapshotManager ibabuza.SnapshotManager,
 	walManager ibabuza.WalManager, trans ibabuza.Transport, logger ibabuza.Logger, metricsController ibabuza.MetricsCollector) (*BootstrapRaftCluster, error) {
 
-	storage, err := newStorageManager(stateMachine, snapshotManager, walManager)
+	bootStorage, err := newBootstrapStorage(stateMachine, snapshotManager, walManager)
 	if err != nil {
 		return nil, err
 	}
-	if err = sessions.SetResponseSerializer(storage.GetApplyResultSerializer()); err != nil {
+	if err = sessions.SetResponseSerializer(bootStorage.GetApplyResultSerializer()); err != nil {
 		return nil, err
 	}
 	if err = trans.SetupTransportConfig(ibabuza.TransportConfig{
@@ -46,21 +46,25 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConf
 	cluster.SetLocalPeerID(cfg.LocalPeerID)
 	raftStatus := status.New()
 	var node raft.Node
-	if exist, err := storage.HasExistingWalFiles(); err != nil {
+	if exist, err := bootStorage.HasExistingWalFiles(); err != nil {
 		return nil, err
 	} else if exist {
-		if err = storage.ScanInstalledSnapshot(); err != nil {
+		if err = bootStorage.ScanInstalledSnapshot(); err != nil {
 			return nil, err
 		}
-		node, err = restartNode(cfg, raftNode, cluster, sessions, storage, trans, raftStatus, logger)
+		node, err = restartNode(cfg, raftNode, cluster, sessions, bootStorage, trans, raftStatus, logger)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		node, err = startNode(cfg, votingPeersConfig, raftNode, storage, trans, logger)
+		node, err = startNode(cfg, votingPeersConfig, raftNode, bootStorage, trans, logger)
 		if err != nil {
 			return nil, err
 		}
+	}
+	storage, err := bootStorage.GetRaftStorage()
+	if err != nil {
+		return nil, err
 	}
 	return &BootstrapRaftCluster{
 		cluster:          cluster,
@@ -176,7 +180,7 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConf
 //}
 
 func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNode ibabuza.RaftNode,
-	storage InternalStorage, trans ibabuza.Transport, logger ibabuza.Logger) (raft.Node, error) {
+	bootstrapStorage BootstrapStorage, trans ibabuza.Transport, logger ibabuza.Logger) (raft.Node, error) {
 	var peers []raft.Peer
 	var err error
 
@@ -197,19 +201,19 @@ func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNod
 			return nil, err
 		}
 	}
-	if err = storage.CreateWal(babuzapb.WalMetadata{
+	if err = bootstrapStorage.CreateWal(babuzapb.WalMetadata{
 		ClusterID:   cfg.ClusterID,
 		LocalPeerID: cfg.LocalPeerID,
 	}); err != nil {
 		return nil, err
 	}
 	if cfg.EnableWalNoSync {
-		err = storage.SetWalNoFSync()
+		err = bootstrapStorage.SetWalNoFSync()
 		if err != nil {
 			return nil, err
 		}
 	}
-	entryStorage, err := storage.GetEntryStorage()
+	entryStorage, err := bootstrapStorage.GetEntryStorage()
 	if err != nil {
 		return nil, err
 	}
@@ -222,22 +226,23 @@ func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNod
 	if err != nil {
 		return nil, err
 	}
+
 	return raftNode.Start(raftCfg, peers)
 }
 
 func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cluster, sessions ibabuza.SessionManager,
-	storage InternalStorage, trans ibabuza.Transport, status ibabuza.Status, logger ibabuza.Logger) (raft.Node, error) {
+	bootstrapStorage BootstrapStorage, trans ibabuza.Transport, status ibabuza.Status, logger ibabuza.Logger) (raft.Node, error) {
 
 	//TODO: verify snap and wal match
-	walSnapshots, err := storage.FindSnapshotFromWal()
+	walSnapshots, err := bootstrapStorage.FindSnapshotFromWal()
 	if err != nil {
 		return nil, err
 	}
-	snap, err := storage.LoadLastValidFromSnapshot(walSnapshots)
+	snap, err := bootstrapStorage.LoadLastValidFromSnapshot(walSnapshots)
 	if err != nil {
 		return nil, err
 	}
-	walReplayResult, err := storage.OpenWalAndReplay(snap, false)
+	walReplayResult, err := bootstrapStorage.OpenWalAndReplay(snap, false)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +251,7 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 		return nil, err
 	}
 	cluster.SetLocalPeerID(metadata.LocalPeerID)
-	entryStorage, err := storage.GetEntryStorage()
+	entryStorage, err := bootstrapStorage.GetEntryStorage()
 	if err != nil {
 		return nil, err
 	}
@@ -256,8 +261,14 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 	}
 	status.SetHardStateTerm(hs.Term)
 	status.SetCommittedIndex(hs.Commit)
-
-	if err = storage.OpenStateMachine(snap); err != nil {
+	if cfg.EnableWalNoSync {
+		bootstrapStorage.SetWalNoFSync()
+	}
+	if err = bootstrapStorage.OpenStateMachine(snap); err != nil {
+		return nil, err
+	}
+	storage, err := bootstrapStorage.GetRaftStorage()
+	if err != nil {
 		return nil, err
 	}
 	if snap != nil {
@@ -275,9 +286,6 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 		status.SetAppliedTerm(snap.Metadata.Term)
 		status.SetSnapshotIndex(snap.Metadata.Index)
 		status.SetConfState(snap.Metadata.ConfState)
-	}
-	if cfg.EnableWalNoSync {
-		storage.SetWalNoFSync()
 	}
 	return raftNode.Restart(cfg.convertToRaftConfig(logger, entryStorage))
 }

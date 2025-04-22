@@ -335,11 +335,11 @@ func (m *mockStorageMgr) GetApplyResultSerializer() ibabuza.ResponseSerializer {
 	return nil
 }
 
-func (m *mockStorageMgr) CreateSnapshotContext(snapshotTerm, snapshotIndex uint64, confState raftpb.ConfState, cluster ibabuza.Cluster, sessionMgr ibabuza.SessionManager) (InternalStorageSnapshotContext, error) {
+func (m *mockStorageMgr) CreateSnapshotContext(snapshotTerm, snapshotIndex uint64, confState raftpb.ConfState, cluster ibabuza.Cluster, sessionMgr ibabuza.SessionManager) (StorageSnapshotContext, error) {
 	return nil, nil
 }
 
-func (m *mockStorageMgr) SaveStateMachineSnapshot(ctx InternalStorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
+func (m *mockStorageMgr) SaveStateMachineSnapshot(ctx StorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
 	return babuzapb.SnapshotMetadata{}, nil
 }
 
