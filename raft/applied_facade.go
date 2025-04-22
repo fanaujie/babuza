@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"time"
@@ -235,14 +234,9 @@ func (a *appliedFacadeImpl) parseConfChangeEntry(entry raftpb.Entry) (raftpb.Con
 
 func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babuzapb.ConfChangeRequest) (bool, error) {
 	if err := a.clusterValidateAndApply(cc.Type, confReq); err != nil {
-		multiErr := multierror.New()
-		multiErr.Append(err)
 		cc.NodeID = raft.None
-		_, aErr := a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
-		if aErr != nil {
-			multiErr.Append(aErr)
-		}
-		return false, multiErr.Get()
+		_, _ = a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
+		return false, err
 	}
 	applyResult, err := a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
 	if err != nil {

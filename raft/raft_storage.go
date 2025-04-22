@@ -14,8 +14,20 @@ type raftStorage struct {
 	wal              ibabuza.Wal
 	entryStorage     ibabuza.EntryStorage
 	stateMachine     ibabuza.BaseStateMachine
-	bsmInfo          basedStateMachineInfo
+	bsmInfo          *BasedStateMachineInfo
 	snapshotReceiver ibabuza.AtomicSnapshotReceiver
+}
+
+func NewRaftStorage(snapshotor ibabuza.SnapshotManager, wal ibabuza.Wal,
+	entryStorage ibabuza.EntryStorage, stateMachine ibabuza.BaseStateMachine,
+	bsmInfo *BasedStateMachineInfo) Storage {
+	return &raftStorage{
+		snapshotor:   snapshotor,
+		wal:          wal,
+		entryStorage: entryStorage,
+		stateMachine: stateMachine,
+		bsmInfo:      bsmInfo,
+	}
 }
 
 func (s *raftStorage) Save(hs raftpb.HardState, entries []raftpb.Entry, snapshot raftpb.Snapshot) error {

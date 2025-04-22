@@ -13,7 +13,7 @@ import (
 
 type KvStoreAppConfig struct {
 	BubuzaConfig   babuza.BabuzaConfig
-	VotingPeersCfg *babuza.VotingPeersConfiguration
+	VotingPeersCfg *babuza.PeersConfiguration
 	ServiceAddress string
 }
 

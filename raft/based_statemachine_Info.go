@@ -5,22 +5,42 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 )
 
-type basedStateMachineInfo struct {
+type BasedStateMachineInfo struct {
 	appliedIndex              uint64
 	supportConcurrentSnapshot bool
 	supportSession            bool
 	diskType                  bool
 }
 
-func newBasedStateMachineInfo(stateMachine ibabuza.BaseStateMachine) (basedStateMachineInfo, error) {
-	b := basedStateMachineInfo{}
+func NewBasedStateMachineInfo(stateMachine ibabuza.BaseStateMachine) (*BasedStateMachineInfo, error) {
+	b := &BasedStateMachineInfo{}
 	_, b.diskType = stateMachine.(ibabuza.DiskStateMachine)
 	_, b.supportConcurrentSnapshot = stateMachine.(ibabuza.ConcurrentSnapshotStateMachine)
 	if b.diskType {
 		if b.supportConcurrentSnapshot == false {
-			return basedStateMachineInfo{}, fmt.Errorf("storage: StateMachine does not implement the interface ConcurrentSnapshotStateMachine")
+			return nil, fmt.Errorf("storage: StateMachine does not implement the interface ConcurrentSnapshotStateMachine")
 		}
 	}
 	_, b.supportSession = stateMachine.(ibabuza.SessionEnabledStateMachine)
 	return b, nil
+}
+
+func (b *BasedStateMachineInfo) GetAppliedIndex() uint64 {
+	return b.appliedIndex
+}
+
+func (b *BasedStateMachineInfo) SetAppliedIndex(index uint64) {
+	b.appliedIndex = index
+}
+
+func (b *BasedStateMachineInfo) SupportConcurrentSnapshot() bool {
+	return b.supportConcurrentSnapshot
+}
+
+func (b *BasedStateMachineInfo) SupportSession() bool {
+	return b.supportSession
+}
+
+func (b *BasedStateMachineInfo) IsDiskType() bool {
+	return b.diskType
 }

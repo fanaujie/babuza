@@ -15,13 +15,13 @@ type bootstrapStorage struct {
 	snapshotManager ibabuza.SnapshotManager
 	entryStorage    ibabuza.EntryStorage
 	wal             ibabuza.Wal
-	bsmInfo         basedStateMachineInfo
+	bsmInfo         *BasedStateMachineInfo
 }
 
 func newBootstrapStorage(stateMachine ibabuza.BaseStateMachine, snapshotManager ibabuza.SnapshotManager,
 	walManager ibabuza.WalManager) (*bootstrapStorage, error) {
 
-	bsm, err := newBasedStateMachineInfo(stateMachine)
+	bsm, err := NewBasedStateMachineInfo(stateMachine)
 	if err != nil {
 		return nil, err
 	}

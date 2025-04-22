@@ -30,7 +30,6 @@ type Snapshotor struct {
 	mu                sync.Mutex
 }
 
-// TODO: add snapshot and wal consistency testing
 func New(config Config, fs api.SnapshotFileSystem, logger ibabuza.Logger) *Snapshotor {
 	mc := &codec.Metadata{}
 	return &Snapshotor{

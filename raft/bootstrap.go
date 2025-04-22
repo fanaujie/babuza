@@ -24,7 +24,7 @@ type BootstrapRaftCluster struct {
 	metricsCollector ibabuza.MetricsCollector
 }
 
-func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConfiguration, stateMachine ibabuza.BaseStateMachine,
+func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig PeersConfiguration, stateMachine ibabuza.BaseStateMachine,
 	cluster ibabuza.Cluster, raftNode ibabuza.RaftNode, sessions ibabuza.SessionManager, snapshotManager ibabuza.SnapshotManager,
 	walManager ibabuza.WalManager, trans ibabuza.Transport, logger ibabuza.Logger, metricsController ibabuza.MetricsCollector) (*BootstrapRaftCluster, error) {
 
@@ -179,7 +179,7 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig VotingPeersConf
 //
 //}
 
-func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNode ibabuza.RaftNode,
+func startNode(cfg BabuzaConfig, configuration PeersConfiguration, raftNode ibabuza.RaftNode,
 	bootstrapStorage BootstrapStorage, trans ibabuza.Transport, logger ibabuza.Logger) (raft.Node, error) {
 	var peers []raft.Peer
 	var err error
@@ -193,10 +193,14 @@ func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNod
 		}
 	}
 	if cfg.Join {
+		client, err := trans.CreateTransportClient()
+		if err != nil {
+			return nil, err
+		}
 		if err = func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 			defer cancel()
-			return matchRemoteCluster(ctx, cfg, configuration, trans)
+			return configuration.MatchRemoteCluster(ctx, cfg.ClusterID, cfg.LocalPeerID, client)
 		}(); err != nil {
 			return nil, err
 		}
@@ -218,6 +222,10 @@ func startNode(cfg BabuzaConfig, configuration VotingPeersConfiguration, raftNod
 		return nil, err
 	}
 	raftCfg := cfg.convertToRaftConfig(logger, entryStorage)
+	// Join logic:
+	// When true: If the local peer ID is in the voting config, it joins as a voting peer.
+	//            Otherwise, it joins as a learner.
+	// When false: It indicates starting a new raft group from scratch.
 	if cfg.Join {
 		// as a learner node will not start raft node
 		return raftNode.Restart(raftCfg)
@@ -288,44 +296,6 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 		status.SetConfState(snap.Metadata.ConfState)
 	}
 	return raftNode.Restart(cfg.convertToRaftConfig(logger, entryStorage))
-}
-
-func matchRemoteCluster(remoteCtx context.Context, config BabuzaConfig, remoteConfiguration VotingPeersConfiguration,
-	trans ibabuza.Transport) error {
-
-	req := babuzapb.GetClusterPeersRequest{
-		ClusterID: config.ClusterID,
-		From:      config.LocalPeerID,
-	}
-	client, err := trans.CreateTransportClient()
-	if err != nil {
-		return errors.New("bootstrap: create transport client error")
-	}
-	defer client.Close()
-
-	for _, raftPeerAttr := range remoteConfiguration.RaftPeersAttribute() {
-		if raftPeerAttr.Id == config.LocalPeerID {
-			continue
-		}
-		select {
-		case <-remoteCtx.Done():
-			return remoteCtx.Err()
-		default:
-		}
-		res := func(to uint64) babuzapb.GetClusterPeersResponse {
-			req.To = to
-			return client.GetClusterPeers(req)
-		}(raftPeerAttr.Id)
-		if res.Status == babuzapb.FAILED {
-			continue
-		}
-		if err := remoteConfiguration.MatchRemoteCluster(res.Peers); err != nil {
-			continue
-		}
-		return nil
-	}
-	return fmt.Errorf("bootstrap: could not get remote cluster from %v", remoteConfiguration)
-
 }
 
 func listRaftConfChangeAddNodeIds(snap *raftpb.Snapshot, result ibabuza.ReplayWalResult) (UInt64Slice, error) {

@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
@@ -10,17 +11,17 @@ import (
 	"time"
 )
 
-type VotingPeersConfiguration struct {
+type PeersConfiguration struct {
 	raftPeersAttr map[uint64]babuzapb.RaftPeerAttribute
 }
 
-func NewVotingPeersConfiguration() *VotingPeersConfiguration {
-	return &VotingPeersConfiguration{
+func NewPeersConfiguration() *PeersConfiguration {
+	return &PeersConfiguration{
 		raftPeersAttr: make(map[uint64]babuzapb.RaftPeerAttribute),
 	}
 }
 
-func (c *VotingPeersConfiguration) AddPeer(id uint64, raftListenAddr string) error {
+func (c *PeersConfiguration) AddPeer(id uint64, raftListenAddr string) error {
 	if _, ok := c.raftPeersAttr[id]; ok {
 		return errors.New("")
 	}
@@ -32,11 +33,11 @@ func (c *VotingPeersConfiguration) AddPeer(id uint64, raftListenAddr string) err
 	return nil
 }
 
-func (c *VotingPeersConfiguration) RemovePeer(id uint64) {
+func (c *PeersConfiguration) RemovePeer(id uint64) {
 	delete(c.raftPeersAttr, id)
 }
 
-func (c *VotingPeersConfiguration) RaftPeersAttribute() []babuzapb.RaftPeerAttribute {
+func (c *PeersConfiguration) RaftPeersAttribute() []babuzapb.RaftPeerAttribute {
 	var raftPeersAttr []babuzapb.RaftPeerAttribute
 	for _, raftPeerAttr := range c.raftPeersAttr {
 		raftPeersAttr = append(raftPeersAttr, raftPeerAttr)
@@ -44,7 +45,7 @@ func (c *VotingPeersConfiguration) RaftPeersAttribute() []babuzapb.RaftPeerAttri
 	return raftPeersAttr
 }
 
-func (c *VotingPeersConfiguration) PeerIds() []uint64 {
+func (c *PeersConfiguration) PeerIds() []uint64 {
 	var raftPeers []uint64
 	for _, raftPeerAttr := range c.raftPeersAttr {
 		raftPeers = append(raftPeers, raftPeerAttr.Id)
@@ -52,7 +53,7 @@ func (c *VotingPeersConfiguration) PeerIds() []uint64 {
 	return raftPeers
 }
 
-func (c *VotingPeersConfiguration) ToRaftPeers() ([]raft.Peer, error) {
+func (c *PeersConfiguration) ToRaftPeers() ([]raft.Peer, error) {
 	var peers []raft.Peer
 	for _, raftPeerAttr := range c.raftPeersAttr {
 		data, err := raftPeerAttr.Marshal()
@@ -74,42 +75,80 @@ func (c *VotingPeersConfiguration) ToRaftPeers() ([]raft.Peer, error) {
 	return peers, nil
 }
 
-func (c *VotingPeersConfiguration) Clone() *VotingPeersConfiguration {
-	conf := NewVotingPeersConfiguration()
+func (c *PeersConfiguration) Clone() *PeersConfiguration {
+	conf := NewPeersConfiguration()
 	for k, v := range c.raftPeersAttr {
 		conf.raftPeersAttr[k] = v
 	}
 	return conf
 }
 
-func (c *VotingPeersConfiguration) Validate() error {
+func (c *PeersConfiguration) Validate() error {
 	idSet := make(map[uint64]struct{})
 	endpointSet := make(map[string]struct{})
 	for _, raftPeerAttr := range c.raftPeersAttr {
 		if raftPeerAttr.Id == 0 {
-			return fmt.Errorf("VotingPeersConfiguration: empty peer id in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: empty peer id in votingPeersCfg: %v", *c)
 		}
 		if raftPeerAttr.RaftListenAddr == "" {
-			return fmt.Errorf("VotingPeersConfiguration: empty RaftListenAddr in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: empty RaftListenAddr in votingPeersCfg: %v", *c)
 		}
 		if raftPeerAttr.IsLearner {
-			return fmt.Errorf("VotingPeersConfiguration: peer can not be a learner in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: peer can not be a learner in votingPeersCfg: %v", *c)
 		}
 		if _, ok := idSet[raftPeerAttr.Id]; ok {
-			return fmt.Errorf("VotingPeersConfiguration: found duplicate ID in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: found duplicate ID in votingPeersCfg: %v", *c)
 		}
 		idSet[raftPeerAttr.Id] = struct{}{}
 		if _, ok := endpointSet[raftPeerAttr.RaftListenAddr]; ok {
-			return fmt.Errorf("VotingPeersConfiguration: found duplicate RaftListenAddr in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: found duplicate RaftListenAddr in votingPeersCfg: %v", *c)
 		}
 		endpointSet[raftPeerAttr.RaftListenAddr] = struct{}{}
 	}
 	return nil
 }
 
-func (c *VotingPeersConfiguration) MatchRemoteCluster(remotePeers []babuzapb.Peer) error {
-	//TODO:
-	return nil
+func (c *PeersConfiguration) MatchRemoteCluster(remoteCtx context.Context, clusterID, fromID uint64,
+	client ibabuza.TransportClient) error {
+	req := babuzapb.GetClusterPeersRequest{
+		ClusterID: clusterID,
+		From:      fromID,
+	}
+	defer client.Close()
+
+	for _, raftPeerAttr := range c.RaftPeersAttribute() {
+		if raftPeerAttr.Id == fromID {
+			continue
+		}
+		select {
+		case <-remoteCtx.Done():
+			return remoteCtx.Err()
+		default:
+		}
+		res := func(to uint64) babuzapb.GetClusterPeersResponse {
+			req.To = to
+			return client.GetClusterPeers(req)
+		}(raftPeerAttr.Id)
+		if res.Status == babuzapb.FAILED {
+			continue
+		}
+		if !c.equal(res.Peers) {
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("bootstrap: could not get remote cluster from %v", c.RaftPeersAttribute())
+}
+func (c *PeersConfiguration) equal(other []babuzapb.Peer) bool {
+	if len(c.RaftPeersAttribute()) != len(other) {
+		return false
+	}
+	for _, peer := range other {
+		if _, ok := c.raftPeersAttr[peer.RaftPeerAttr.Id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 type RaftConfig struct {

@@ -40,7 +40,6 @@ func findSnapshotInternal(walDir string, cascade *allocator.TwoLevelPool) ([]wal
 	return walSnapshots, nil
 }
 
-// createWalInternal 在指定目录创建WAL
 func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Options, cascade *allocator.TwoLevelPool) (ibabuza.EntryStorage, ibabuza.Wal, error) {
 	if fileutil.Exist(walDir) {
 		if err := os.RemoveAll(walDir); err != nil {
@@ -171,7 +170,6 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 	return entryStorage, wal, result, nil
 }
 
-// hasWalFilesInDir 检查目录中是否有WAL文件
 func hasWalFilesInDir(dir string) (bool, error) {
 	if !fileutil.Exist(dir) {
 		return false, nil

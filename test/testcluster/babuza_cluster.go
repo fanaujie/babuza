@@ -27,7 +27,7 @@ type EmbeddedClient interface {
 	TransferLeader(ctx context.Context, transferee uint64) error
 }
 
-type CreateEmbeddedApp func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool,
+type CreateEmbeddedApp func(votingPeersCfg *babuza.PeersConfiguration, config babuza.BabuzaConfig, restart bool,
 	testNetwork ibabuza.ProxyNetwork, peerRootDir string, appServiceAddresses []string) (EmbeddedApp, error)
 
 type appController struct {
@@ -49,14 +49,14 @@ func (a *appController) wait() error {
 }
 
 type BabuzaCluster struct {
-	clusterID         uint64
-	storageRootDir    string
-	config            babuza.BabuzaConfig
-	createEmbeddedApp CreateEmbeddedApp
-	votingPeersCfg    *babuza.VotingPeersConfiguration
-	appControllers    map[uint64]*appController
-	proxyNetwork      ibabuza.ProxyNetwork
-	useProxyNetwork   bool // New flag to control proxy network usage
+	clusterID          uint64
+	storageRootDir     string
+	config             babuza.BabuzaConfig
+	createEmbeddedApp  CreateEmbeddedApp
+	peersConfiguration *babuza.PeersConfiguration
+	appControllers     map[uint64]*appController
+	proxyNetwork       ibabuza.ProxyNetwork
+	useProxyNetwork    bool // New flag to control proxy network usage
 }
 
 func CreateTestCluster(clusterID uint64, storageRootDir string, proxyNetwork ibabuza.ProxyNetwork,
@@ -65,14 +65,14 @@ func CreateTestCluster(clusterID uint64, storageRootDir string, proxyNetwork iba
 	useProxyNetwork := proxyNetwork != nil
 
 	return &BabuzaCluster{
-		clusterID:         clusterID,
-		config:            config,
-		storageRootDir:    storageRootDir,
-		createEmbeddedApp: createEmbeddedApp,
-		votingPeersCfg:    babuza.NewVotingPeersConfiguration(),
-		appControllers:    make(map[uint64]*appController),
-		proxyNetwork:      proxyNetwork,
-		useProxyNetwork:   useProxyNetwork,
+		clusterID:          clusterID,
+		config:             config,
+		storageRootDir:     storageRootDir,
+		createEmbeddedApp:  createEmbeddedApp,
+		peersConfiguration: babuza.NewPeersConfiguration(),
+		appControllers:     make(map[uint64]*appController),
+		proxyNetwork:       proxyNetwork,
+		useProxyNetwork:    useProxyNetwork,
 	}
 }
 
@@ -101,7 +101,7 @@ func (c *BabuzaCluster) MakeCluster(wait time.Duration, votingPeers []Peer) erro
 			return fmt.Errorf("test cluster: failed to make cluster. found a learner peer id(%d)", peer.ID())
 		}
 		raftListenAddr := peer.RaftListenAddress(c.useProxyNetwork)
-		if err := c.votingPeersCfg.AddPeer(peer.ID(), raftListenAddr); err != nil {
+		if err := c.peersConfiguration.AddPeer(peer.ID(), raftListenAddr); err != nil {
 			return err
 		}
 	}
@@ -109,7 +109,7 @@ func (c *BabuzaCluster) MakeCluster(wait time.Duration, votingPeers []Peer) erro
 	for _, peer := range votingPeers {
 		cfg, peerRootDir, err := c.genPeerConfig(peer, false)
 		connectedGroup = append(connectedGroup, peer.ID())
-		app, err := c.createEmbeddedApp(c.votingPeersCfg.Clone(), cfg, false, c.proxyNetwork, peerRootDir, peer.ApplicationServiceAddresses())
+		app, err := c.createEmbeddedApp(c.peersConfiguration.Clone(), cfg, false, c.proxyNetwork, peerRootDir, peer.ApplicationServiceAddresses())
 		if err != nil {
 			return fmt.Errorf("test cluster: failed to create embedded app. peer(%v) restart(false) join(false). err=%s", peer, err)
 		}
@@ -205,11 +205,10 @@ func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedCli
 	}
 
 	cfg, appStorageDir, err := c.genPeerConfig(peer, true)
-	if !peer.IsPeerLearner() {
-		if err = c.votingPeersCfg.AddPeer(peer.ID(), raftListenAddr); err != nil {
-			return fmt.Errorf("test cluster: failed to add peer to votingPeersCfg (peerID=%d) (endpoint=%s). err=%s",
-				peer.ID(), raftListenAddr, err)
-		}
+
+	if err = c.peersConfiguration.AddPeer(peer.ID(), raftListenAddr); err != nil {
+		return fmt.Errorf("test cluster: failed to add peer to peersConfiguration (peerID=%d) (endpoint=%s). err=%s",
+			peer.ID(), raftListenAddr, err)
 	}
 
 	if c.useProxyNetwork {
@@ -230,7 +229,7 @@ func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedCli
 		}
 	}
 
-	app, err := c.createEmbeddedApp(c.votingPeersCfg.Clone(), cfg, false, c.proxyNetwork, appStorageDir, peer.ApplicationServiceAddresses())
+	app, err := c.createEmbeddedApp(c.peersConfiguration.Clone(), cfg, false, c.proxyNetwork, appStorageDir, peer.ApplicationServiceAddresses())
 	if err != nil {
 		return fmt.Errorf("test cluster: failed to create embedded app. peer(%v) restart(false) join(true). err=%s", peer, err)
 	}
@@ -261,7 +260,7 @@ func (c *BabuzaCluster) RemovePeerFromCluster(wait time.Duration, client Embedde
 		}
 	}
 
-	c.votingPeersCfg.RemovePeer(peerID)
+	c.peersConfiguration.RemovePeer(peerID)
 	controller, ok := c.appControllers[peerID]
 	me := multierror.New()
 	if !ok {
@@ -300,7 +299,7 @@ func (c *BabuzaCluster) RestartPeer(wait time.Duration, peer Peer, connectedGrou
 	}
 
 	cfg, storageDir, err := c.genPeerConfig(peer, false)
-	app, err := c.createEmbeddedApp(c.votingPeersCfg, cfg, true, c.proxyNetwork, storageDir, peer.ApplicationServiceAddresses())
+	app, err := c.createEmbeddedApp(c.peersConfiguration, cfg, true, c.proxyNetwork, storageDir, peer.ApplicationServiceAddresses())
 	if err != nil {
 		return fmt.Errorf("test cluster: failed to create embedded app. peer(%v) restart(true) join(false). err=%s", peer, err)
 	}
