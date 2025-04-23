@@ -82,8 +82,8 @@ func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
-func (r *replica) EnqueueApplyConfChange(job confChangeApplyJob) {
-	if err := r.applyConfChangeQueue.Put(&job); err != nil {
+func (r *replica) EnqueueApplyConfChange(job *confChangeApplyJob) {
+	if err := r.applyConfChangeQueue.Put(job); err != nil {
 		r.logger.Errorf("failed to enqueue apply conf change job: %v", err)
 		return
 	}

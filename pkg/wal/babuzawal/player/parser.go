@@ -25,18 +25,18 @@ type Parser struct {
 	result        iwal.ReplayWalResult
 	startSnapshot walpb.Snapshot
 
-	cascade       *allocator.TwoLevelPool
+	memPool       *allocator.TwoLevelPool
 	parseEntry    bool
 	findNextEntry bool
 }
 
 func NewParser(result iwal.ReplayWalResult, startSnapshot walpb.Snapshot,
-	cascade *allocator.TwoLevelPool) *Parser {
+	memPool *allocator.TwoLevelPool) *Parser {
 	_, NotParseEntry := result.EntryCollection().(*collection.NopEntry)
 	return &Parser{
 		result:        result,
 		startSnapshot: startSnapshot,
-		cascade:       cascade,
+		memPool:       memPool,
 		parseEntry:    !NotParseEntry,
 	}
 }
@@ -47,7 +47,7 @@ func (p *Parser) Parse(reader iwal.LogFileReader) error {
 	p.findNextEntry = false
 
 	defer reader.Close()
-	logDecoder := codec.NewDecoder(bufio.NewReader(reader), p.cascade, p.logHandler)
+	logDecoder := codec.NewDecoder(bufio.NewReader(reader), p.memPool, p.logHandler)
 
 	for {
 		if err := logDecoder.Decode(); err != nil {

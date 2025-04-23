@@ -19,9 +19,9 @@ import (
 	"strings"
 )
 
-func findSnapshotInternal(walDir string, cascade *allocator.TwoLevelPool) ([]walpb.Snapshot, error) {
+func findSnapshotInternal(walDir string, memPool *allocator.TwoLevelPool) ([]walpb.Snapshot, error) {
 	result := player.NewReplayResult(collection.NewNopEntry())
-	p, err := player.Create(walDir, EmptyWalpbSnapshot, cascade)
+	p, err := player.Create(walDir, EmptyWalpbSnapshot, memPool)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func findSnapshotInternal(walDir string, cascade *allocator.TwoLevelPool) ([]wal
 	return walSnapshots, nil
 }
 
-func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Options, cascade *allocator.TwoLevelPool) (ibabuza.EntryStorage, ibabuza.Wal, error) {
+func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Options, memPool *allocator.TwoLevelPool) (ibabuza.EntryStorage, ibabuza.Wal, error) {
 	if fileutil.Exist(walDir) {
 		if err := os.RemoveAll(walDir); err != nil {
 			return nil, nil, err
@@ -61,7 +61,7 @@ func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Opt
 		AlignmentPageSize: options.WalAlignmentPageSize,
 		PageWriterBufSize: options.WalPageWriteBufferSize,
 		MaxKeepLogFiles:   options.WalMaxKeepLogFiles,
-	}, cascade)
+	}, memPool)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -85,7 +85,7 @@ func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Opt
 	return entryStorage, wal, nil
 }
 
-func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitted bool, options Options, cascade *allocator.TwoLevelPool) (ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
+func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitted bool, options Options, memPool *allocator.TwoLevelPool) (ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
 	walSnap := EmptyWalpbSnapshot
 	if snapshot != nil {
 		walSnap = walpb.Snapshot{
@@ -95,7 +95,7 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 		}
 	}
 
-	p, err := player.Create(walDir, walSnap, cascade)
+	p, err := player.Create(walDir, walSnap, memPool)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -119,7 +119,7 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 		AlignmentPageSize: options.WalAlignmentPageSize,
 		PageWriterBufSize: options.WalPageWriteBufferSize,
 		MaxKeepLogFiles:   options.WalMaxKeepLogFiles,
-	}, walSnap, cascade)
+	}, walSnap, memPool)
 	if err != nil {
 		return nil, nil, nil, err
 	}

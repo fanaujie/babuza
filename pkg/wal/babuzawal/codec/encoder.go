@@ -26,20 +26,20 @@ const (
 
 type Encoder struct {
 	writer     io.Writer
-	cascade    *allocator.TwoLevelPool
+	memPool    *allocator.TwoLevelPool
 	currentCrc uint32
 }
 
-func NewEncoder(writer io.Writer, cascade *allocator.TwoLevelPool, currentCrc uint32) *Encoder {
+func NewEncoder(writer io.Writer, memPool *allocator.TwoLevelPool, currentCrc uint32) *Encoder {
 	if writer == nil {
 		panic("encoder: writer can not be nil")
 	}
-	if cascade == nil {
-		panic("encoder: cascade can not be nil")
+	if memPool == nil {
+		panic("encoder: memPool can not be nil")
 	}
 	return &Encoder{
 		writer:     writer,
-		cascade:    cascade,
+		memPool:    memPool,
 		currentCrc: currentCrc,
 	}
 }
@@ -60,10 +60,10 @@ func Encode[T EncodeLog](e *Encoder, logType pb.LogType, logSize int, marshaller
 	}
 	padding := e.calcPadding(logSize)
 	total := HeaderSize + logSize + padding
-	allocBuf, p := e.cascade.Acquire(total)
+	allocBuf, p := e.memPool.Acquire(total)
 	if allocBuf == nil {
 		allocBuf = p.Buffer
-		defer e.cascade.Release(p)
+		defer e.memPool.Release(p)
 	}
 	var err error
 	binary.LittleEndian.PutUint32(allocBuf[:crcOffset], uint32((logSize<<logSizeShift)|int(logType<<logTypeShift)|padding&paddingMask))

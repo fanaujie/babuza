@@ -15,7 +15,7 @@ import (
 type MultiRaftWalManager struct {
 	WalRootDir string
 	options    Options
-	cascade    *allocator.TwoLevelPool
+	memPool    *allocator.TwoLevelPool
 	logger     ibabuza.Logger
 }
 
@@ -24,12 +24,12 @@ func NewMultiRaftWalManager(walRootDir string, logger ibabuza.Logger, setOptions
 	for _, opt := range setOptions {
 		opt(&opts)
 	}
-	cascade := allocator.NewDefaultTwoLevelPool(opts.WalFixedEntryBufferSize, opts.WalMaxDynamicEntryBufferSize)
+	memPool := allocator.NewDefaultTwoLevelPool(opts.WalFixedEntryBufferSize, opts.WalMaxDynamicEntryBufferSize)
 	logger.Infof("MultiRaftWalManager: create multi-raft wal manager with walRootDir=%s", walRootDir)
 	return &MultiRaftWalManager{
 		WalRootDir: walRootDir,
 		options:    opts,
-		cascade:    cascade,
+		memPool:    memPool,
 		logger:     logger,
 	}
 }
@@ -40,17 +40,17 @@ func (m *MultiRaftWalManager) getGroupWalDir(groupID ibabuza.RaftGroupID) string
 
 func (m *MultiRaftWalManager) FindSnapshot(groupID ibabuza.RaftGroupID) ([]walpb.Snapshot, error) {
 	walDir := m.getGroupWalDir(groupID)
-	return findSnapshotInternal(walDir, m.cascade)
+	return findSnapshotInternal(walDir, m.memPool)
 }
 
 func (m *MultiRaftWalManager) CreateWal(groupID ibabuza.RaftGroupID, metadata babuzapb.WalMetadata) (ibabuza.EntryStorage, ibabuza.Wal, error) {
 	walDir := m.getGroupWalDir(groupID)
-	return createWalInternal(walDir, metadata, m.options, m.cascade)
+	return createWalInternal(walDir, metadata, m.options, m.memPool)
 }
 
 func (m *MultiRaftWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
 	walDir := m.getGroupWalDir(groupID)
-	return replayWalInternal(walDir, snapshot, deleteUncommitted, m.options, m.cascade)
+	return replayWalInternal(walDir, snapshot, deleteUncommitted, m.options, m.memPool)
 }
 
 func (m *MultiRaftWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {

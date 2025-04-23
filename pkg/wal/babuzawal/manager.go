@@ -11,7 +11,7 @@ import (
 type WalManager struct {
 	walDir  string
 	options Options
-	cascade *allocator.TwoLevelPool
+	memPool *allocator.TwoLevelPool
 	logger  ibabuza.Logger
 }
 
@@ -90,22 +90,22 @@ func NewWalManager(walDir string, logger ibabuza.Logger, setOptions ...SetOption
 	return &WalManager{
 		walDir:  walDir,
 		options: opts,
-		cascade: allocator.NewDefaultTwoLevelPool(opts.WalFixedEntryBufferSize, opts.WalMaxDynamicEntryBufferSize),
+		memPool: allocator.NewDefaultTwoLevelPool(opts.WalFixedEntryBufferSize, opts.WalMaxDynamicEntryBufferSize),
 		logger:  logger,
 	}
 }
 
 func (w *WalManager) FindSnapshot() ([]walpb.Snapshot, error) {
-	return findSnapshotInternal(w.walDir, w.cascade)
+	return findSnapshotInternal(w.walDir, w.memPool)
 }
 
 func (w *WalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.EntryStorage, ibabuza.Wal, error) {
-	return createWalInternal(w.walDir, metadata, w.options, w.cascade)
+	return createWalInternal(w.walDir, metadata, w.options, w.memPool)
 }
 
 func (w *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (
 	ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
-	return replayWalInternal(w.walDir, snapshot, deleteUncommitted, w.options, w.cascade)
+	return replayWalInternal(w.walDir, snapshot, deleteUncommitted, w.options, w.memPool)
 }
 
 func (w *WalManager) HasExistingWals() (bool, error) {
