@@ -6,11 +6,15 @@ import (
 )
 
 func (n *Node) raftTickStart() {
+	n.logger.Infof("Node[%d] raft tick start", n.config.NodeID)
+	defer n.logger.Infof("Node[%d] raft tick end", n.config.NodeID)
 	ticker := time.NewTicker(time.Duration(n.config.LogicalTickMs) * time.Millisecond)
 	defer ticker.Stop()
 	var groupIDs []ibabuza.RaftGroupID
 	for {
 		select {
+		case <-n.closer.CloseCh():
+			return
 		case <-ticker.C:
 			n.replicaSet.mu.RLock()
 			for k, _ := range n.replicaSet.replica {
@@ -19,7 +23,7 @@ func (n *Node) raftTickStart() {
 			n.replicaSet.mu.RUnlock()
 			if len(groupIDs) > 0 {
 				if err := n.scheduler.EnqueueBatchTickState(groupIDs); err != nil {
-					n.logger.Errorf("scheduler enqueue tick state error: %v", err)
+					n.logger.Errorf("Node[%d] scheduler enqueue tick state error: %v", n.config.NodeID, err)
 					return
 				}
 			}

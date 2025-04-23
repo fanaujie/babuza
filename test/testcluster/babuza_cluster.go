@@ -101,7 +101,7 @@ func (c *BabuzaCluster) MakeCluster(wait time.Duration, votingPeers []Peer) erro
 			return fmt.Errorf("test cluster: failed to make cluster. found a learner peer id(%d)", peer.ID())
 		}
 		raftListenAddr := peer.RaftListenAddress(c.useProxyNetwork)
-		if err := c.peersConfiguration.AddPeer(peer.ID(), raftListenAddr); err != nil {
+		if err := c.peersConfiguration.AddPeer(peer.ID(), raftListenAddr, false); err != nil {
 			return err
 		}
 	}
@@ -206,7 +206,7 @@ func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedCli
 
 	cfg, appStorageDir, err := c.genPeerConfig(peer, true)
 
-	if err = c.peersConfiguration.AddPeer(peer.ID(), raftListenAddr); err != nil {
+	if err = c.peersConfiguration.AddPeer(peer.ID(), raftListenAddr, peer.IsPeerLearner()); err != nil {
 		return fmt.Errorf("test cluster: failed to add peer to peersConfiguration (peerID=%d) (endpoint=%s). err=%s",
 			peer.ID(), raftListenAddr, err)
 	}

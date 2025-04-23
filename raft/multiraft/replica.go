@@ -24,7 +24,7 @@ type leaderChange struct {
 type replica struct {
 	raftGroup                 RaftGroup
 	config                    ReplicaRaftConfig
-	applyJobQueue             ibabuza.MultiRaftReplicaApplyJobQueue
+	applyJobQueue             ibabuza.MultiRaftReplicaJobQueue
 	cluster                   ibabuza.Cluster
 	transport                 ibabuza.MultiRaftTransport
 	status                    ibabuza.Status
@@ -43,6 +43,18 @@ type replica struct {
 	applyConfChangeQueue      *queue.Queue
 	logger                    ibabuza.Logger
 	closer                    *syncutil.Closer
+}
+
+func (r *replica) Status() ibabuza.Status {
+	return r.status
+}
+
+func (r *replica) Stop() {
+	r.closer.Close()
+	r.applyJobQueue.Stop()
+	r.proposalQueue.Dispose()
+	r.configChangeQueue.Dispose()
+	r.applyConfChangeQueue.Dispose()
 }
 
 func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {

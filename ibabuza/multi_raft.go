@@ -12,13 +12,15 @@ type NodeID uint64
 type MultiRaftSchedulerQueue interface {
 	EnqueueBatchTickState(groupIDs []RaftGroupID) error
 	EnqueueState(groupID RaftGroupID, state int) error
+	Start() error
 	Stop()
 }
 
-type MultiRaftReplicaApplyJob func()
+type MultiRaftReplicaJob func()
 
-type MultiRaftReplicaApplyJobQueue interface {
-	Put(groupID RaftGroupID, job MultiRaftReplicaApplyJob) error
+type MultiRaftReplicaJobQueue interface {
+	Put(job MultiRaftReplicaJob) error
+	Start() error
 	Stop()
 }
 
@@ -33,7 +35,7 @@ type MultiRaftReplicaStateProcessor interface {
 
 type MultiRaftTransport interface {
 	SetupTransportConfig(cfg TransportConfig) error
-	SetupTransportRaft(RaftNodeHandler) error
+	SetupTransportRaft(MultiRaftNodeHandler) error
 	Start() error
 	Stop() error
 	Send(babuzapb.MultiRaftMessage)
@@ -71,6 +73,6 @@ type MultiRaftSnapshotManager interface {
 	CreateInstalledSnapshotReader(groupID RaftGroupID, snapshotIndex uint64, validateFsmFiles bool) (SnapshotReader, error)
 	CreateAtomicSnapshotReceiver(groupID RaftGroupID, metadata babuzapb.SnapshotMetadata) (AtomicSnapshotReceiver, error)
 	Purge(groupID RaftGroupID, snapshot raftpb.Snapshot) error
-	GetGroupSnapshot(groupID RaftGroupID) (SnapshotManager, bool)
+	GetGroupSnapshot(groupID RaftGroupID) SnapshotManager
 	Close() error
 }

@@ -16,6 +16,7 @@ type BootstrapStorage interface {
 	OpenWalAndReplay(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot, deleteUnCommittedEntries bool) (ibabuza.ReplayWalResult, error)
 	CreateWal(groupID ibabuza.RaftGroupID, metadata babuzapb.WalMetadata) error
 	GetEntryStorage(groupID ibabuza.RaftGroupID) (ibabuza.EntryStorage, error)
+	CreateStateMachine(groupID ibabuza.RaftGroupID) (ibabuza.ResponseSerializer, error)
 	OpenStateMachine(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot) (ibabuza.ResponseSerializer, error)
 	SetWalNoFSync(groupID ibabuza.RaftGroupID) error
 	GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuza.Storage, error)

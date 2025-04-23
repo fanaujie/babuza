@@ -23,15 +23,15 @@ const (
 )
 
 type ComponentsFactory interface {
-	CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, error)
-	CreateCluster() ibabuza.Cluster
-	CreateSessionManager() ibabuza.SessionManager
+	CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID, log ibabuza.Logger) (ibabuza.BaseStateMachine, error)
+	CreateCluster(log ibabuza.Logger) ibabuza.Cluster
+	CreateSessionManager(log ibabuza.Logger) ibabuza.SessionManager
 }
 
-func NewBootstrapNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
+func BootstrapOrRecoverNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
 	snapshotManager ibabuza.MultiRaftSnapshotManager, logger ibabuza.Logger) (*Node, error) {
 	stateMachineRootDir := filepath.Join(cfg.NodeHostDir, stateMachineDir)
-	storage := newBootstrapStorage(stateMachineRootDir, factory, walManager, snapshotManager)
+	storage := newBootstrapStorage(stateMachineRootDir, factory, walManager, snapshotManager, logger)
 	if err := trans.SetupTransportConfig(ibabuza.TransportConfig{
 		PeerId:      cfg.NodeID,
 		PeerAddress: cfg.RaftListenAddress,
@@ -62,7 +62,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 	n := newNode(config, trans, storage, factory, logger)
 
 	for _, groupID := range restartGroupIDs {
-		replicaCluster := factory.CreateCluster()
+		replicaCluster := factory.CreateCluster(logger)
 		replicaStatus := status.New()
 		walSnapshots, err := storage.FindSnapshotFromWal(groupID)
 		if err != nil {
@@ -98,7 +98,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			return nil, err
 		}
 		//create session
-		replicaSession := factory.CreateSessionManager()
+		replicaSession := factory.CreateSessionManager(logger)
 		if err = replicaSession.SetResponseSerializer(applyResultSerializer); err != nil {
 			return nil, err
 		}
@@ -152,7 +152,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 				PeerID:  config.NodeID,
 			},
 			config:                    replicaRaftConfig,
-			applyJobQueue:             shard.NewApplyJobQueue(groupID, config.ApplyJobQueueSize, logger),
+			applyJobQueue:             shard.NewJobQueue(groupID, config.ApplyJobQueueSize, logger),
 			cluster:                   replicaCluster,
 			transport:                 trans,
 			status:                    replicaStatus,
@@ -172,6 +172,9 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			logger:                    logger,
 			closer:                    syncutil.NewCloser(),
 		}
+		if err = r.applyJobQueue.Start(); err != nil {
+			return nil, err
+		}
 		n.replicaSet.replica[groupID] = r
 	}
 	return n, nil
@@ -179,14 +182,14 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 
 func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger) *Node {
 	n := &Node{
-		config:      config,
-		trans:       trans,
-		storage:     storage,
-		factory:     factory,
-		multiStatus: status.NewMultiRaftStatus(),
-		logger:      logger,
+		config:  config,
+		trans:   trans,
+		storage: storage,
+		factory: factory,
+		logger:  logger,
+		closer:  syncutil.NewCloser(),
 	}
-	scheduler := shard.NewScheduler(shard.Config{
+	scheduler := shard.NewScheduler(config.NodeID, shard.Config{
 		WorkerNum: config.SchedulerWorkerNum,
 		QueueSize: config.SchedulerQueueSize,
 		MaxTicks:  config.SchedulerMaxTicks,
@@ -196,35 +199,24 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 	return n
 }
 
-func bootstrapNewReplica(node *Node, groupID ibabuza.RaftGroupID, configuration *babuza.PeersConfiguration,
+func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, configuration *babuza.PeersConfiguration,
 	joinExistingRaftGroup bool) (*replica, error) {
 
-	replicaCluster := node.factory.CreateCluster()
+	replicaCluster := node.factory.CreateCluster(node.logger)
 	replicaCluster.SetClusterID(uint64(groupID))      // clusterID is the same as group id
 	replicaCluster.SetLocalPeerID(node.config.NodeID) // localPeerID is the same as node id
 	replicaStatus := status.New()
-	// create state machine
-	stateMachineRootDir := filepath.Join(node.config.NodeHostDir, stateMachineDir)
-	stateMachine, err := node.factory.CreateStateMachine(stateMachineRootDir, groupID)
-	if err != nil {
-		return nil, err
-	}
-	replicaSession := node.factory.CreateSessionManager()
 
-	bsmInfo, err := babuza.NewBasedStateMachineInfo(stateMachine)
+	replicaSession := node.factory.CreateSessionManager(node.logger)
+
+	responseSerializer, err := node.storage.CreateStateMachine(groupID)
 	if err != nil {
 		return nil, err
-	}
-	var responseSerializer ibabuza.ResponseSerializer
-	if bsmInfo.SupportSession() {
-		responseSerializer = stateMachine.(ibabuza.SessionEnabledStateMachine).GetResponseSerializer()
 	}
 	if err = replicaSession.SetResponseSerializer(responseSerializer); err != nil {
 		return nil, err
 	}
-
 	var peers []raft.Peer
-
 	if err = configuration.Validate(); err != nil {
 		return nil, err
 	}
@@ -246,7 +238,6 @@ func bootstrapNewReplica(node *Node, groupID ibabuza.RaftGroupID, configuration 
 			return nil, err
 		}
 	}
-
 	if err = node.storage.CreateWal(groupID, babuzapb.WalMetadata{
 		ClusterID:   uint64(groupID),
 		LocalPeerID: node.config.NodeID,
@@ -304,7 +295,7 @@ func bootstrapNewReplica(node *Node, groupID ibabuza.RaftGroupID, configuration 
 			PeerID:  node.config.NodeID,
 		},
 		config:                    replicaRaftConfig,
-		applyJobQueue:             shard.NewApplyJobQueue(groupID, node.config.ApplyJobQueueSize, node.logger),
+		applyJobQueue:             shard.NewJobQueue(groupID, node.config.ApplyJobQueueSize, node.logger),
 		cluster:                   replicaCluster,
 		transport:                 node.trans,
 		status:                    replicaStatus,
@@ -323,6 +314,9 @@ func bootstrapNewReplica(node *Node, groupID ibabuza.RaftGroupID, configuration 
 		applyConfChangeQueue:      &queue.Queue{},
 		logger:                    node.logger,
 		closer:                    syncutil.NewCloser(),
+	}
+	if err = r.applyJobQueue.Start(); err != nil {
+		return nil, err
 	}
 	return r, nil
 }

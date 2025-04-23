@@ -87,7 +87,7 @@ func (s *Server) Start() error {
 	// Set cluster configuration
 	peersConfiguration := babuza.NewPeersConfiguration()
 	for id, endpoint := range s.cfg.RaftClusterVotersAddress {
-		if err := peersConfiguration.AddPeer(id, endpoint); err != nil {
+		if err := peersConfiguration.AddPeer(id, endpoint, false); err != nil {
 			return err
 		}
 	}

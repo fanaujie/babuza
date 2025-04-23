@@ -4,7 +4,7 @@ import "runtime"
 
 type Config struct {
 	WorkerNum int
-	QueueSize uint64
+	QueueSize int64
 	MaxTicks  int
 }
 

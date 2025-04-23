@@ -2,7 +2,6 @@ package multiraft
 
 import (
 	"errors"
-	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
@@ -49,7 +48,7 @@ func (r *replica) ProcessReady() {
 			applyData := poolGetApplyEntry()
 			applyData.entries = rd.CommittedEntries
 			applyData.snapshot = rd.Snapshot
-			if err := r.applyJobQueue.Put(ibabuza.RaftGroupID(r.cluster.ClusterID()), func() {
+			if err := r.applyJobQueue.Put(func() {
 				r.doApplyJob(applyData)
 			}); err != nil {
 				r.logger.Panicf("groupID[%d] raft[id=%d] apply job queue put failed: %v",

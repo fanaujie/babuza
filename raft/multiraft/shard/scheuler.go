@@ -1,14 +1,9 @@
 package shard
 
 import (
-	"errors"
 	"github.com/Workiva/go-datastructures/queue"
 	"github.com/fanaujie/babuza/ibabuza"
 	"sync"
-)
-
-var (
-	ErrSchedulerFull = errors.New("scheduler ringbuffer is full")
 )
 
 const (
@@ -26,28 +21,33 @@ type internalState struct {
 }
 
 type Scheduler struct {
+	nodeID        uint64
 	cfg           Config
 	q             []*queue.Queue
 	raftProcessor ibabuza.MultiRaftReplicaStateProcessor
 	log           ibabuza.Logger
 	mu            sync.Mutex
 	groupState    map[ibabuza.RaftGroupID]internalState
-	start         bool
 }
 
-func NewScheduler(cfg Config, raftProcessor ibabuza.MultiRaftReplicaStateProcessor, log ibabuza.Logger) *Scheduler {
-	s := &Scheduler{
+func NewScheduler(nodeID uint64, cfg Config, raftProcessor ibabuza.MultiRaftReplicaStateProcessor, log ibabuza.Logger) *Scheduler {
+	return &Scheduler{
+		nodeID:        nodeID,
 		cfg:           cfg,
 		raftProcessor: raftProcessor,
 		log:           log,
 		groupState:    make(map[ibabuza.RaftGroupID]internalState),
 	}
+}
+
+func (s *Scheduler) Start() error {
+	s.log.Infof("[GroupID=%d] Starting scheduler", s.nodeID)
 	for i := 0; i < s.cfg.WorkerNum; i++ {
-		q := queue.New(256)
+		q := queue.New(s.cfg.QueueSize)
 		s.q = append(s.q, q)
 		go s.worker(i, q)
 	}
-	return s
+	return nil
 }
 
 func (s *Scheduler) Stop() {
@@ -105,10 +105,11 @@ func (s *Scheduler) EnqueueBatchTickState(groupIDs []ibabuza.RaftGroupID) error 
 }
 
 func (s *Scheduler) worker(shardID int, q *queue.Queue) {
+	defer s.log.Infof("[GroupID=%d] Stopping scheduler worker %d", s.nodeID, shardID)
 	for {
 		items, err := q.Get(q.Len())
 		if err != nil {
-			s.log.Errorf("scheduler get from ringbuffer failed: %v", err)
+			s.log.Errorf("[GroupID=%d] scheduler get from ringbuffer failed: %v", s.nodeID, err)
 			return
 		}
 		for _, v := range items {

@@ -82,11 +82,8 @@ func (m *MultiRaftSnapshotManager) Purge(groupID ibabuza.RaftGroupID, snapshot r
 	return m.getOrCreateSnapshotor(groupID).Purge(snapshot)
 }
 
-func (m *MultiRaftSnapshotManager) GetGroupSnapshot(groupID ibabuza.RaftGroupID) (ibabuza.SnapshotManager, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	snapshotor, ok := m.snapshotorMap[groupID]
-	return snapshotor, ok
+func (m *MultiRaftSnapshotManager) GetGroupSnapshot(groupID ibabuza.RaftGroupID) ibabuza.SnapshotManager {
+	return m.getOrCreateSnapshotor(groupID)
 }
 
 func (m *MultiRaftSnapshotManager) Close() error {

@@ -21,15 +21,15 @@ func NewPeersConfiguration() *PeersConfiguration {
 	}
 }
 
-func (c *PeersConfiguration) AddPeer(id uint64, raftListenAddr string) error {
+func (c *PeersConfiguration) AddPeer(id uint64, raftListenAddr string, isLearner bool) error {
 	if _, ok := c.raftPeersAttr[id]; ok {
 		return errors.New("")
 	}
 	c.raftPeersAttr[id] = babuzapb.RaftPeerAttribute{
 		Id:             id,
 		RaftListenAddr: raftListenAddr,
+		IsLearner:      isLearner,
 	}
-
 	return nil
 }
 
@@ -88,20 +88,17 @@ func (c *PeersConfiguration) Validate() error {
 	endpointSet := make(map[string]struct{})
 	for _, raftPeerAttr := range c.raftPeersAttr {
 		if raftPeerAttr.Id == 0 {
-			return fmt.Errorf("PeersConfiguration: empty peer id in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: empty peer id in config: %v", *c)
 		}
 		if raftPeerAttr.RaftListenAddr == "" {
-			return fmt.Errorf("PeersConfiguration: empty RaftListenAddr in votingPeersCfg: %v", *c)
-		}
-		if raftPeerAttr.IsLearner {
-			return fmt.Errorf("PeersConfiguration: peer can not be a learner in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: empty RaftListenAddr in config: %v", *c)
 		}
 		if _, ok := idSet[raftPeerAttr.Id]; ok {
-			return fmt.Errorf("PeersConfiguration: found duplicate ID in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: found duplicate ID in config: %v", *c)
 		}
 		idSet[raftPeerAttr.Id] = struct{}{}
 		if _, ok := endpointSet[raftPeerAttr.RaftListenAddr]; ok {
-			return fmt.Errorf("PeersConfiguration: found duplicate RaftListenAddr in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: found duplicate RaftListenAddr in config: %v", *c)
 		}
 		endpointSet[raftPeerAttr.RaftListenAddr] = struct{}{}
 	}
