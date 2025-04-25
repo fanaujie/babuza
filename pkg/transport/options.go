@@ -9,6 +9,7 @@ type Options struct {
 	PeerLimiterMaxBatchMessageSize int64
 	PeerQueueSize                  int64
 	PeerSnapshotChunkSize          int64
+	PeerQueuePoolSize              int
 }
 
 func DefaultOptions() Options {
@@ -17,6 +18,7 @@ func DefaultOptions() Options {
 		PeerLimiterMaxBatchMessageSize: 3 * 1024 * 1024,
 		PeerQueueSize:                  256,
 		PeerSnapshotChunkSize:          3 * 1024 * 1024,
+		PeerQueuePoolSize:              8,
 	}
 }
 
@@ -43,6 +45,12 @@ func SetTransportOptionsWithPeerQueueSize(d int64) SetTransportOptions {
 func SetTransportOptionsWithPeerSnapshotChunkSize(d int64) SetTransportOptions {
 	return func(opt *Options) {
 		opt.PeerSnapshotChunkSize = d
+	}
+}
+
+func SetTransportOptionsWithPeerQueuePoolSize(d int) SetTransportOptions {
+	return func(opt *Options) {
+		opt.PeerQueuePoolSize = d
 	}
 }
 
