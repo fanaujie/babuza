@@ -16,11 +16,6 @@ type manualSnapshot struct {
 	resultCh chan SnapshotResult
 }
 
-func (r *Raft) ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) (*raftpb.ConfState, error) {
-	// raftNode is thread safe, so we can call ApplyConfChange concurrently
-	return r.raftNode.ApplyConfChange(cc), nil
-}
-
 func (r *Raft) processStateMachine() {
 	for {
 		select {
@@ -39,17 +34,7 @@ func (r *Raft) processStateMachine() {
 			r.triggerSnapshot(ctx, s.resultCh)
 		case ap := <-r.applyCh:
 			r.applySnapshot(ap.snapshot)
-			if r.applyEntries(ap.entries) {
-				close(r.removeSelfCh)
-				select {
-				case <-r.shutdownCh: //already shutdown
-				default:
-					time.AfterFunc(time.Second, func() {
-						r.stop()
-					})
-				}
-				return
-			}
+			r.applyEntries(ap.entries)
 			if r.status.GetAppliedIndex()-r.status.GetSnapshotIndex() < r.config.SnapshotCount {
 				continue
 			}
@@ -63,18 +48,14 @@ func (r *Raft) processStateMachine() {
 	}
 }
 
-func (r *Raft) applyEntries(entries []raftpb.Entry) bool {
-	removeSelf := false
+func (r *Raft) applyEntries(entries []raftpb.Entry) {
 	defer func() {
 		appliedIndex := r.status.GetAppliedIndex()
 		r.completionReplier.MarkCompleted(appliedIndex)
 		r.metricsCollector.SetProposalAppliedIndex(appliedIndex)
 	}()
-	for pos := 0; pos < len(entries); pos++ {
-		if removeSelf {
-			break
-		}
-		entry := entries[pos]
+	length := len(entries)
+	for _, entry := range entries {
 		if len(entry.Data) == 0 {
 			r.appliedFacade.ApplyNilEntryInNewTerm(entry.Index, entry.Term)
 		} else {
@@ -87,16 +68,16 @@ func (r *Raft) applyEntries(entries []raftpb.Entry) bool {
 					r.metricsCollector.RecordApplySec(time.Since(now).Seconds())
 				}
 			case raftpb.EntryConfChange:
-				removeSelf = r.appliedFacade.ApplyConfChangeEntry(entry)
-				if removeSelf {
-					break
-				}
+				// do nothing, just apply conf change entry before
 			default:
 				r.logger.Panicf("raft[id=%d]: not support raft toApplyEntry type %d", r.cluster.LocalPeerID(), uint64(entry.Type))
 			}
 		}
 	}
-	return removeSelf
+	if length > 0 {
+		r.status.SetAppliedTerm(entries[length-1].Term)
+		r.status.SetAppliedIndex(entries[length-1].Index)
+	}
 }
 
 func (r *Raft) applySnapshot(snap raftpb.Snapshot) {

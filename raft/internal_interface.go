@@ -68,6 +68,6 @@ type InternalCompletionReplier interface {
 type InternalAppliedFacade interface {
 	ApplyNilEntryInNewTerm(index, term uint64)
 	ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry
-	ApplyConfChangeEntry(entry raftpb.Entry) bool
+	ApplyConfChangeEntry(entry raftpb.Entry) (*raftpb.ConfState, bool)
 	SendStateMachineAppliedResult(e *Entry, ar ibabuza.ApplyResult)
 }
