@@ -9,7 +9,6 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
-	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
 	"github.com/fanaujie/babuza/pkg/transport"
 	"github.com/fanaujie/babuza/pkg/transport/protocol"
@@ -131,7 +130,7 @@ func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 								SetClusterId(config.BubuzaConfig.ClusterID).
 								SetStorageRootDir(storageDir).
 								AddTransportOptions(transport.SetTransportOptionsWithPeerSnapshotChunkSize(
-									int64(chunkSize))).SetCustomLogger(&logger.Mock{})
+									int64(chunkSize)))
 							if snapshotType == builder.MinIOSnapshot {
 								// If using MinIO and gRPC, the chunk size must be greater than 5MB.
 								// If the number of chunks is greater than 1, the chunk size must be greater than 5MB.

@@ -100,12 +100,12 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 	}
 	r.trans.RemovePeers()
 	for _, p := range r.cluster.Peers() {
-		if p.RaftPeerAttr.Id == r.cluster.ClusterID() {
+		if p.RaftPeerAttr.Id == r.cluster.LocalPeerID() {
 			continue
 		}
 		r.trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)
 	}
-	r.logger.Infof("raft[id=%d]: applyEntry done for apply snapshot to storage (snapshot index=%d)",
+	r.logger.Infof("raft[id=%d]: snapshot applied to storage successfully (index=%d)",
 		r.cluster.LocalPeerID(), snap.Metadata.Index)
 
 	r.status.SetAppliedTerm(snap.Metadata.Term)

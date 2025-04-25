@@ -102,8 +102,6 @@ func (r *Raft) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
 			}
 			if confState != nil {
 				r.status.SetConfState(*confState)
-			} else {
-				r.logger.Errorf("raft[id=%d]: apply conf change entry failed", r.cluster.LocalPeerID())
 			}
 		}
 	}
