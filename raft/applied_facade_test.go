@@ -141,35 +141,6 @@ func (m *mockApplyReplier) SendResult(replyID uint64, ar ibabuza.ApplyResult) {
 	m.reply[replyID] = ar
 }
 
-type mockApplyStatus struct {
-	index          uint64
-	term           uint64
-	state          raftpb.ConfState
-	hardStateTerm  uint64
-	pubServiceDone bool
-}
-
-func newMockApplyStatus() *mockApplyStatus {
-	return &mockApplyStatus{}
-}
-
-func (m *mockApplyStatus) SetAppliedIndex(v uint64) {
-	m.index = v
-}
-func (m *mockApplyStatus) SetAppliedTerm(v uint64) {
-	m.term = v
-}
-func (m *mockApplyStatus) SetConfState(s raftpb.ConfState) {
-	m.state = s
-}
-func (m *mockApplyStatus) GetHardStateTerm() uint64 {
-	return m.hardStateTerm
-}
-
-func (m *mockApplyStatus) IsLocalPeerPublishServiceMarkDone() bool {
-	return m.pubServiceDone
-}
-
 type mockApplyCluster struct {
 	localId    uint64
 	peers      map[uint64]babuzapb.Peer
@@ -263,7 +234,6 @@ func TestApplier_DoExactlyOnce(t *testing.T) {
 	sessionMgr := newMockApplySessionManager()
 	replier := newMockApplyReplier()
 	a := appliedFacadeImpl{
-		status:              &mockApplyStatus{},
 		firstCommitNotifier: &mockApplyNotifier{},
 		sessionMgr:          sessionMgr,
 		replier:             replier,
@@ -350,9 +320,7 @@ func TestApplier_DoExactlyOnce(t *testing.T) {
 
 func TestApplier_ApplyNilEntryInNewTerm(t *testing.T) {
 	notifier := &mockApplyNotifier{}
-	status := newMockApplyStatus()
 	a := appliedFacadeImpl{
-		status:              status,
 		firstCommitNotifier: notifier,
 		sessionMgr:          newMockApplySessionManager(),
 		replier:             newMockApplyReplier(),
@@ -364,8 +332,6 @@ func TestApplier_ApplyNilEntryInNewTerm(t *testing.T) {
 
 	a.ApplyNilEntryInNewTerm(1, 1)
 	assert.Equal(t, true, notifier.close)
-	assert.Equal(t, uint64(1), status.index)
-	assert.Equal(t, uint64(1), status.term)
 }
 
 func TestApplier_ApplyNormalEntry(t *testing.T) {
@@ -382,10 +348,8 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 	t.Run("register session", func(t *testing.T) {
 
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 
-		a.status = status
 		a.replier = replier
 		a.sessionMgr = sessionMgr
 
@@ -406,9 +370,6 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 		entry := a.ApplyNormalEntry(e)
 		assert.Nil(t, entry)
 
-		assert.Equal(t, status.index, e.Index)
-		assert.Equal(t, status.term, e.Term)
-
 		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		assert.Equal(t, e.Index, ar.LogIndex)
@@ -419,10 +380,8 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 
 	t.Run("valid session and sequence number", func(t *testing.T) {
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 
-		a.status = status
 		a.replier = replier
 		a.sessionMgr = sessionMgr
 
@@ -455,10 +414,8 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 
 	t.Run("not found session", func(t *testing.T) {
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 
-		a.status = status
 		a.replier = replier
 		a.sessionMgr = sessionMgr
 
@@ -480,8 +437,6 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 		}
 		entry := a.ApplyNormalEntry(e)
 		assert.Nil(t, entry)
-		assert.Equal(t, status.term, e.Term)
-		assert.Equal(t, status.index, e.Index)
 
 		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
@@ -490,10 +445,8 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 
 	t.Run("session: exactly-once", func(t *testing.T) {
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 
-		a.status = status
 		a.replier = replier
 		a.sessionMgr = sessionMgr
 
@@ -523,8 +476,6 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 		}
 		entry := a.ApplyNormalEntry(e)
 		assert.Nil(t, entry)
-		assert.Equal(t, status.term, e.Term)
-		assert.Equal(t, status.index, e.Index)
 		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		assert.Equal(t, "hello", ar.Response.(string))
@@ -533,10 +484,8 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 	t.Run("no operation session", func(t *testing.T) {
 		smAdaptor := &mockApplyStateMachineAdaptor{}
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 		a.storage = smAdaptor
-		a.status = status
 		a.replier = replier
 		a.sessionMgr = sessionMgr
 
@@ -565,10 +514,8 @@ func TestApplier_ApplyNormalEntry(t *testing.T) {
 			index: 10,
 		}
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 		a.storage = smAdaptor
-		a.status = status
 		a.replier = replier
 		a.sessionMgr = sessionMgr
 
@@ -617,12 +564,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 	t.Run("valid session and sequence number", func(t *testing.T) {
 
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 		cl := newMockApplyCluster()
 		trans := newMockApplyTransport()
 
-		a.status = status
 		a.replier = replier
 		a.cluster = cl
 		a.trans = trans
@@ -658,10 +603,8 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 			Type:  raftpb.EntryConfChange,
 			Data:  data,
 		}
-		removeSelf := a.ApplyConfChangeEntry(e)
+		_, removeSelf := a.ApplyConfChangeEntry(e)
 		assert.Equal(t, false, removeSelf)
-		assert.Equal(t, status.index, e.Index)
-		assert.Equal(t, status.term, e.Term)
 		_, ok := cl.peers[addPeerId]
 		assert.Equal(t, true, ok)
 		_, ok = trans.resolver[addPeerId]
@@ -676,12 +619,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 	t.Run("not found session", func(t *testing.T) {
 
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 		cl := newMockApplyCluster()
 		trans := newMockApplyTransport()
 
-		a.status = status
 		a.replier = replier
 		a.cluster = cl
 		a.trans = trans
@@ -712,11 +653,9 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 			Data:  data,
 		}
 
-		removeSelf := a.ApplyConfChangeEntry(e)
+		_, removeSelf := a.ApplyConfChangeEntry(e)
 		assert.Equal(t, false, removeSelf)
 
-		assert.Equal(t, status.index, e.Index)
-		assert.Equal(t, status.term, e.Term)
 		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		assert.Error(t, ar.Error)
@@ -724,12 +663,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 
 	t.Run("session: exactly-once", func(t *testing.T) {
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 		cl := newMockApplyCluster()
 		trans := newMockApplyTransport()
 
-		a.status = status
 		a.replier = replier
 		a.cluster = cl
 		a.trans = trans
@@ -771,11 +708,9 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 			Data:  data,
 		}
 
-		removeSelf := a.ApplyConfChangeEntry(e)
+		_, removeSelf := a.ApplyConfChangeEntry(e)
 
 		assert.Equal(t, false, removeSelf)
-		assert.Equal(t, status.index, e.Index)
-		assert.Equal(t, status.term, e.Term)
 		ar1, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
 		ar2, ok := sess.GetResult(seqNum)
@@ -786,12 +721,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 
 	t.Run("no operation session", func(t *testing.T) {
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 		cl := newMockApplyCluster()
 		trans := newMockApplyTransport()
 
-		a.status = status
 		a.replier = replier
 		a.cluster = cl
 		a.trans = trans
@@ -820,10 +753,8 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 			Type:  raftpb.EntryConfChange,
 			Data:  data,
 		}
-		removeSelf := a.ApplyConfChangeEntry(e)
+		_, removeSelf := a.ApplyConfChangeEntry(e)
 		assert.Equal(t, false, removeSelf)
-		assert.Equal(t, status.index, e.Index)
-		assert.Equal(t, status.term, e.Term)
 
 		_, ok := cl.peers[addPeerId]
 		assert.Equal(t, true, ok)
@@ -846,10 +777,8 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 			Type:  raftpb.EntryConfChange,
 			Data:  data,
 		}
-		removeSelf = a.ApplyConfChangeEntry(e)
+		_, removeSelf = a.ApplyConfChangeEntry(e)
 		assert.Equal(t, false, removeSelf)
-		assert.Equal(t, status.index, e.Index)
-		assert.Equal(t, status.term, e.Term)
 
 		ar, ok := replier.reply[req.Context.ReplyID]
 		assert.Equal(t, true, ok)
@@ -859,12 +788,10 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 
 	t.Run("remove self: no operation session", func(t *testing.T) {
 		sessionMgr := newMockApplySessionManager()
-		status := newMockApplyStatus()
 		replier := newMockApplyReplier()
 		cl := newMockApplyCluster()
 		trans := newMockApplyTransport()
 
-		a.status = status
 		a.replier = replier
 		a.cluster = cl
 		a.trans = trans
@@ -899,11 +826,9 @@ func TestApplier_ApplyConfChangeEntry(t *testing.T) {
 			Type:  raftpb.EntryConfChange,
 			Data:  data,
 		}
-		removeSelf := a.ApplyConfChangeEntry(e)
+		_, removeSelf := a.ApplyConfChangeEntry(e)
 		assert.Equal(t, true, removeSelf)
 
-		assert.Equal(t, status.index, e.Index)
-		assert.Equal(t, status.term, e.Term)
 		_, ok := cl.peers[removePeerId]
 		assert.Equal(t, false, ok)
 		_, ok = trans.resolver[removePeerId]

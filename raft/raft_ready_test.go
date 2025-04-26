@@ -2,7 +2,6 @@ package raft
 
 import (
 	"github.com/fanaujie/babuza/pkg/logger"
-	"github.com/fanaujie/babuza/pkg/replier"
 	"github.com/fanaujie/babuza/pkg/status"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3"
@@ -47,99 +46,6 @@ func TestRaft_Ready(t *testing.T) {
 		case <-tr.readStateCh:
 		}
 	})
-}
-
-func TestRaft_Ready_FollowerWaitConfigChanged(t *testing.T) {
-	localPeerID := uint64(1)
-	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerID)
-	tr.raftNode = etcdRaftNode
-	trans := &mockTransport{}
-	tr.trans = trans
-	tr.storage = &mockStorageMgr{}
-	tr.status = status.New()
-	tr.completionReplier = replier.NewCompletion()
-	tr.closer.Run(func() {
-		tr.processRaftReady()
-	})
-
-	defer tr.closer.Close()
-
-	t.Run("follower: waiting for votingPeersCfg changed ", func(t *testing.T) {
-		etcdRaftNode.readyCh <- raft.Ready{
-			SoftState: &raft.SoftState{
-				Lead:      localPeerID + 1,
-				RaftState: raft.StateFollower,
-			},
-		}
-
-		etcdRaftNode.readyCh <- raft.Ready{
-			CommittedEntries: []raftpb.Entry{
-				{
-					Term:  1,
-					Index: 5,
-					Type:  raftpb.EntryConfChange,
-					Data:  nil,
-				},
-				{
-					Term:  1,
-					Index: 6,
-					Type:  raftpb.EntryConfChange,
-					Data:  nil,
-				},
-			},
-			Messages: []raftpb.Message{
-				{
-					Type: raftpb.MsgHeartbeatResp,
-				},
-			},
-		}
-
-		go func() {
-			a := <-tr.applyCh
-			lastApplyIndex := uint64(0)
-			for _, e := range a.entries {
-				lastApplyIndex = e.Index
-			}
-			tr.completionReplier.MarkCompleted(lastApplyIndex)
-		}()
-		<-time.After(time.Second)
-		assert.Equal(t, raftpb.MsgHeartbeatResp, trans.send[0].Type)
-	})
-
-	t.Run("follower: no votingPeersCfg changed", func(t *testing.T) {
-		etcdRaftNode.readyCh <- raft.Ready{
-			SoftState: &raft.SoftState{
-				Lead:      localPeerID + 1,
-				RaftState: raft.StateFollower,
-			},
-		}
-
-		etcdRaftNode.readyCh <- raft.Ready{
-			CommittedEntries: []raftpb.Entry{
-				{
-					Term:  1,
-					Index: 5,
-					Type:  raftpb.EntryNormal,
-					Data:  nil,
-				},
-				{
-					Term:  1,
-					Index: 6,
-					Type:  raftpb.EntryNormal,
-					Data:  nil,
-				},
-			},
-			Messages: []raftpb.Message{
-				{
-					Type: raftpb.MsgHeartbeatResp,
-				},
-			},
-		}
-		<-time.After(time.Second)
-		assert.Equal(t, raftpb.MsgHeartbeatResp, trans.send[0].Type)
-	})
-
 }
 
 func TestRaft_SendRaftMessage(t *testing.T) {

@@ -44,14 +44,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 		d.logger.Warningf("raft[id=%d] received snapshot message with different peer id(%d)", d.cluster.LocalPeerID(), msg.To)
 		return
 	}
-	if bFinish, err := d.storage.ReceiveSnapshotMessage(msg); err != nil {
-		d.logger.Warningf("raft[id=%d] failed to receiveSnapshotMessage. err(%s)", d.cluster.LocalPeerID(), err.Error())
-	} else if bFinish {
-		d.logger.Infof("raft[id=%d] received finish snapshot message (snapshot index=%d)", d.cluster.LocalPeerID(), msg.Index)
-		if err = d.raftNode.Step(context.TODO(), msg.FinishMessage); err != nil {
-			d.logger.Warningf("raft[id=%d] step err(%s)", d.cluster.LocalPeerID(), err.Error())
-		}
-	}
+	d.receivedSnapshotNsgCh <- msg
 }
 
 func (d *transportProcessor) GetClusterPeer(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
@@ -151,4 +144,26 @@ func (d *transportProcessor) CreateSnapshotReader(snapshotIndex uint64) (ibabuza
 func (d *transportProcessor) isPeerInCluster(peerID uint64) bool {
 	//TODO: implement this
 	return true
+}
+
+func (r *Raft) processReceivedSnapshotMessage() {
+	for {
+		select {
+		case <-r.closer.CloseCh():
+			return
+		case msg := <-r.receivedSnapshotNsgCh:
+			if bFinish, err := r.storage.ReceiveSnapshotMessage(msg); err != nil {
+				r.logger.Warningf("raft[id=%d] failed to receiveSnapshotMessage. err(%s)",
+					r.cluster.LocalPeerID(), err.Error())
+			} else if bFinish {
+				r.logger.Infof("raft[id=%d] received finish snapshot message (snapshot index=%d)",
+					r.cluster.LocalPeerID(), msg.Index)
+				if err = r.raftNode.Step(context.TODO(), msg.FinishMessage); err != nil {
+					r.logger.Errorf("raft[id=%d] step err(%s)", r.cluster.LocalPeerID(), err.Error())
+				}
+			}
+		case <-r.closer.CloseCh():
+			return
+		}
+	}
 }

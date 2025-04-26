@@ -73,28 +73,34 @@ func (c *BasicSendSnapshotToFollower) Run(tc *testcluster.BabuzaCluster, testPar
 			s.LastSnapshotTerm > 0
 	}))
 
-	// Add a new follower to the cluster that will receive a snapshot
-	newFollowerId := uint64(4)
-	newFollower := makeSingleStandardPeer(newFollowerId, false)
-	connectGroup.Add(newFollowerId)
+	newFollowers := make([]testcluster.Peer, 0)
+	for i := 0; i < 3; i++ {
+		// Add a new follower to the cluster that will receive a snapshot
+		newFollowerId := uint64(4 + i)
+		newFollower := makeSingleStandardPeer(newFollowerId, false)
+		newFollowers = append(newFollowers, newFollower)
+		connectGroup.Add(newFollowerId)
+		// Join the new node to the cluster - it should receive a snapshot
+		assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, newFollower, connectGroup.GetIDs()))
+	}
 
-	// Join the new node to the cluster - it should receive a snapshot
-	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, newFollower, connectGroup.GetIDs()))
-
-	// Check if the new follower properly joined
-	assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderID, newFollower)
-	}))
+	for _, newFollower := range newFollowers {
+		// Check if the new follower properly joined
+		assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
+			return tc.CheckPeerExists(ctx, leaderID, newFollower)
+		}))
+	}
 
 	// Wait a bit for snapshot transfer to complete
 	time.Sleep(time.Second)
 
-	// Verify the snapshot was transferred properly to the new follower
-	assert.Nil(c.t, tc.CheckStatus(wait, newFollowerId, func(s babuza.Status) bool {
-		return s.LastSnapshotIndex == lastSnapshotIndex &&
-			s.LastSnapshotTerm == lastSnapshotTerm
-	}))
-
+	for _, newFollower := range newFollowers {
+		// Verify the snapshot was transferred properly to the new follower
+		assert.Nil(c.t, tc.CheckStatus(wait, newFollower.ID(), func(s babuza.Status) bool {
+			return s.LastSnapshotIndex == lastSnapshotIndex &&
+				s.LastSnapshotTerm == lastSnapshotTerm
+		}))
+	}
 	// Write additional data with the new follower in the cluster
 	for i := uint64(100); i < 108; i++ {
 		assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {

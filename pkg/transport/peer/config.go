@@ -9,5 +9,5 @@ type RaftPeerConfig struct {
 	SnapshotChunkSize          int64
 	RaftMsgQueueSize           int64
 	DialTimeout                time.Duration
-	SendSnapshotChunkInterval  time.Duration
+	QueuePoolSize              int
 }

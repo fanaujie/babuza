@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+func (r *Raft) ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) (*raftpb.ConfState, error) {
+	return r.raftNode.ApplyConfChange(cc), nil
+}
+
 func (r *Raft) processRaftReady() {
 	isLeader := false
 	ticker := time.NewTicker(time.Duration(r.config.LogicalTickMs) * time.Millisecond)
@@ -45,6 +49,17 @@ func (r *Raft) processRaftReady() {
 
 			emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
 			if len(rd.CommittedEntries) > 0 || !emptySnapshot {
+				if r.applyConfChangeEntry(rd.CommittedEntries) {
+					close(r.removeSelfCh)
+					select {
+					case <-r.shutdownCh: //already shutdown
+					default:
+						time.AfterFunc(time.Second, func() {
+							r.stop()
+						})
+					}
+					return
+				}
 				select {
 				case <-r.closer.CloseCh():
 					return
@@ -72,33 +87,25 @@ func (r *Raft) processRaftReady() {
 				r.logger.Panicf("raft[id=%d]: append entries failed: %v", r.cluster.LocalPeerID(), err)
 			}
 			if !isLeader {
-
-				// Candidate or follower needs to wait for all pending configuration
-				// changes to be applied before sending messages.
-				// Otherwise we might incorrectly count votes (e.g. votes from removed members).
-				// Also slow machine's follower raft-layer could proceed to become the leader
-				// on its own single-node cluster, before apply-layer applies the config change.
-				// We simply wait for ALL pending entries to be applied for now.
-				// We might improve this later on if it causes unnecessary long blocking issues.
-				var lastConfChangIndex uint64
-				for i := range rd.CommittedEntries {
-					e := &rd.CommittedEntries[i]
-					if raftpb.EntryConfChange == e.Type {
-						lastConfChangIndex = e.Index
-					}
-				}
-				if lastConfChangIndex > 0 {
-					select {
-					case <-r.completionReplier.AcquireCompletionChan(lastConfChangIndex):
-					case <-r.closer.CloseCh():
-						return
-					}
-				}
 				r.sendRaftMessage(rd.Messages)
 			}
 			r.raftNode.Advance()
 		}
 	}
+}
+func (r *Raft) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
+	for _, entry := range committedEntries {
+		if entry.Type == raftpb.EntryConfChange {
+			confState, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
+			if removeSelf {
+				return true
+			}
+			if confState != nil {
+				r.status.SetConfState(*confState)
+			}
+		}
+	}
+	return false
 }
 
 func (r *Raft) sendRaftMessage(msgs []raftpb.Message) {

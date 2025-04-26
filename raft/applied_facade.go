@@ -57,7 +57,6 @@ type AppliedTransport interface {
 
 type appliedFacadeImpl struct {
 	storage             AppliedStorage
-	status              AppliedStatus
 	firstCommitNotifier AppliedFirstCommitInTermNotifier
 	sessionMgr          AppliedSessionManager
 	replier             AppliedReplier
@@ -68,13 +67,11 @@ type appliedFacadeImpl struct {
 	metricsCollector    ibabuza.MetricsCollector
 }
 
-func NewAppliedFacade(storage AppliedStorage, status AppliedStatus,
-	firstCommitNotifier AppliedFirstCommitInTermNotifier, sessionMgr AppliedSessionManager,
+func NewAppliedFacade(storage AppliedStorage, firstCommitNotifier AppliedFirstCommitInTermNotifier, sessionMgr AppliedSessionManager,
 	replier AppliedReplier, cluster AppliedCluster, raftNode AppliedRaftNode, trans AppliedTransport,
 	log ibabuza.Logger, metricsCollector ibabuza.MetricsCollector) InternalAppliedFacade {
 	return &appliedFacadeImpl{
 		storage:             storage,
-		status:              status,
 		firstCommitNotifier: firstCommitNotifier,
 		sessionMgr:          sessionMgr,
 		replier:             replier,
@@ -90,7 +87,6 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 
 	return &appliedFacadeImpl{
 		storage:             r.storage,
-		status:              r.status,
 		firstCommitNotifier: r.firstCommitInTermNotifier,
 		sessionMgr:          r.sessionMgr,
 		replier:             r.resultReplier,
@@ -104,8 +100,6 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 
 func (a *appliedFacadeImpl) ApplyNilEntryInNewTerm(index, term uint64) {
 	a.firstCommitNotifier.CloseAndRenew()
-	a.status.SetAppliedIndex(index)
-	a.status.SetAppliedTerm(term)
 }
 
 func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry {
@@ -128,7 +122,6 @@ func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry {
 	}
 	toApply, session := a.doExactlyOnce(e.Index, reqTime, req.Context)
 	if !toApply || e.Index <= a.storage.GetStateMachineAppliedIndex() {
-		a.updateAppliedIndexAndTerm(e.Index, e.Term)
 		return nil
 	}
 	return NewEntry(
@@ -143,7 +136,7 @@ func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry {
 	)
 }
 
-func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) bool {
+func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) (*raftpb.ConfState, bool) {
 	cc, confReq, err := a.parseConfChangeEntry(entry)
 	if err != nil {
 		a.log.Panicf("Failed to parse conf change: %v", err)
@@ -151,20 +144,16 @@ func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) bool {
 	reqTime := time.Now().UnixNano()
 	toApply, session := a.doExactlyOnce(entry.Index, reqTime, confReq.Context)
 	if !toApply {
-		a.updateAppliedIndexAndTerm(entry.Index, entry.Term)
-		return false
+		return nil, false
 	}
-	removeSelf, err := a.processConfChange(cc, confReq)
+	confChange, removeSelf, err := a.processConfChange(cc, confReq)
 	a.sendConfChangeResult(session, confReq.Context, entry.Index, err)
-	a.updateAppliedIndexAndTerm(entry.Index, entry.Term)
-	return removeSelf
+	return confChange, removeSelf
 }
 
 func (a *appliedFacadeImpl) SendStateMachineAppliedResult(e *Entry, ar ibabuza.ApplyResult) {
 	index := e.Index()
 	a.replier.SendResult(e.ReplyId(), ar)
-	a.status.SetAppliedTerm(e.Term())
-	a.status.SetAppliedIndex(index)
 	a.storage.SetStateMachineAppliedIndex(index)
 	e.Release()
 }
@@ -232,18 +221,16 @@ func (a *appliedFacadeImpl) parseConfChangeEntry(entry raftpb.Entry) (raftpb.Con
 	return cc, confReq, nil
 }
 
-func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babuzapb.ConfChangeRequest) (bool, error) {
+func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babuzapb.ConfChangeRequest) (*raftpb.ConfState, bool, error) {
 	if err := a.clusterValidateAndApply(cc.Type, confReq); err != nil {
 		cc.NodeID = raft.None
 		_, _ = a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
-		return false, err
+		return nil, false, err
 	}
 	applyResult, err := a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
-	a.status.SetConfState(*applyResult)
-
 	var removeSelf bool
 
 	switch cc.Type {
@@ -271,7 +258,7 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 		}
 	}
 
-	return removeSelf, nil
+	return applyResult, removeSelf, nil
 }
 
 func (a *appliedFacadeImpl) sendConfChangeResult(session ibabuza.Session, ctx babuzapb.RequestContext, index uint64,
@@ -289,7 +276,6 @@ func (a *appliedFacadeImpl) handleSessionRegister(e raftpb.Entry, req babuzapb.N
 	a.replier.SendResult(req.Context.ReplyID, ibabuza.ApplyResult{
 		LogIndex: e.Index,
 	})
-	a.updateAppliedIndexAndTerm(e.Index, e.Term)
 }
 
 func (a *appliedFacadeImpl) handlePubAppService(e raftpb.Entry, req babuzapb.NormalRequest) {
@@ -302,10 +288,4 @@ func (a *appliedFacadeImpl) handlePubAppService(e raftpb.Entry, req babuzapb.Nor
 		LogIndex: e.Index,
 		Response: result,
 	})
-	a.updateAppliedIndexAndTerm(e.Index, e.Term)
-}
-
-func (a *appliedFacadeImpl) updateAppliedIndexAndTerm(index, term uint64) {
-	a.status.SetAppliedIndex(index)
-	a.status.SetAppliedTerm(term)
 }
