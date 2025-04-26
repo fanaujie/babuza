@@ -4,14 +4,19 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
+	"github.com/fanaujie/babuza/pkg/transport"
+	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
 	"github.com/fanaujie/babuza/test/testcluster"
+	"github.com/testcontainers/testcontainers-go/modules/minio"
 	"io"
 	"time"
 )
@@ -100,6 +105,151 @@ func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
 			})
 		}
 	}
+	return components
+}
+
+type minioContainer struct {
+	minioContainer *minio.MinioContainer
+	setupFunc      func() (*minio.MinioContainer, error)
+	deferFunc      func()
+}
+
+func (m *minioContainer) Setup() error {
+	c, err := minio.Run(context.Background(), "minio/minio:latest",
+		minio.WithUsername("minioroot"), minio.WithPassword("miniopassword"))
+	if err != nil {
+		return err
+	}
+	m.minioContainer = c
+	return nil
+}
+
+func (m *minioContainer) Defer() error {
+	if m.minioContainer != nil {
+		return m.minioContainer.Terminate(context.Background())
+	}
+	return errors.New("minio container is nil")
+}
+
+func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
+	// Create components for all combinations we want to test
+	var components []BabuzaComponent
+
+	// Test cases to test session validity across leadership changes
+	testCases := []struct {
+		caseName            string
+		sessionType         string
+		stateMachineCreator func(string) ibabuza.BaseStateMachine
+	}{
+		{
+			caseName:    "memory store with lru session",
+			sessionType: builder.LRUSession,
+			stateMachineCreator: func(s string) ibabuza.BaseStateMachine {
+				return kvstore.NewMemoryStoreWithSession()
+			},
+		},
+		{
+			caseName:    "memory store with expired session",
+			sessionType: builder.ExpireSession,
+			stateMachineCreator: func(s string) ibabuza.BaseStateMachine {
+				return kvstore.NewMemoryStoreWithSession()
+			},
+		},
+		{
+			caseName:    "memory store with session and concurrent snapshot",
+			sessionType: builder.LRUSession,
+			stateMachineCreator: func(s string) ibabuza.BaseStateMachine {
+				return kvstore.NewMemoryStoreWithConcurrentSnapshotAndSession()
+			},
+		},
+		{
+			caseName:    "memory store with expired session and concurrent snapshot",
+			sessionType: builder.ExpireSession,
+			stateMachineCreator: func(s string) ibabuza.BaseStateMachine {
+				return kvstore.NewMemoryStoreWithConcurrentSnapshotAndSession()
+			},
+		},
+		{
+			caseName:    "disk store with lru session",
+			sessionType: builder.LRUSession,
+			stateMachineCreator: func(s string) ibabuza.BaseStateMachine {
+				return kvstore.NewDiskStoreWithSession(s)
+			},
+		},
+		{
+			caseName:    "disk store with expired session",
+			sessionType: builder.ExpireSession,
+			stateMachineCreator: func(s string) ibabuza.BaseStateMachine {
+				return kvstore.NewDiskStoreWithSession(s)
+			},
+		},
+	}
+
+	// Create a BabuzaComponent for each test case
+	for _, tc := range testCases {
+		for _, snapshotType := range []string{builder.DurableSnapshot, builder.MinIOSnapshot} {
+			for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
+				var mc *minioContainer
+				if snapshotType == builder.MinIOSnapshot {
+					mc = &minioContainer{}
+				}
+				components = append(components, BabuzaComponent{
+					InitFunc: func() error {
+						if mc == nil {
+							return nil
+						}
+						return mc.Setup()
+					},
+					DeferFunc: func() error {
+						if mc == nil {
+							return nil
+						}
+						return mc.Defer()
+					},
+					CaseName:           "BasicTest: 3nodes-" + transportType + "-BabuzaWal-" + snapshotType + "-" + tc.caseName,
+					ClusterId:          1,
+					CreateStateMachine: tc.stateMachineCreator,
+					CreateCustomComponent: func(snapshotType, sessionType, transportType string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+						return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+							config.BubuzaConfig.SnapshotCount = snapshotCount
+							chunkSize := 5 * 1024 * 1024
+							b := customBabuzaComponent(sessionType, builder.BabuzaWal, snapshotType,
+								transportType, proxyNet).
+								SetClusterId(config.BubuzaConfig.ClusterID).
+								SetStorageRootDir(storageDir).
+								AddTransportOptions(transport.SetTransportOptionsWithPeerSnapshotChunkSize(
+									int64(chunkSize)))
+							if transportType == builder.GRPCTransport {
+								b.AddGrpcOptions(protocol.SetGrpcOptsWithRecvMsgMaxSize(
+									int(float32(chunkSize) * 1.2)))
+							}
+							if snapshotType == builder.MinIOSnapshot {
+								// If using MinIO and gRPC, the chunk size must be greater than 5MB.
+								// If the number of chunks is greater than 1, the chunk size must be greater than 5MB.
+								// This is a limitation of MinIO's compose functionality.
+								endpoint, err := mc.minioContainer.ConnectionString(context.Background())
+								if err != nil {
+									panic(err)
+								}
+								b.SetMinIOConfig(&cloudstorage.Config{
+									Endpoint:        endpoint,
+									AccessKeyID:     mc.minioContainer.Username,
+									SecretAccessKey: mc.minioContainer.Password,
+									UseSSL:          false,
+									Bucket:          "test-bucket",
+									Prefix:          "snapshot",
+								})
+							}
+							return *config, *b.Build()
+						}
+					}(snapshotType, tc.sessionType, transportType),
+					ProxyNetwork: nil,
+				})
+			}
+		}
+
+	}
+
 	return components
 }
 
