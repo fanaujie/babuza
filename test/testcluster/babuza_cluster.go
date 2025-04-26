@@ -494,17 +494,17 @@ func (c *BabuzaCluster) findConsensusLeader(peerIDs []uint64) (uint64, uint64, b
 		}
 
 		status := controller.app.Raft().Status()
-		if status.LeaderId == babuza.None {
+		if status.LeaderID == babuza.None {
 			return 0, 0, false
 		}
 
 		if term == 0 {
 			term = status.RaftTerm
-			leaderID = status.LeaderId
+			leaderID = status.LeaderID
 			continue
 		}
 
-		if term != status.RaftTerm || leaderID != status.LeaderId {
+		if term != status.RaftTerm || leaderID != status.LeaderID {
 			return 0, 0, false
 		}
 	}
@@ -523,9 +523,9 @@ func (c *BabuzaCluster) hasLeader(peerIDs []uint64) bool {
 			continue
 		}
 		status := controller.app.Raft().Status()
-		if status.LeaderId != babuza.None {
+		if status.LeaderID != babuza.None {
 			for _, id = range peerIDs {
-				if id == status.LeaderId {
+				if id == status.LeaderID {
 					return true
 				}
 			}

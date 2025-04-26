@@ -2,36 +2,12 @@ package ibabuza
 
 import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 )
 
 type RaftGroupID uint64
-type NodeID uint64
-
-type MultiRaftSchedulerQueue interface {
-	EnqueueBatchTickState(groupIDs []RaftGroupID) error
-	EnqueueState(groupID RaftGroupID, state int) error
-	Start() error
-	Stop()
-}
-
-type MultiRaftReplicaJob func()
-
-type MultiRaftReplicaJobQueue interface {
-	Put(job MultiRaftReplicaJob) error
-	Start() error
-	Stop()
-}
-
-type MultiRaftReplicaStateProcessor interface {
-	ProcessTick(groupID RaftGroupID)
-	ProcessReady(groupID RaftGroupID)
-	ProcessStep(groupID RaftGroupID)
-	ProcessProposal(groupID RaftGroupID)
-	ProcessConfigChange(groupID RaftGroupID)
-	ProcessApplyConfChange(groupID RaftGroupID)
-}
 
 type MultiRaftTransport interface {
 	SetupTransportConfig(cfg TransportConfig) error
@@ -51,9 +27,13 @@ type MultiSnapshotStorage interface {
 	CreateSnapshotReader(groupID RaftGroupID, snapshotIndex uint64) (SnapshotReader, error)
 }
 
+type MultiRaftStatusReporter interface {
+	ReportUnreachable(groupID RaftGroupID, nodeID uint64)
+	ReportSnapshot(groupID RaftGroupID, nodeID uint64, status raft.SnapshotStatus)
+}
 type MultiRaftNodeHandler interface {
 	RaftMessageHandler
-	RaftStatusReporter
+	MultiRaftStatusReporter
 	MultiSnapshotStorage
 }
 

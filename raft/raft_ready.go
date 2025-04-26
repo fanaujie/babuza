@@ -93,6 +93,7 @@ func (r *Raft) processRaftReady() {
 		}
 	}
 }
+
 func (r *Raft) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
 	for _, entry := range committedEntries {
 		if entry.Type == raftpb.EntryConfChange {

@@ -30,5 +30,5 @@ type MultiRaftPeerManager interface {
 	RemovePeer(peerID uint64) error
 	RemoveAllPeers()
 	ResolvePeerAddress(id uint64) (string, error)
-	UpdatePeerRaftReport(raft ibabuza.RaftStatusReporter)
+	UpdatePeerRaftReport(raft ibabuza.MultiRaftStatusReporter)
 }

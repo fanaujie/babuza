@@ -35,7 +35,7 @@ type MultiRaftPeerImpl struct {
 	limiterMaxBatchMessageSize int64
 	snapshotChunkSize          int64
 	raftQueueSize              int64
-	raftReport                 ibabuza.RaftStatusReporter
+	raftReport                 ibabuza.MultiRaftStatusReporter
 	memoryLimiter              limiter.ResourceLimiter
 	chunkRateLimiter           limiter.RateLimiter
 	breaker                    breaker.Breaker
@@ -48,7 +48,7 @@ type MultiRaftPeerImpl struct {
 	mu                         sync.RWMutex
 }
 
-func NewMultiRaftPeer(localPeerID, peerID uint64, cfg MultiRaftPeerConfig, raftReport ibabuza.RaftStatusReporter,
+func NewMultiRaftPeer(localPeerID, peerID uint64, cfg MultiRaftPeerConfig, raftReport ibabuza.MultiRaftStatusReporter,
 	memoryLimiter limiter.ResourceLimiter, chunkRateLimiter limiter.RateLimiter, breaker breaker.Breaker,
 	transportClient ibabuza.TransportClient, logger ibabuza.Logger) *MultiRaftPeerImpl {
 	closer := syncutil.NewCloser()
@@ -76,13 +76,13 @@ func NewMultiRaftPeer(localPeerID, peerID uint64, cfg MultiRaftPeerConfig, raftR
 
 func (p *MultiRaftPeerImpl) SendRaftMessage(msg babuzapb.MultiRaftMessage) error {
 	if !p.breaker.Ready() {
-		p.raftReport.ReportUnreachable(msg.Message.To)
+		p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(msg.GroupID), msg.Message.To)
 		return ErrMultiRaftPeerBreakerNotReady
 	}
 
 	acquiredSize := int64(msg.Size())
 	if !p.memoryLimiter.Allow(acquiredSize) {
-		p.raftReport.ReportUnreachable(msg.Message.To)
+		p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(msg.GroupID), msg.Message.To)
 		return ErrMultiRaftPeerReachMaxTotalSendMsgSize
 	}
 	msgCh, err := p.getQueue()
@@ -91,7 +91,6 @@ func (p *MultiRaftPeerImpl) SendRaftMessage(msg babuzapb.MultiRaftMessage) error
 	}
 	select {
 	case <-p.closer.CloseCh():
-		p.raftReport.ReportUnreachable(msg.Message.To)
 		return ErrMultiRaftPeerStopped
 	case msgCh <- msg:
 		p.memoryLimiter.Acquire(acquiredSize)
@@ -106,17 +105,17 @@ func (p *MultiRaftPeerImpl) SendSnapshot(snapMsg babuzapb.MultiRaftMessage, snap
 		if err := p.sendSnapshotMessageLoop(snapMsg, snapReader); err != nil {
 			if !errors.Is(err, ErrMultiRaftPeerStopped) {
 				p.breaker.Fail()
-				p.raftReport.ReportUnreachable(p.peerID)
-				p.raftReport.ReportSnapshot(p.peerID, raft.SnapshotFailure)
+				p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(snapMsg.GroupID), p.peerID)
+				p.raftReport.ReportSnapshot(ibabuza.RaftGroupID(snapMsg.GroupID), p.peerID, raft.SnapshotFailure)
 			}
 			p.logger.Errorf("Local peer[%d] send snapshot message to peerID=%d error: %v", p.localPeerID, p.peerID, err)
 			return
 		}
-		p.raftReport.ReportSnapshot(p.peerID, raft.SnapshotFinish)
+		p.raftReport.ReportSnapshot(ibabuza.RaftGroupID(snapMsg.GroupID), p.peerID, raft.SnapshotFinish)
 	})
 }
 
-func (p *MultiRaftPeerImpl) UpdateRaftReport(report ibabuza.RaftStatusReporter) {
+func (p *MultiRaftPeerImpl) UpdateRaftReport(report ibabuza.MultiRaftStatusReporter) {
 	p.raftReport = report
 }
 
@@ -132,6 +131,8 @@ func (p *MultiRaftPeerImpl) getQueue() (chan babuzapb.MultiRaftMessage, error) {
 	if msgCh == nil {
 		p.memoryLimiter.Reset()
 		select {
+		case <-p.closer.CloseCh():
+			return nil, ErrPeerStopped
 		case msgCh = <-p.msgQueueChPool:
 		default:
 			msgCh = make(chan babuzapb.MultiRaftMessage, p.raftQueueSize)
@@ -153,10 +154,6 @@ func (p *MultiRaftPeerImpl) processRaftMessage() {
 			return
 		case msgCh := <-p.msgQueueCh:
 			if err := p.sendRaftMessageLoop(msgCh); err != nil {
-				if !errors.Is(err, ErrMultiRaftPeerStopped) {
-					p.breaker.Fail()
-					p.raftReport.ReportUnreachable(p.peerID)
-				}
 				p.logger.Warningf("Local peer[%d] send multi-raft message to peerID=%d error: %v", p.localPeerID, p.peerID, err)
 			}
 			p.mu.Lock()
@@ -226,6 +223,9 @@ func (p *MultiRaftPeerImpl) sendRaftMessageLoop(msgCh chan babuzapb.MultiRaftMes
 				groupMsgBuf = p.groupMessagesByGroupID(firstBatch, groupMsgBuf)
 				for _, batchMsg := range groupMsgBuf {
 					if err := p.transportClient.SendBatchMessage(batchMsg); err != nil {
+						p.breaker.Fail()
+						p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(batchMsg.ClusterID),
+							batchMsg.Messages[0].To)
 						return err
 					}
 					p.breaker.Success()
@@ -237,6 +237,8 @@ func (p *MultiRaftPeerImpl) sendRaftMessageLoop(msgCh chan babuzapb.MultiRaftMes
 				groupMsgBuf = p.groupMessagesByGroupID(secondBatch, groupMsgBuf)
 				for _, batchMsg := range groupMsgBuf {
 					if err := p.transportClient.SendBatchMessage(batchMsg); err != nil {
+						p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(batchMsg.ClusterID),
+							batchMsg.Messages[0].To)
 						return err
 					}
 					p.breaker.Success()

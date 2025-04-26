@@ -87,7 +87,6 @@ func (p *RaftPeer) SendRaftMessage(msg raftpb.Message) error {
 	}
 	select {
 	case <-p.closer.CloseCh():
-		p.raftReport.ReportUnreachable(msg.To)
 		return ErrPeerStopped
 	case msgCh <- msg:
 		p.memoryLimiter.Acquire(acquiredSize)
@@ -129,6 +128,8 @@ func (p *RaftPeer) getQueue() (chan raftpb.Message, error) {
 	if msgCh == nil {
 		p.memoryLimiter.Reset()
 		select {
+		case <-p.closer.CloseCh():
+			return nil, ErrPeerStopped
 		case msgCh = <-p.msgQueueChPool:
 		default:
 			msgCh = make(chan raftpb.Message, p.raftQueueSize)

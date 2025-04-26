@@ -1,9 +1,8 @@
 package multiraft
 
 import (
+	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/raft/multiraft/shard"
-	"github.com/pkg/errors"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
@@ -52,31 +51,13 @@ func (n *Node) ProcessConfigChange(groupID ibabuza.RaftGroupID) {
 	}
 }
 
-func (n *Node) ProcessApplyConfChange(groupID ibabuza.RaftGroupID) {
-	n.replicaSet.mu.RLock()
-	r, ok := n.replicaSet.replica[groupID]
-	n.replicaSet.mu.RUnlock()
-	if ok {
-		r.ProcessApplyConfChange()
-	}
-}
-
-func (n *Node) ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) (*raftpb.ConfState, error) {
-	gid := ibabuza.RaftGroupID(clusterID)
+func (n *Node) ApplyConfChange(groupID uint64, cc raftpb.ConfChangeI) (*raftpb.ConfState, error) {
+	gid := ibabuza.RaftGroupID(groupID)
 	n.replicaSet.mu.RLock()
 	r, ok := n.replicaSet.replica[gid]
 	n.replicaSet.mu.RUnlock()
 	if ok {
-		if err := n.scheduler.EnqueueState(gid, shard.StateApplyConfChange); err != nil {
-			return nil, err
-		}
-		resultCh := make(chan *raftpb.ConfState, 1)
-		ccApplyJob := poolGetConfChangeApplyJob()
-		ccApplyJob.cc = cc
-		ccApplyJob.resultCh = resultCh
-		r.EnqueueApplyConfChange(ccApplyJob)
-		result := <-resultCh
-		return result, nil
+		return r.rawNode.ApplyConfChange(cc), nil
 	}
-	return nil, errors.Errorf("raft group %d not found", gid)
+	return nil, fmt.Errorf("node[%d] groupID[%d] not found", n.config.NodeID, groupID)
 }

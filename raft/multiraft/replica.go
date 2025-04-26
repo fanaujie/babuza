@@ -7,6 +7,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
+	"github.com/pkg/errors"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
@@ -24,7 +25,6 @@ type leaderChange struct {
 type replica struct {
 	raftGroup                 RaftGroup
 	config                    ReplicaRaftConfig
-	applyJobQueue             ibabuza.MultiRaftReplicaJobQueue
 	cluster                   ibabuza.Cluster
 	transport                 ibabuza.MultiRaftTransport
 	status                    ibabuza.Status
@@ -38,9 +38,12 @@ type replica struct {
 	firstCommitInTermNotifier *syncutil.Notifier
 	leaderChangeNotifier      *syncutil.Notifier
 	leaderCh                  chan leaderChange
+	applyJobQueue             JobQueue
 	proposalQueue             *queue.Queue
 	configChangeQueue         *queue.Queue
-	applyConfChangeQueue      *queue.Queue
+	stepQueue                 *queue.Queue
+	reportUnreachableQueue    *queue.Queue
+	reportSnapshotQueue       *queue.Queue
 	logger                    ibabuza.Logger
 	closer                    *syncutil.Closer
 }
@@ -49,12 +52,15 @@ func (r *replica) Status() ibabuza.Status {
 	return r.status
 }
 
+func (r *replica) Start() error {
+	return r.applyJobQueue.Start()
+}
+
 func (r *replica) Stop() {
 	r.closer.Close()
-	r.applyJobQueue.Stop()
 	r.proposalQueue.Dispose()
 	r.configChangeQueue.Dispose()
-	r.applyConfChangeQueue.Dispose()
+	r.applyJobQueue.Stop()
 }
 
 func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {
@@ -94,9 +100,31 @@ func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
-func (r *replica) EnqueueApplyConfChange(job *confChangeApplyJob) {
-	if err := r.applyConfChangeQueue.Put(job); err != nil {
-		r.logger.Errorf("failed to enqueue apply conf change job: %v", err)
-		return
+func (r *replica) EnqueueStep(batchMsg babuzapb.BatchMessage) error {
+	if err := r.stepQueue.Put(batchMsg); err != nil {
+		return errors.Wrapf(err, "GroupID[%d] enqueue step error", r.raftGroup.GroupID)
 	}
+	return nil
+}
+
+func (r *replica) EnqueueReportUnreachable(id uint64) error {
+	if err := r.reportUnreachableQueue.Put(id); err != nil {
+		return errors.Wrapf(err, "GroupID[%d] enqueue report unreachable error", r.raftGroup.GroupID)
+	}
+	return nil
+}
+
+type reportSnapshot struct {
+	ID     uint64
+	Status raft.SnapshotStatus
+}
+
+func (r *replica) EnqueueReportSnapshot(id uint64, status raft.SnapshotStatus) error {
+	if err := r.reportSnapshotQueue.Put(reportSnapshot{
+		ID:     id,
+		Status: status,
+	}); err != nil {
+		return errors.Wrapf(err, "GroupID[%d] enqueue report snapshot error", r.raftGroup.GroupID)
+	}
+	return nil
 }

@@ -72,16 +72,16 @@ func (mr *mockMultiRaftProcessor) ProcessSnapshotMessage(message babuzapb.Snapsh
 	}
 }
 
-func (mr *mockMultiRaftProcessor) ReportUnreachable(id uint64) {
+func (mr *mockMultiRaftProcessor) ReportUnreachable(groupID ibabuza.RaftGroupID, nodeID uint64) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.unreachable[id] = struct{}{}
+	mr.unreachable[nodeID] = struct{}{}
 }
 
-func (mr *mockMultiRaftProcessor) ReportSnapshot(id uint64, status raft.SnapshotStatus) {
+func (mr *mockMultiRaftProcessor) ReportSnapshot(groupID ibabuza.RaftGroupID, nodeID uint64, status raft.SnapshotStatus) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.snapshotStatus[id] = status
+	mr.snapshotStatus[nodeID] = status
 }
 
 func (mr *mockMultiRaftProcessor) CreateSnapshotReader(groupID ibabuza.RaftGroupID, snapshotIndex uint64) (ibabuza.SnapshotReader, error) {

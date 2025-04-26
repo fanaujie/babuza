@@ -97,7 +97,7 @@ func (m *MultiRaftManagerImpl) ResolvePeerAddress(id uint64) (string, error) {
 	return addr, nil
 }
 
-func (m *MultiRaftManagerImpl) UpdatePeerRaftReport(raft ibabuza.RaftStatusReporter) {
+func (m *MultiRaftManagerImpl) UpdatePeerRaftReport(raft ibabuza.MultiRaftStatusReporter) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, p := range m.peers {

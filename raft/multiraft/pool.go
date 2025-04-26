@@ -6,15 +6,18 @@ import (
 )
 
 var (
-	applyDataPool sync.Pool
+	proposalPool        sync.Pool
+	configChangePool    sync.Pool
+	applyEntryPool      sync.Pool
+	confChangeApplyPool sync.Pool
 )
 
-type proposalData struct {
+type proposalRequest struct {
 	replyID uint64
 	data    []byte
 }
 
-type configChangeData struct {
+type configChangeRequest struct {
 	replyID    uint64
 	confChange raftpb.ConfChange
 }
@@ -29,38 +32,38 @@ type confChangeApplyJob struct {
 	resultCh chan *raftpb.ConfState
 }
 
-func poolGetProposal() *proposalData {
-	v := applyDataPool.Get()
+func poolGetProposal() *proposalRequest {
+	v := proposalPool.Get()
 	if v == nil {
-		return &proposalData{}
+		return &proposalRequest{}
 	}
 
-	return v.(*proposalData)
+	return v.(*proposalRequest)
 }
 
-func poolReleaseProposal(value *proposalData) {
+func poolReleaseProposal(value *proposalRequest) {
 	value.replyID = 0
 	value.data = nil
-	applyDataPool.Put(value)
+	proposalPool.Put(value)
 }
 
-func poolGetConfigChange() *configChangeData {
-	v := applyDataPool.Get()
+func poolGetConfigChange() *configChangeRequest {
+	v := configChangePool.Get()
 	if v == nil {
-		return &configChangeData{}
+		return &configChangeRequest{}
 	}
 
-	return v.(*configChangeData)
+	return v.(*configChangeRequest)
 }
 
-func poolReleaseConfigChange(value *configChangeData) {
+func poolReleaseConfigChange(value *configChangeRequest) {
 	value.replyID = 0
 	value.confChange = raftpb.ConfChange{}
-	applyDataPool.Put(value)
+	configChangePool.Put(value)
 }
 
 func poolGetApplyEntry() *applyEntry {
-	v := applyDataPool.Get()
+	v := applyEntryPool.Get()
 	if v == nil {
 		return &applyEntry{}
 	}
@@ -71,11 +74,11 @@ func poolGetApplyEntry() *applyEntry {
 func poolReleaseApplyEntry(value *applyEntry) {
 	value.entries = nil
 	value.snapshot = raftpb.Snapshot{}
-	applyDataPool.Put(value)
+	applyEntryPool.Put(value)
 }
 
 func poolGetConfChangeApplyJob() *confChangeApplyJob {
-	v := applyDataPool.Get()
+	v := confChangeApplyPool.Get()
 	if v == nil {
 		return &confChangeApplyJob{}
 	}
@@ -86,5 +89,5 @@ func poolGetConfChangeApplyJob() *confChangeApplyJob {
 func poolReleaseConfChangeApplyJob(value *confChangeApplyJob) {
 	value.cc = nil
 	value.resultCh = nil
-	applyDataPool.Put(value)
+	confChangeApplyPool.Put(value)
 }

@@ -37,13 +37,10 @@ func (r *replica) ProcessReady() {
 
 		emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
 		if len(rd.CommittedEntries) > 0 || !emptySnapshot {
-			//select {
-			//case <-r.closer.CloseCh():
-			//	return
-			//case r.applyCh <- applyEntryToStateMachine{
-			//	entries:  rd.CommittedEntries,
-			//	snapshot: rd.Snapshot}:
-			//}
+			if r.applyConfChangeEntry(rd.CommittedEntries) {
+				//TODO: implement remove self
+				return
+			}
 
 			applyData := poolGetApplyEntry()
 			applyData.entries = rd.CommittedEntries
@@ -51,7 +48,7 @@ func (r *replica) ProcessReady() {
 			if err := r.applyJobQueue.Put(func() {
 				r.doApplyJob(applyData)
 			}); err != nil {
-				r.logger.Panicf("groupID[%d] raft[id=%d] apply job queue put failed: %v",
+				r.logger.Panicf("groupID[%d] raft[id=%d]: error putting apply job: %v",
 					r.cluster.ClusterID(), r.cluster.LocalPeerID(), err)
 			}
 		}
@@ -77,37 +74,51 @@ func (r *replica) ProcessReady() {
 				r.cluster.LocalPeerID(), err)
 		}
 		if !isLeader {
-
-			// Candidate or follower needs to wait for all pending configuration
-			// changes to be applied before sending messages.
-			// Otherwise we might incorrectly count votes (e.g. votes from removed members).
-			// Also slow machine's follower raft-layer could proceed to become the leader
-			// on its own single-node cluster, before apply-layer applies the config change.
-			// We simply wait for ALL pending entries to be applied for now.
-			// We might improve this later on if it causes unnecessary long blocking issues.
-			var lastConfChangIndex uint64
-			for i := range rd.CommittedEntries {
-				e := &rd.CommittedEntries[i]
-				if raftpb.EntryConfChange == e.Type {
-					lastConfChangIndex = e.Index
-				}
-			}
-			if lastConfChangIndex > 0 {
-				select {
-				case <-r.completionReplier.AcquireCompletionChan(lastConfChangIndex):
-				case <-r.closer.CloseCh():
-					return
-				}
-			}
 			r.sendRaftMessage(rd.Messages)
-			r.rawNode.Advance(rd)
 		}
-
+		r.rawNode.Advance(rd)
 	}
 }
 
 func (r *replica) ProcessStep() {
-
+	if r.stepQueue.Len() > 0 {
+		items, err := r.stepQueue.Get(r.stepQueue.Len())
+		if err != nil {
+			r.logger.Panicf("groupID[%d] raft[id=%d]: error getting step: %v", r.cluster.ClusterID(),
+				r.cluster.LocalPeerID(), err)
+		}
+		for _, item := range items {
+			msg := item.(babuzapb.BatchMessage)
+			for _, m := range msg.Messages {
+				if err = r.rawNode.Step(m); err != nil {
+					r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.ClusterID(),
+						r.cluster.LocalPeerID(), err)
+				}
+			}
+		}
+	}
+	if r.reportUnreachableQueue.Len() > 0 {
+		items, err := r.reportUnreachableQueue.Get(r.reportUnreachableQueue.Len())
+		if err != nil {
+			r.logger.Panicf("groupID[%d] raft[id=%d]: error getting report unreachable: %v", r.cluster.ClusterID(),
+				r.cluster.LocalPeerID(), err)
+		}
+		for _, item := range items {
+			nodeID := item.(uint64)
+			r.rawNode.ReportUnreachable(nodeID)
+		}
+	}
+	if r.reportSnapshotQueue.Len() > 0 {
+		items, err := r.reportSnapshotQueue.Get(r.reportSnapshotQueue.Len())
+		if err != nil {
+			r.logger.Panicf("groupID[%d] raft[id=%d]: error getting report snapshot: %v", r.cluster.ClusterID(),
+				r.cluster.LocalPeerID(), err)
+		}
+		for _, item := range items {
+			msg := item.(reportSnapshot)
+			r.rawNode.ReportSnapshot(msg.ID, msg.Status)
+		}
+	}
 }
 
 func (r *replica) ProcessProposal() {
@@ -117,7 +128,7 @@ func (r *replica) ProcessProposal() {
 			r.cluster.LocalPeerID(), err)
 	}
 	for _, proposal := range proposals {
-		pd := proposal.(*proposalData)
+		pd := proposal.(*proposalRequest)
 		if err = r.rawNode.Propose(pd.data); err != nil {
 			r.logger.Warningf("groupID[%d] raft[id=%d]: error proposing: %v", r.cluster.ClusterID(),
 				r.cluster.LocalPeerID(), err)
@@ -141,7 +152,7 @@ func (r *replica) ProcessConfigChange() {
 			r.cluster.LocalPeerID(), err)
 	}
 	for _, configChang := range configChanges {
-		ccd := configChang.(*configChangeData)
+		ccd := configChang.(*configChangeRequest)
 		if err = r.rawNode.ProposeConfChange(ccd.confChange); err != nil {
 			r.logger.Warningf("groupID[%d] raft[%d] error config change: %v", r.cluster.ClusterID(),
 				r.cluster.LocalPeerID(), err)
@@ -158,17 +169,19 @@ func (r *replica) ProcessConfigChange() {
 	}
 }
 
-func (r *replica) ProcessApplyConfChange() {
-	applyConfChange, err := r.applyConfChangeQueue.Get(r.applyConfChangeQueue.Len())
-	if err != nil {
-		r.logger.Panicf("groupID[%d] raft[%d] error getting apply config change: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
+func (r *replica) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
+	for _, entry := range committedEntries {
+		if entry.Type == raftpb.EntryConfChange {
+			confState, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
+			if removeSelf {
+				return true
+			}
+			if confState != nil {
+				r.status.SetConfState(*confState)
+			}
+		}
 	}
-	for _, apply := range applyConfChange {
-		ccApplyJob := apply.(*confChangeApplyJob)
-		ccApplyJob.resultCh <- r.rawNode.ApplyConfChange(ccApplyJob.cc)
-		poolReleaseConfChangeApplyJob(ccApplyJob)
-	}
+	return false
 }
 
 func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
@@ -231,17 +244,17 @@ func (r *replica) updateLeadership(currentState raft.SoftState) {
 	r.status.SetSoftState(currentState)
 	if currentState.Lead == r.cluster.LocalPeerID() {
 		r.status.SetLeader(true)
-		r.leaderCh <- leaderChange{
-			RaftGroup: r.raftGroup,
-			isLeader:  true,
-		}
+		//r.leaderCh <- leaderChange{
+		//	RaftGroup: r.raftGroup,
+		//	isLeader:  true,
+		//}
 	} else {
 		if r.status.IsLeader() {
 			r.status.SetLeader(false)
-			r.leaderCh <- leaderChange{
-				RaftGroup: r.raftGroup,
-				isLeader:  true,
-			}
+			//r.leaderCh <- leaderChange{
+			//	RaftGroup: r.raftGroup,
+			//	isLeader:  true,
+			//}
 		}
 	}
 	if newLeader {

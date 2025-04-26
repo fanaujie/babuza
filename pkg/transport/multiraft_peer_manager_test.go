@@ -255,7 +255,9 @@ func TestMultiRaftManagerImpl_UpdatePeerRaftReport(t *testing.T) {
 	}
 
 	// Create a mock RaftStatusReporter
-	mockReport := new(struct{ ibabuza.RaftStatusReporter })
+	mockReport := new(struct {
+		ibabuza.MultiRaftStatusReporter
+	})
 
 	// Set expectations for all peers
 	for _, p := range mockPeers {

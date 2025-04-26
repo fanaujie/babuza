@@ -8,6 +8,29 @@ import (
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 )
 
+type Scheduler interface {
+	EnqueueBatchState(state int, groupIDs []ibabuza.RaftGroupID) error
+	EnqueueState(state int, groupID ibabuza.RaftGroupID) error
+	Start() error
+	Stop()
+}
+
+type JobFunc func()
+
+type JobQueue interface {
+	Put(job JobFunc) error
+	Start() error
+	Stop()
+}
+
+type StateProcessor interface {
+	ProcessTick(groupID ibabuza.RaftGroupID)
+	ProcessReady(groupID ibabuza.RaftGroupID)
+	ProcessStep(groupID ibabuza.RaftGroupID)
+	ProcessProposal(groupID ibabuza.RaftGroupID)
+	ProcessConfigChange(groupID ibabuza.RaftGroupID)
+}
+
 type BootstrapStorage interface {
 	HasExistingWalFiles() ([]ibabuza.RaftGroupID, error)
 	ScanInstalledSnapshot([]ibabuza.RaftGroupID) error

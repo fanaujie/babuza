@@ -12,7 +12,6 @@ import (
 	"github.com/fanaujie/babuza/pkg/status"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
-	"github.com/fanaujie/babuza/raft/multiraft/shard"
 	"go.etcd.io/etcd/raft/v3"
 	"path/filepath"
 	"time"
@@ -143,7 +142,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		}
 		firstCommitInTermNotifier := syncutil.NewNotifier()
 		resultReplier := replier.NewResult[ibabuza.ApplyResult]()
-		appliedFacade := babuza.NewAppliedFacade(replicaStorage, replicaStatus, firstCommitInTermNotifier, replicaSession,
+		appliedFacade := babuza.NewAppliedFacade(replicaStorage, firstCommitInTermNotifier, replicaSession,
 			resultReplier, replicaCluster, n, trans, logger, metrics.NewMockMetricsCollector())
 
 		r := &replica{
@@ -152,7 +151,6 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 				PeerID:  config.NodeID,
 			},
 			config:                    replicaRaftConfig,
-			applyJobQueue:             shard.NewJobQueue(groupID, config.ApplyJobQueueSize, logger),
 			cluster:                   replicaCluster,
 			transport:                 trans,
 			status:                    replicaStatus,
@@ -166,14 +164,14 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			firstCommitInTermNotifier: firstCommitInTermNotifier,
 			leaderChangeNotifier:      syncutil.NewNotifier(),
 			leaderCh:                  nil,
+			applyJobQueue:             newJobQueue(groupID, n.config.JobQueueSize, n.logger),
 			proposalQueue:             &queue.Queue{},
 			configChangeQueue:         &queue.Queue{},
-			applyConfChangeQueue:      &queue.Queue{},
+			stepQueue:                 &queue.Queue{},
+			reportUnreachableQueue:    &queue.Queue{},
+			reportSnapshotQueue:       &queue.Queue{},
 			logger:                    logger,
 			closer:                    syncutil.NewCloser(),
-		}
-		if err = r.applyJobQueue.Start(); err != nil {
-			return nil, err
 		}
 		n.replicaSet.replica[groupID] = r
 	}
@@ -189,10 +187,11 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 		logger:  logger,
 		closer:  syncutil.NewCloser(),
 	}
-	scheduler := shard.NewScheduler(config.NodeID, shard.Config{
-		WorkerNum: config.SchedulerWorkerNum,
-		QueueSize: config.SchedulerQueueSize,
-		MaxTicks:  config.SchedulerMaxTicks,
+	scheduler := newScheduler(config.NodeID, schedulerConfig{
+		shardNum:       config.SchedulerShardNum,
+		shardWorkerNum: config.SchedulerShardWorkerNum,
+		queueSize:      config.SchedulerQueueSize,
+		maxTicks:       config.SchedulerMaxTicks,
 	}, n, logger)
 	n.scheduler = scheduler
 	n.replicaSet.replica = make(map[ibabuza.RaftGroupID]*replica)
@@ -286,7 +285,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 	if err != nil {
 		return nil, err
 	}
-	appliedFacade := babuza.NewAppliedFacade(replicaStorage, replicaStatus, firstCommitInTermNotifier, replicaSession,
+	appliedFacade := babuza.NewAppliedFacade(replicaStorage, firstCommitInTermNotifier, replicaSession,
 		resultReplier, replicaCluster, node, node.trans, node.logger, metrics.NewMockMetricsCollector())
 
 	r := &replica{
@@ -295,7 +294,6 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 			PeerID:  node.config.NodeID,
 		},
 		config:                    replicaRaftConfig,
-		applyJobQueue:             shard.NewJobQueue(groupID, node.config.ApplyJobQueueSize, node.logger),
 		cluster:                   replicaCluster,
 		transport:                 node.trans,
 		status:                    replicaStatus,
@@ -309,14 +307,14 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		firstCommitInTermNotifier: firstCommitInTermNotifier,
 		leaderChangeNotifier:      syncutil.NewNotifier(),
 		leaderCh:                  nil,
+		applyJobQueue:             newJobQueue(groupID, node.config.JobQueueSize, node.logger),
 		proposalQueue:             &queue.Queue{},
 		configChangeQueue:         &queue.Queue{},
-		applyConfChangeQueue:      &queue.Queue{},
+		stepQueue:                 &queue.Queue{},
+		reportUnreachableQueue:    &queue.Queue{},
+		reportSnapshotQueue:       &queue.Queue{},
 		logger:                    node.logger,
 		closer:                    syncutil.NewCloser(),
-	}
-	if err = r.applyJobQueue.Start(); err != nil {
-		return nil, err
 	}
 	return r, nil
 }

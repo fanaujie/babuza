@@ -67,9 +67,9 @@ type appliedFacadeImpl struct {
 	metricsCollector    ibabuza.MetricsCollector
 }
 
-func NewAppliedFacade(storage AppliedStorage, firstCommitNotifier AppliedFirstCommitInTermNotifier, sessionMgr AppliedSessionManager,
-	replier AppliedReplier, cluster AppliedCluster, raftNode AppliedRaftNode, trans AppliedTransport,
-	log ibabuza.Logger, metricsCollector ibabuza.MetricsCollector) InternalAppliedFacade {
+func NewAppliedFacade(storage AppliedStorage, firstCommitNotifier AppliedFirstCommitInTermNotifier,
+	sessionMgr AppliedSessionManager, replier AppliedReplier, cluster AppliedCluster, raftNode AppliedRaftNode,
+	trans AppliedTransport, log ibabuza.Logger, metricsCollector ibabuza.MetricsCollector) InternalAppliedFacade {
 	return &appliedFacadeImpl{
 		storage:             storage,
 		firstCommitNotifier: firstCommitNotifier,

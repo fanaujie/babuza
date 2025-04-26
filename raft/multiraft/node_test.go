@@ -14,8 +14,10 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 type simpleStateMachine struct {
@@ -53,27 +55,57 @@ func (c *ComponentFactory) CreateSessionManager(logger ibabuza.Logger) ibabuza.S
 	return session.NewNoOpManager(logger)
 }
 
-func TestBootstrap(t *testing.T) {
-	rootDir := t.TempDir()
-	nodeID := uint64(1)
-	nodeRaftListenAddr := "localhost:14201"
-	config := DefaultNodeConfig(100, nodeID, rootDir, nodeRaftListenAddr)
-	log := &logger.Mock{}
+func createNode(clusterID uint64, nodeID uint64, nodeRaftListenAddr string, rootDir string) (*Node, error) {
+	config := DefaultNodeConfig(clusterID, nodeID, rootDir, nodeRaftListenAddr)
+	log := logger.NewRaftLogger(zap.NewExample().Sugar())
 	walMgr := babuzawal.NewMultiRaftWalManager(filepath.Join(rootDir, "wal"), log)
 	snapshotMgr := snapshot.NewMultiRaftSnapshotManager(snapshot.Config{
 		SnapshotVersion: 1,
 		MaxSnapFiles:    3,
 		SnapshotDir:     filepath.Join(rootDir, "snapshot"),
 	}, durable.NewSnapshotFS(), log)
-	trans := transport.NewMultiRaftTransport(100,
+	trans := transport.NewMultiRaftTransport(clusterID,
 		transport.NewMultiRaftPeerManager(), limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), protocol.NewGrpcMultiRaft(log), log)
 
-	n, err := BootstrapOrRecoverNode(config, &ComponentFactory{}, trans, walMgr, snapshotMgr, log)
+	return BootstrapOrRecoverNode(config, &ComponentFactory{}, trans, walMgr, snapshotMgr, log)
+}
+
+func TestBootstrap(t *testing.T) {
+	node1ID := uint64(1)
+	clusterID := uint64(100)
+	raftGroupID := ibabuza.RaftGroupID(500)
+	node1RaftListenAddr := "localhost:14201"
+	node1, err := createNode(clusterID, node1ID, node1RaftListenAddr, t.TempDir())
 	assert.NoError(t, err)
-	assert.Nil(t, n.Start())
-	defer n.Stop()
+	assert.Nil(t, node1.Start())
+	defer node1.Stop()
+	node2ID := uint64(2)
+	node2RaftListenAddr := "localhost:14202"
+	node2, err := createNode(clusterID, node2ID, node2RaftListenAddr, t.TempDir())
+	assert.NoError(t, err)
+	assert.Nil(t, node2.Start())
+	defer node2.Stop()
+
 	peersConfig := babuza.NewPeersConfiguration()
-	assert.NoError(t, peersConfig.AddPeer(nodeID, nodeRaftListenAddr, false))
-	assert.NoError(t, n.CreateRaftGroup(ibabuza.RaftGroupID(1), peersConfig, false))
+	assert.NoError(t, peersConfig.AddPeer(node1ID, node1RaftListenAddr, false))
+	assert.NoError(t, peersConfig.AddPeer(node2ID, node2RaftListenAddr, false))
+	assert.NoError(t, node1.CreateRaftGroup(raftGroupID, peersConfig, false))
+	assert.NoError(t, node2.CreateRaftGroup(raftGroupID, peersConfig, false))
+	assert.NoError(t, node1.CreateRaftGroup(raftGroupID+1, peersConfig, false))
+	assert.NoError(t, node2.CreateRaftGroup(raftGroupID+1, peersConfig, false))
+	time.Sleep(time.Second * 3)
+	node1Group1Status, err := node1.Status(raftGroupID)
+	assert.NoError(t, err)
+	node2Group1Status, err := node2.Status(raftGroupID)
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, node1Group1Status.LeaderID)
+	assert.Equal(t, node1Group1Status.LeaderID, node2Group1Status.LeaderID)
+
+	node1Group2Status, err := node1.Status(raftGroupID + 1)
+	assert.NoError(t, err)
+	node2Group2Status, err := node2.Status(raftGroupID + 1)
+	assert.NoError(t, err)
+	assert.NotEqual(t, 0, node1Group2Status.LeaderID)
+	assert.Equal(t, node2Group2Status.LeaderID, node2Group2Status.LeaderID)
 }

@@ -11,10 +11,7 @@ func (r *replica) doApplyJob(applyData *applyEntry) {
 	defer poolReleaseApplyEntry(applyData)
 
 	r.applySnapshot(applyData.snapshot)
-	if r.applyEntries(applyData.entries) {
-		//TODO: remove self
-		return
-	}
+	r.applyEntries(applyData.entries)
 	if r.status.GetAppliedIndex()-r.status.GetSnapshotIndex() < r.config.SnapshotCount {
 		return
 	}
@@ -55,17 +52,12 @@ func (r *replica) applySnapshot(snap raftpb.Snapshot) {
 	r.storage.SetStateMachineAppliedIndex(snap.Metadata.Index)
 }
 
-func (r *replica) applyEntries(entries []raftpb.Entry) bool {
-	removeSelf := false
+func (r *replica) applyEntries(entries []raftpb.Entry) {
 	defer func() {
-		appliedIndex := r.status.GetAppliedIndex()
-		r.completionReplier.MarkCompleted(appliedIndex)
+		r.completionReplier.MarkCompleted(r.status.GetAppliedIndex())
 	}()
-	for pos := 0; pos < len(entries); pos++ {
-		if removeSelf {
-			break
-		}
-		entry := entries[pos]
+	length := len(entries)
+	for _, entry := range entries {
 		if len(entry.Data) == 0 {
 			r.appliedFacade.ApplyNilEntryInNewTerm(entry.Index, entry.Term)
 		} else {
@@ -76,17 +68,17 @@ func (r *replica) applyEntries(entries []raftpb.Entry) bool {
 					r.storage.Apply(toApplyEntry)
 				}
 			case raftpb.EntryConfChange:
-				removeSelf = r.appliedFacade.ApplyConfChangeEntry(entry)
-				if removeSelf {
-					break
-				}
+				// do nothing, just apply conf change entry before
 			default:
 				r.logger.Panicf("groupID[%d] raft[id=%d]: not support raft toApplyEntry type %d", r.cluster.ClusterID(),
 					r.cluster.LocalPeerID(), uint64(entry.Type))
 			}
 		}
 	}
-	return removeSelf
+	if length > 0 {
+		r.status.SetAppliedTerm(entries[length-1].Term)
+		r.status.SetAppliedIndex(entries[length-1].Index)
+	}
 }
 
 func (r *replica) triggerSnapshot(snapCtx babuza.StorageSnapshotContext, snapshotResultCh chan babuza.SnapshotResult) {

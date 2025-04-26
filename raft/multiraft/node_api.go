@@ -6,19 +6,19 @@ import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
-	"github.com/fanaujie/babuza/raft/multiraft/shard"
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"sync"
 )
 
 type Node struct {
-	config     NodeConfig
-	trans      ibabuza.MultiRaftTransport
-	storage    BootstrapStorage
-	factory    ComponentsFactory
-	logger     ibabuza.Logger
-	scheduler  ibabuza.MultiRaftSchedulerQueue
+	config    NodeConfig
+	trans     ibabuza.MultiRaftTransport
+	storage   BootstrapStorage
+	factory   ComponentsFactory
+	logger    ibabuza.Logger
+	scheduler Scheduler
+
 	closer     *syncutil.Closer
 	replicaSet struct {
 		mu      sync.RWMutex
@@ -27,16 +27,34 @@ type Node struct {
 }
 
 func (n *Node) Start() error {
-	if err := n.trans.SetupTransportRaft(&transportProcessor{
+	var err error
+	if err = n.trans.SetupTransportRaft(&transportProcessor{
 		Node: n,
 	}); err != nil {
 		return err
 	}
-	if err := n.trans.Start(); err != nil {
-		return errors.Errorf("Node[%d] transport start error: %v", n.config.NodeID, err)
+	defer func() {
+		if err != nil {
+			_ = n.trans.Stop()
+			n.scheduler.Stop()
+			for _, r := range n.replicaSet.replica {
+				r.Stop()
+			}
+		}
+	}()
+	if err = n.trans.Start(); err != nil {
+		err = errors.Errorf("Node[%d] transport start error: %v", n.config.NodeID, err)
+		return err
 	}
-	if err := n.scheduler.Start(); err != nil {
-		return errors.Errorf("Node[%d] scheduler start error: %v", n.config.NodeID, err)
+	if err = n.scheduler.Start(); err != nil {
+		err = errors.Errorf("Node[%d] raftScheduler start error: %v", n.config.NodeID, err)
+		return err
+	}
+	for _, r := range n.replicaSet.replica {
+		if err = r.Start(); err != nil {
+			err = errors.Errorf("Node[%d] replica start error: %v", n.config.NodeID, err)
+			return err
+		}
 	}
 	n.closer.Run(func() {
 		n.raftTickStart()
@@ -67,7 +85,7 @@ func (n *Node) CreateRaftGroup(groupID ibabuza.RaftGroupID, peersConfig *babuza.
 		return errors.Errorf("Node[%d] failed to bootstrap new replica(raft group id=%d): %v", n.config.NodeID, groupID, err)
 	}
 	n.replicaSet.replica[groupID] = r
-	return nil
+	return r.Start()
 }
 
 func (n *Node) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession, log []byte) babuza.ProposedResult {
@@ -75,7 +93,7 @@ func (n *Node) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session
 	if !ok {
 		return babuza.NewErrorResult(errors.Errorf("Node[%d] raft group %d not found", n.config.NodeID, groupID))
 	}
-	if err := n.scheduler.EnqueueState(groupID, shard.StateProposal); err != nil {
+	if err := n.scheduler.EnqueueState(stateProposal, groupID); err != nil {
 		return babuza.NewErrorResult(err)
 	}
 	return r.EnqueueProposal(ctx, session, log)
@@ -93,8 +111,45 @@ func (n *Node) AddVotingPeer(ctx context.Context, groupID ibabuza.RaftGroupID, s
 	if raftPeerAttr.IsLearner {
 		return babuza.NewErrorResult(babuza.ErrLearnerCanNotVote)
 	}
-	if err := n.scheduler.EnqueueState(groupID, shard.StateConfigChange); err != nil {
+	if err := n.scheduler.EnqueueState(stateConfigChange, groupID); err != nil {
 		return babuza.NewErrorResult(err)
 	}
 	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddNode, raftPeerAttr, false)
+}
+
+func (n *Node) Status(groupID ibabuza.RaftGroupID) (babuza.Status, error) {
+	n.replicaSet.mu.RLock()
+	r, ok := n.replicaSet.replica[groupID]
+	n.replicaSet.mu.RUnlock()
+	if !ok {
+		return babuza.Status{}, errors.Errorf("Node[%d] groupID[%d] not found", n.config.NodeID, groupID)
+	}
+
+	lastIndex, lastTerm, snapshot, err := r.storage.EntryStorageInfo()
+	if err != nil {
+		r.logger.Panic(err)
+	}
+	softStatus := r.status.CloneSoftState()
+	raftState := babuza.RaftState(softStatus.RaftState)
+	leaderID := softStatus.Lead
+	select {
+	case <-r.closer.CloseCh():
+		raftState = babuza.StopState
+		leaderID = babuza.None
+	default:
+	}
+
+	return babuza.Status{
+		State:              raftState,
+		ClusterID:          r.cluster.ClusterID(),
+		LocalPeerID:        r.cluster.LocalPeerID(),
+		LeaderID:           leaderID,
+		RaftTerm:           r.status.GetHardStateTerm(),
+		RaftCommittedIndex: r.status.GetCommittedIndex(),
+		RaftAppliedIndex:   r.status.GetAppliedIndex(),
+		LastLogTerm:        lastTerm,
+		LastLogIndex:       lastIndex,
+		LastSnapshotTerm:   snapshot.Metadata.Term,
+		LastSnapshotIndex:  snapshot.Metadata.Index,
+	}, nil
 }

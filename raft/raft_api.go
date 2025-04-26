@@ -58,9 +58,9 @@ const (
 
 type Status struct {
 	State              RaftState
-	ClusterId          uint64
-	LocalPeerId        uint64
-	LeaderId           uint64
+	ClusterID          uint64
+	LocalPeerID        uint64
+	LeaderID           uint64
 	RaftTerm           uint64
 	RaftCommittedIndex uint64
 	RaftAppliedIndex   uint64
@@ -412,9 +412,9 @@ func (r *Raft) Status() Status {
 
 	return Status{
 		State:              raftState,
-		ClusterId:          r.cluster.ClusterID(),
-		LocalPeerId:        r.cluster.LocalPeerID(),
-		LeaderId:           leaderID,
+		ClusterID:          r.cluster.ClusterID(),
+		LocalPeerID:        r.cluster.LocalPeerID(),
+		LeaderID:           leaderID,
 		RaftTerm:           r.status.GetHardStateTerm(),
 		RaftCommittedIndex: r.status.GetCommittedIndex(),
 		RaftAppliedIndex:   r.status.GetAppliedIndex(),
