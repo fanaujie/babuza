@@ -1,4 +1,4 @@
-package collection
+package entrycollection
 
 import (
 	"errors"
@@ -14,16 +14,16 @@ type EntryIndexReader interface {
 	ReadEntriesData(readMetadata []walbase.EntryIndex[storage.EntryMetadata], ents []raftpb.Entry) error
 }
 
-type EntryIndex struct {
+type IndexedEntryStore struct {
 	entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
 	reader       EntryIndexReader
 }
 
-func NewEntryIndex() *EntryIndex {
-	return &EntryIndex{}
+func NewIndexedEntryStore() *IndexedEntryStore {
+	return &IndexedEntryStore{}
 }
 
-func (ei *EntryIndex) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf []byte,
+func (ei *IndexedEntryStore) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf []byte,
 	entryDataCapacity int64, r iwal.ReplayWalResult) error {
 
 	nextEntry := r.NextEntry()
@@ -52,15 +52,15 @@ func (ei *EntryIndex) Decode(fileId, snapshotIndex uint64, logType pb.LogType, l
 	return nil
 }
 
-func (ei *EntryIndex) Entries() (interface{}, error) {
+func (ei *IndexedEntryStore) Entries() (interface{}, error) {
 	return ei.entriesIndex, nil
 }
-func (ei *EntryIndex) ClearEntries() error {
+func (ei *IndexedEntryStore) ClearEntries() error {
 	ei.entriesIndex = nil
 	return nil
 }
 
-func (ei *EntryIndex) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry) error) error {
+func (ei *IndexedEntryStore) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry) error) error {
 	if ei.reader == nil {
 		return errors.New("reader is nil")
 	}
@@ -89,7 +89,7 @@ func (ei *EntryIndex) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb
 	}
 	return nil
 }
-func (ei *EntryIndex) DeleteUncommittedEntry(commitIndex uint64) error {
+func (ei *IndexedEntryStore) DeleteUncommittedEntry(commitIndex uint64) error {
 	var deleteFrom int
 	entsLen := len(ei.entriesIndex)
 	for i := 0; i < entsLen; i++ {
@@ -105,6 +105,6 @@ func (ei *EntryIndex) DeleteUncommittedEntry(commitIndex uint64) error {
 	return nil
 }
 
-func (ei *EntryIndex) SetReader(r EntryIndexReader) {
+func (ei *IndexedEntryStore) SetReader(r EntryIndexReader) {
 	ei.reader = r
 }

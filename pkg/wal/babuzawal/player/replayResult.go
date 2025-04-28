@@ -3,7 +3,6 @@ package player
 import (
 	"errors"
 	"fmt"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -42,15 +41,6 @@ func (r *ReplayResult) MatchSnapshot(startSnapshot walpb.Snapshot) error {
 }
 
 func (r *ReplayResult) ForEachConfChangeEntries(visitor func(raftpb.Entry) error) error {
-
-	switch r.entryCollection.(type) {
-	case *collection.EntryIndex:
-		break
-	case *collection.Entry:
-		break
-	default:
-		return errors.New("not support parsing format")
-	}
 	return r.entryCollection.VisitEntry(raftpb.EntryConfChange, visitor)
 }
 

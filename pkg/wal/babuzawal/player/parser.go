@@ -6,7 +6,7 @@ import (
 	"errors"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrycollection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/utility"
@@ -32,7 +32,7 @@ type Parser struct {
 
 func NewParser(result iwal.ReplayWalResult, startSnapshot walpb.Snapshot,
 	memPool *allocator.TwoLevelPool) *Parser {
-	_, NotParseEntry := result.EntryCollection().(*collection.NopEntry)
+	_, NotParseEntry := result.EntryCollection().(*entrycollection.NopEntryStore)
 	return &Parser{
 		result:        result,
 		startSnapshot: startSnapshot,

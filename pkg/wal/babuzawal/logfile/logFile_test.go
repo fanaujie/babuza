@@ -3,7 +3,7 @@ package logfile
 import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrycollection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile/page"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
@@ -93,7 +93,7 @@ func TestLogFileAndReplay_CRC(t *testing.T) {
 	assert.Nil(t, logW.Close())
 	reader, err := utility.GetLogFileReader(dir, fm)
 	assert.Nil(t, err)
-	logR, parsedResult := newTestLogParser(t, collection.NewEntryIndex())
+	logR, parsedResult := newTestLogParser(t, entrycollection.NewIndexedEntryStore())
 	assert.ErrorIs(t, logR.Parse(reader), io.EOF)
 	assert.Equal(t, es.crcs[1], parsedResult.LastValidLogCrc())
 }
@@ -118,7 +118,7 @@ func TestLogFileAndReplay_Metadata(t *testing.T) {
 	assert.Nil(t, logW.Close())
 	reader, err := utility.GetLogFileReader(dir, fm)
 	assert.Nil(t, err)
-	logR, parsedResult := newTestLogParser(t, collection.NewEntryIndex())
+	logR, parsedResult := newTestLogParser(t, entrycollection.NewIndexedEntryStore())
 	assert.ErrorIs(t, logR.Parse(reader), io.EOF)
 	assert.Equal(t, es.metadata[7], parsedResult.Metadata())
 	assert.Equal(t, es.crcs[1], parsedResult.LastValidLogCrc())
@@ -158,7 +158,7 @@ func TestLogFileAndReplay_Snapshot(t *testing.T) {
 	assert.Nil(t, logW.Close())
 	reader, err := utility.GetLogFileReader(dir, fm)
 	assert.Nil(t, err)
-	logR, parsedResult := newTestLogParser(t, collection.NewEntryIndex())
+	logR, parsedResult := newTestLogParser(t, entrycollection.NewIndexedEntryStore())
 	assert.ErrorIs(t, logR.Parse(reader), io.EOF)
 	assert.Equal(t, es.metadata[0], parsedResult.Metadata())
 	assert.Equal(t, es.snapshots, parsedResult.WalSnapshots())
@@ -192,7 +192,7 @@ func TestLogFileAndReplay_HardState(t *testing.T) {
 	assert.Nil(t, logW.Close())
 	reader, err := utility.GetLogFileReader(dir, fm)
 	assert.Nil(t, err)
-	logR, parsedResult := newTestLogParser(t, collection.NewEntryIndex())
+	logR, parsedResult := newTestLogParser(t, entrycollection.NewIndexedEntryStore())
 	assert.ErrorIs(t, logR.Parse(reader), io.EOF)
 	assert.Equal(t, es.metadata[0], parsedResult.Metadata())
 	assert.Equal(t, es.hardStates[7], parsedResult.HardState())
@@ -225,7 +225,7 @@ func TestLogFileAndReplay_NextEntry(t *testing.T) {
 	assert.Nil(t, logW.Close())
 	reader, err := utility.GetLogFileReader(dir, fm)
 	assert.Nil(t, err)
-	logR, parsedResult := newTestLogParser(t, collection.NewEntryIndex())
+	logR, parsedResult := newTestLogParser(t, entrycollection.NewIndexedEntryStore())
 	assert.ErrorIs(t, logR.Parse(reader), io.EOF)
 	assert.Equal(t, es.metadata[0], parsedResult.Metadata())
 	assert.Equal(t, es.nextEntries[7], parsedResult.NextEntry())
@@ -280,7 +280,7 @@ func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
 	assert.Nil(t, logW.Close())
 	reader, err := utility.GetLogFileReader(dir, fm)
 	assert.Nil(t, err)
-	logR, parsedResult := newTestLogParser(t, collection.NewEntryIndex())
+	logR, parsedResult := newTestLogParser(t, entrycollection.NewIndexedEntryStore())
 	assert.ErrorIs(t, logR.Parse(reader), io.EOF)
 	entries, _ := parsedResult.EntryCollection().Entries()
 	resultEntries := entries.([]walbase.EntryIndex[storage.EntryMetadata])
@@ -353,7 +353,7 @@ func TestLogFileAndReplay_EntryFormat(t *testing.T) {
 	assert.Nil(t, logW.Close())
 	reader, err := utility.GetLogFileReader(dir, fm)
 	assert.Nil(t, err)
-	logR, parsedResult := newTestLogParser(t, collection.NewEntry())
+	logR, parsedResult := newTestLogParser(t, entrycollection.NewEntryStore())
 	assert.ErrorIs(t, logR.Parse(reader), io.EOF)
 	entries, _ := parsedResult.EntryCollection().Entries()
 	resultEntries := entries.([]raftpb.Entry)

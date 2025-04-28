@@ -6,7 +6,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrycollection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/player"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
@@ -20,7 +20,7 @@ import (
 )
 
 func findSnapshotInternal(walDir string, memPool *allocator.TwoLevelPool) ([]walpb.Snapshot, error) {
-	result := player.NewReplayResult(collection.NewNopEntry())
+	result := player.NewReplayResult(entrycollection.NewNopEntry())
 	p, err := player.Create(walDir, EmptyWalpbSnapshot, memPool)
 	if err != nil {
 		return nil, err
@@ -102,9 +102,9 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 
 	var result *player.ReplayResult
 	if !options.DisableEntryIndex {
-		result = player.NewReplayResult(collection.NewEntryIndex())
+		result = player.NewReplayResult(entrycollection.NewIndexedEntryStore())
 	} else {
-		result = player.NewReplayResult(collection.NewEntry())
+		result = player.NewReplayResult(entrycollection.NewEntryStore())
 	}
 
 	if err = p.Replay(result, true); err != nil {
@@ -136,7 +136,7 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 		}
 		wal.SetEntryIndexStorage(es)
 		entryStorage = es
-		result.EntryCollection().(*collection.EntryIndex).SetReader(logMgr)
+		result.EntryCollection().(*entrycollection.IndexedEntryStore).SetReader(logMgr)
 	} else {
 		entryStorage = raft.NewMemoryStorage()
 	}

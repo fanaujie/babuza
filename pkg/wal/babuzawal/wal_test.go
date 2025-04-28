@@ -3,7 +3,7 @@ package babuzawal
 import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrycollection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
@@ -181,7 +181,7 @@ func TestWal_Save(t *testing.T) {
 	assert.Nil(t, w.Sync())
 	assert.Nil(t, w.Close())
 
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 	replay, err := player.Create(testWalMgrConfig.WalDir, EmptyWalpbSnapshot, cp)
 	assert.Nil(t, err)
 	assert.Nil(t, replay.Replay(pr, false))
@@ -213,7 +213,7 @@ func TestWal_SaveSnapshot(t *testing.T) {
 	assert.Nil(t, w.SaveSnapshot(snap))
 	assert.Nil(t, w.Sync())
 	assert.Nil(t, w.Close())
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 
 	walsnap := walpb.Snapshot{
 		Index:     snap.Metadata.Index,
@@ -343,7 +343,7 @@ func TestWal_Open(t *testing.T) {
 			entriesInSeg:     64,
 			dataSize:         32,
 			enableEntryIndex: false,
-			p:                collection.NewEntry(),
+			p:                entrycollection.NewEntryStore(),
 			validateEntryFun: func(t *testing.T, w *Wal, expect []raftpb.Entry, result *player.ReplayResult) {
 				ents, _ := result.EntryCollection().Entries()
 				assert.Equal(t, expect, ents.([]raftpb.Entry))
@@ -354,7 +354,7 @@ func TestWal_Open(t *testing.T) {
 			entriesInSeg:     64,
 			dataSize:         32,
 			enableEntryIndex: true,
-			p:                collection.NewEntryIndex(),
+			p:                entrycollection.NewIndexedEntryStore(),
 			validateEntryFun: func(t *testing.T, w *Wal, expect []raftpb.Entry, result *player.ReplayResult) {
 				s := w.entryIndexStorage.(*storage.EntryStorage)
 				readEntryIndex := s.EntryIndex()
@@ -487,7 +487,7 @@ func TestWal_Open_Snapshot(t *testing.T) {
 			validateEntryFun func(t *testing.T, w *Wal, segId uint64, result iwal.ReplayWalResult)
 		}{
 			{
-				result: player.NewReplayResult(collection.NewEntry()),
+				result: player.NewReplayResult(entrycollection.NewEntryStore()),
 				validateEntryFun: func(t *testing.T, w *Wal, segId uint64, result iwal.ReplayWalResult) {
 					ents, _ := result.EntryCollection().Entries()
 					entries := ents.([]raftpb.Entry)
@@ -498,7 +498,7 @@ func TestWal_Open_Snapshot(t *testing.T) {
 				},
 			},
 			{
-				result: player.NewReplayResult(collection.NewEntryIndex()),
+				result: player.NewReplayResult(entrycollection.NewIndexedEntryStore()),
 				validateEntryFun: func(t *testing.T, w *Wal, segId uint64, result iwal.ReplayWalResult) {
 					ents, _ := result.EntryCollection().Entries()
 					entries := ents.([]walbase.EntryIndex[storage.EntryMetadata])
@@ -553,7 +553,7 @@ func TestWal_NextEntryChange(t *testing.T) {
 	assert.Nil(t, w.saveHardState(raftpb.HardState{}))
 	assert.Nil(t, w.cycle())
 	assert.Nil(t, w.Close())
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 	replay, err := player.Create(testWalMgrConfig.WalDir, EmptyWalpbSnapshot, cp)
 	assert.Nil(t, err)
 	assert.Nil(t, replay.Replay(pr, false))
@@ -625,7 +625,7 @@ func TestWal_NextEntry_NotContinuous(t *testing.T) {
 		assert.Nil(t, w.Save(raftpb.HardState{}, batchEnts))
 	}
 	assert.Nil(t, w.Sync())
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 	replay, err := player.Create(testWalMgrConfig.WalDir, EmptyWalpbSnapshot, cp)
 	assert.Nil(t, err)
 	assert.Nil(t, replay.Replay(pr, false))
@@ -690,7 +690,7 @@ func TestWal_CoverEntries(t *testing.T) {
 	assert.Nil(t, w.Sync())
 	assert.Nil(t, w.Close())
 	expect = append(expect, entries...)
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 
 	replay, err := player.Create(testWalMgrConfig.WalDir, EmptyWalpbSnapshot, cp)
 	assert.Nil(t, err)
