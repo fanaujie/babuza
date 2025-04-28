@@ -29,7 +29,6 @@ func Release(b *ByteSlice) {
 }
 
 func NewByteSlicePool(minAllocByteSize, maxAllocByteSize int, factor float64) *ByteSlicePool {
-
 	if minAllocByteSize == 0 || maxAllocByteSize == 0 {
 		panic(fmt.Errorf("allocator: size is equal 0 (minAllocByteSize=%d, maxAllocByteSize=%d)", minAllocByteSize, maxAllocByteSize))
 	}
@@ -37,15 +36,22 @@ func NewByteSlicePool(minAllocByteSize, maxAllocByteSize int, factor float64) *B
 		panic(fmt.Errorf("allocator: minAllocByteSize is greater than maxAllocByteSize (minAllocByteSize=%d, maxAllocByteSize=%d)",
 			minAllocByteSize, maxAllocByteSize))
 	}
+	if factor == 1 {
+		panic(fmt.Errorf("allocator: factor is 1 (minAllocByteSize=%d)", minAllocByteSize))
+	}
 	b := &ByteSlicePool{}
-	for nextLevelSize := minAllocByteSize; nextLevelSize <= maxAllocByteSize; nextLevelSize = int(float64(nextLevelSize) * factor) {
+	nextLevelSize := minAllocByteSize
+	for ; nextLevelSize <= maxAllocByteSize; nextLevelSize = int(float64(nextLevelSize) * factor) {
 		b.pools = append(b.pools, &levelPool{levelSize: nextLevelSize})
+	}
+	if nextLevelSize < maxAllocByteSize {
+		b.pools = append(b.pools, &levelPool{levelSize: maxAllocByteSize})
 	}
 	return b
 }
 
 func (p *ByteSlicePool) Acquire(byteSize int) *ByteSlice {
-	if byteSize == 0 {
+	if byteSize <= 0 {
 		panic("allocator: byteSize is equal to 0")
 	}
 	for _, bag := range p.pools {
@@ -57,10 +63,13 @@ func (p *ByteSlicePool) Acquire(byteSize int) *ByteSlice {
 			return v.(*ByteSlice)
 		}
 	}
-	return &ByteSlice{Buffer: make([]byte, byteSize)}
+	panic(fmt.Sprintf("allocator: byteSize is greater than maxAllocByteSize (byteSize=%d, maxAllocByteSize=%d)", byteSize, p.pools[len(p.pools)-1].levelSize))
 }
 
 func (p *ByteSlicePool) Release(b *ByteSlice) {
+	if b == nil || b.Buffer == nil {
+		return
+	}
 	capSize := cap(b.Buffer)
 	for id, bag := range p.pools {
 		if capSize == bag.levelSize {
@@ -68,7 +77,6 @@ func (p *ByteSlicePool) Release(b *ByteSlice) {
 			p.pools[id].pool.Put(b)
 			return
 		}
-		continue
 	}
-	//TODO: log size
+	panic(fmt.Sprintf("allocator: byteSize is greater than maxAllocByteSize (byteSize=%d, maxAllocByteSize=%d)", capSize, p.pools[len(p.pools)-1].levelSize))
 }

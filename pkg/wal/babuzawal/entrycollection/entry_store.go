@@ -28,7 +28,6 @@ func (e *EntryStore) Decode(fileId, snapshotIndex uint64, logType pb.LogType, lo
 		entry.Data = make([]byte, len(logBuf), entryDataCapacity)
 		copy(entry.Data, logBuf)
 	}
-	r.IncreaseNextIndex()
 	if entry.Index > snapshotIndex {
 		// prevent "panic: runtime error: slice bounds out of range [:13038096702221461992] with capacity 0"
 		up := entry.Index - snapshotIndex - 1
@@ -39,6 +38,7 @@ func (e *EntryStore) Decode(fileId, snapshotIndex uint64, logType pb.LogType, lo
 		// The line below is potentially overriding some 'uncommitted' termEntriesIndex.
 		e.entries = append(e.entries[:up], entry)
 	}
+	r.SetNextIndex(entry.Index + 1)
 	return nil
 }
 

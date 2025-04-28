@@ -26,11 +26,11 @@ const (
 
 type Encoder struct {
 	writer     io.Writer
-	memPool    *allocator.TwoLevelPool
+	memPool    *allocator.ByteSlicePool
 	currentCrc uint32
 }
 
-func NewEncoder(writer io.Writer, memPool *allocator.TwoLevelPool, currentCrc uint32) *Encoder {
+func NewEncoder(writer io.Writer, memPool *allocator.ByteSlicePool, currentCrc uint32) *Encoder {
 	if writer == nil {
 		panic("encoder: writer can not be nil")
 	}
@@ -60,23 +60,21 @@ func Encode[T EncodeLog](e *Encoder, logType pb.LogType, logSize int, marshaller
 	}
 	padding := e.calcPadding(logSize)
 	total := HeaderSize + logSize + padding
-	allocBuf, p := e.memPool.Acquire(total)
-	if allocBuf == nil {
-		allocBuf = p.Buffer
-		defer e.memPool.Release(p)
-	}
+	allocBuf := e.memPool.Acquire(total)
+	defer e.memPool.Release(allocBuf)
+
 	var err error
-	binary.LittleEndian.PutUint32(allocBuf[:crcOffset], uint32((logSize<<logSizeShift)|int(logType<<logTypeShift)|padding&paddingMask))
-	e.currentCrc, err = marshaller.Encode(allocBuf[HeaderSize:HeaderSize+logSize], logSize, e.currentCrc)
+	binary.LittleEndian.PutUint32(allocBuf.Buffer[:crcOffset], uint32((logSize<<logSizeShift)|int(logType<<logTypeShift)|padding&paddingMask))
+	e.currentCrc, err = marshaller.Encode(allocBuf.Buffer[HeaderSize:HeaderSize+logSize], logSize, e.currentCrc)
 	if err != nil {
 		return err
 	}
-	binary.LittleEndian.PutUint32(allocBuf[crcOffset:crcOffset+crcSize], e.currentCrc)
+	binary.LittleEndian.PutUint32(allocBuf.Buffer[crcOffset:crcOffset+crcSize], e.currentCrc)
 	paddingOffset := HeaderSize + logSize
 	for i := 0; i < padding; i++ {
-		allocBuf[paddingOffset+i] = 0
+		allocBuf.Buffer[paddingOffset+i] = 0
 	}
-	if _, err = e.writer.Write(allocBuf[:total]); err != nil {
+	if _, err = e.writer.Write(allocBuf.Buffer[:total]); err != nil {
 		return err
 	}
 	return nil

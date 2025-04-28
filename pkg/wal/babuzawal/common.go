@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-func findSnapshotInternal(walDir string, memPool *allocator.TwoLevelPool) ([]walpb.Snapshot, error) {
+func findSnapshotInternal(walDir string, memPool *allocator.ByteSlicePool) ([]walpb.Snapshot, error) {
 	result := player.NewReplayResult(entrycollection.NewNopEntry())
 	p, err := player.Create(walDir, EmptyWalpbSnapshot, memPool)
 	if err != nil {
@@ -40,7 +40,8 @@ func findSnapshotInternal(walDir string, memPool *allocator.TwoLevelPool) ([]wal
 	return walSnapshots, nil
 }
 
-func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Options, memPool *allocator.TwoLevelPool) (ibabuza.EntryStorage, ibabuza.Wal, error) {
+func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Options,
+	memPool *allocator.ByteSlicePool) (ibabuza.EntryStorage, ibabuza.Wal, error) {
 	if fileutil.Exist(walDir) {
 		if err := os.RemoveAll(walDir); err != nil {
 			return nil, nil, err
@@ -73,8 +74,8 @@ func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Opt
 
 	var entryStorage ibabuza.EntryStorage
 	if !options.DisableEntryIndex {
-		es := &storage.EntryStorage{
-			EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](logMgr),
+		es := &storage.EntryIndexRaftStorage{
+			EntryStorage: walbase.NewEntryStorage[storage.EntryIndexMetadata](logMgr),
 		}
 		wal.SetEntryIndexStorage(es)
 		entryStorage = es
@@ -85,7 +86,8 @@ func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Opt
 	return entryStorage, wal, nil
 }
 
-func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitted bool, options Options, memPool *allocator.TwoLevelPool) (ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
+func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitted bool, options Options,
+	memPool *allocator.ByteSlicePool) (ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
 	walSnap := EmptyWalpbSnapshot
 	if snapshot != nil {
 		walSnap = walpb.Snapshot{
@@ -131,8 +133,8 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 
 	var entryStorage ibabuza.EntryStorage
 	if !options.DisableEntryIndex {
-		es := &storage.EntryStorage{
-			EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](logMgr),
+		es := &storage.EntryIndexRaftStorage{
+			EntryStorage: walbase.NewEntryStorage[storage.EntryIndexMetadata](logMgr),
 		}
 		wal.SetEntryIndexStorage(es)
 		entryStorage = es
@@ -158,7 +160,7 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 	}
 
 	if !options.DisableEntryIndex {
-		if err = entryStorage.(*storage.EntryStorage).AppendEntryIndex(ents.([]walbase.EntryIndex[storage.EntryMetadata])); err != nil {
+		if err = entryStorage.(*storage.EntryIndexRaftStorage).AppendEntryIndex(ents.([]walbase.EntryIndex[storage.EntryIndexMetadata])); err != nil {
 			return nil, nil, nil, err
 		}
 	} else {

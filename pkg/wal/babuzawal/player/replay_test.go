@@ -35,7 +35,7 @@ func genLogFilesWithEntrySectorInfo(t *testing.T, dir string, segmentFileSize in
 		AlignmentPageSize: 4096,
 		PageWriterBufSize: 4096,
 	}
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	cfg.WalDir = dir
 	logMgr, err := logfile.NewManager(cfg, cp)
 	assert.Nil(t, err)
@@ -125,7 +125,7 @@ func TestPlayer_Replay_Repair_CorruptByTornWrite(t *testing.T) {
 	if totalSize%sectorSize != 0 {
 		totalSector++
 	}
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	for i := 0; i < totalSector; i++ {
 		func(tornSector int) {
 			p, _ := ioutil.TempDir("", "player-torn")

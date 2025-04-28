@@ -36,12 +36,12 @@ type Manager struct {
 	cfg        ManagerConfig
 	filesDesc  map[uint64]iwal.LogFileDesc
 	nextLogId  uint64
-	memPool    *allocator.TwoLevelPool
+	memPool    *allocator.ByteSlicePool
 	walDirFile *os.File
 	mu         sync.Mutex
 }
 
-func NewManager(cfg ManagerConfig, memPool *allocator.TwoLevelPool) (*Manager, error) {
+func NewManager(cfg ManagerConfig, memPool *allocator.ByteSlicePool) (*Manager, error) {
 	var dirFile *os.File
 	dirFile, err := os.Open(cfg.WalDir)
 	if err != nil {
@@ -55,7 +55,7 @@ func NewManager(cfg ManagerConfig, memPool *allocator.TwoLevelPool) (*Manager, e
 	}, nil
 }
 
-func NewManagerWithScan(cfg ManagerConfig, startSnapshot walpb.Snapshot, memPool *allocator.TwoLevelPool) (*Manager, error) {
+func NewManagerWithScan(cfg ManagerConfig, startSnapshot walpb.Snapshot, memPool *allocator.ByteSlicePool) (*Manager, error) {
 	var dirFile *os.File
 	dirFile, err := os.Open(cfg.WalDir)
 	if err != nil {
@@ -187,7 +187,7 @@ func (m *Manager) Purge(snapshotIndex uint64) error {
 	return nil
 }
 
-func (m *Manager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryMetadata], destEnts []raftpb.Entry) error {
+func (m *Manager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryIndexMetadata], destEnts []raftpb.Entry) error {
 	if len(readEntryIndex) != len(destEnts) || len(readEntryIndex) == 0 {
 		return errors.New("logfile manager: invalid the size of entryIndex and raftpb.Entry")
 	}

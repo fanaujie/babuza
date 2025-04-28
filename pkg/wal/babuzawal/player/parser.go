@@ -25,13 +25,13 @@ type Parser struct {
 	result        iwal.ReplayWalResult
 	startSnapshot walpb.Snapshot
 
-	memPool       *allocator.TwoLevelPool
+	memPool       *allocator.ByteSlicePool
 	parseEntry    bool
 	findNextEntry bool
 }
 
 func NewParser(result iwal.ReplayWalResult, startSnapshot walpb.Snapshot,
-	memPool *allocator.TwoLevelPool) *Parser {
+	memPool *allocator.ByteSlicePool) *Parser {
 	_, NotParseEntry := result.EntryCollection().(*entrycollection.NopEntryStore)
 	return &Parser{
 		result:        result,

@@ -18,10 +18,10 @@ type Player struct {
 	walDir        string
 	logFiles      utility.LogFileDescSlice
 	startSnapshot walpb.Snapshot
-	memPool       *allocator.TwoLevelPool
+	memPool       *allocator.ByteSlicePool
 }
 
-func Create(walDir string, startSnapshot walpb.Snapshot, memPool *allocator.TwoLevelPool) (*Player, error) {
+func Create(walDir string, startSnapshot walpb.Snapshot, memPool *allocator.ByteSlicePool) (*Player, error) {
 	logFiles, err := utility.ReadValidLogFiles(walDir, startSnapshot)
 	if err != nil {
 		return nil, err

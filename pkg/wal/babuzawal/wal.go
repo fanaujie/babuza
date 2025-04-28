@@ -16,7 +16,7 @@ import (
 type EntryIndexStorage interface {
 	AppendCache([]raftpb.Entry)
 	DeleteCache(uint64)
-	AppendEntryIndex([]walbase.EntryIndex[storage.EntryMetadata]) error
+	AppendEntryIndex([]walbase.EntryIndex[storage.EntryIndexMetadata]) error
 }
 
 var EmptyWalpbSnapshot = walpb.Snapshot{}
@@ -196,9 +196,9 @@ func (w *Wal) SetEntryIndexStorage(es EntryIndexStorage) {
 }
 
 func (w *Wal) saveEntry(entries []raftpb.Entry) error {
-	var entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
+	var entriesIndex []walbase.EntryIndex[storage.EntryIndexMetadata]
 	if w.entryIndexStorage != nil {
-		entriesIndex = make([]walbase.EntryIndex[storage.EntryMetadata], len(entries))
+		entriesIndex = make([]walbase.EntryIndex[storage.EntryIndexMetadata], len(entries))
 	}
 	for i := range entries {
 		e := &entries[i]

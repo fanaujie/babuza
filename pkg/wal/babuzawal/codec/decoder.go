@@ -11,12 +11,12 @@ type Handler func(logType pb.LogType, logBuf []byte, logSizeWithPadding int64, l
 
 type Decoder struct {
 	reader    io.Reader
-	memPool   *allocator.TwoLevelPool
+	memPool   *allocator.ByteSlicePool
 	handler   Handler
 	headerBuf []byte
 }
 
-func NewDecoder(reader io.Reader, memPool *allocator.TwoLevelPool, handler Handler) *Decoder {
+func NewDecoder(reader io.Reader, memPool *allocator.ByteSlicePool, handler Handler) *Decoder {
 
 	if reader == nil {
 		panic("decoder: reader can not be nil")
@@ -54,12 +54,9 @@ func (d *Decoder) Decode() error {
 		return d.handler(logType, nil, HeaderSize, crc)
 	}
 
-	allocBuf, secondPool := d.memPool.Acquire(nextReadSize)
-	if allocBuf == nil {
-		allocBuf = secondPool.Buffer
-		defer d.memPool.Release(secondPool)
-	}
-	if n, err := io.ReadFull(d.reader, allocBuf[:nextReadSize]); err != nil {
+	byteSlice := d.memPool.Acquire(nextReadSize)
+	defer d.memPool.Release(byteSlice)
+	if n, err := io.ReadFull(d.reader, byteSlice.Buffer[:nextReadSize]); err != nil {
 		if err == io.EOF {
 			return io.ErrUnexpectedEOF
 		}
@@ -68,5 +65,5 @@ func (d *Decoder) Decode() error {
 		return io.ErrUnexpectedEOF
 	}
 
-	return d.handler(logType, allocBuf[:logSize], int64(HeaderSize+nextReadSize), crc)
+	return d.handler(logType, byteSlice.Buffer[:logSize], int64(HeaderSize+nextReadSize), crc)
 }

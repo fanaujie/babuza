@@ -101,8 +101,8 @@ func (r *ReplayResult) UnmarshalNextEntry(buf []byte) error {
 	return nil
 }
 
-func (r *ReplayResult) IncreaseNextIndex() {
-	r.nextEntry.NextIndex++
+func (r *ReplayResult) SetNextIndex(nextIndex uint64) {
+	r.nextEntry.NextIndex = nextIndex
 }
 
 func (r *ReplayResult) AppendWalSnapshots(snap walpb.Snapshot) {

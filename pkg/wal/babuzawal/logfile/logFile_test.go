@@ -1,6 +1,7 @@
 package logfile
 
 import (
+	"crypto/rand"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrycollection"
@@ -15,16 +16,14 @@ import (
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"io"
-	"io/ioutil"
-	"math/rand"
-	"os"
+	mathRand "math/rand"
 	"path/filepath"
 	"testing"
 )
 
 type termEntriesIndex struct {
 	nextEntry    pb.WalNextEntry
-	entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
+	entriesIndex []walbase.EntryIndex[storage.EntryIndexMetadata]
 }
 
 type termEntries struct {
@@ -80,8 +79,7 @@ func newTestLogParser(t *testing.T, entryParser iwal.EntryCollection) (*player.P
 }
 
 func TestLogFileAndReplay_CRC(t *testing.T) {
-	dir, _ := ioutil.TempDir("", "logFile")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	fm := iwal.LogFileDesc{}
 	logW := newTestLogFile(t, dir, defaultLogRWConfig, fm)
 	var es expectResult
@@ -99,8 +97,7 @@ func TestLogFileAndReplay_CRC(t *testing.T) {
 }
 
 func TestLogFileAndReplay_Metadata(t *testing.T) {
-	dir, _ := ioutil.TempDir("", "logFile")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	fm := iwal.LogFileDesc{}
 	logW := newTestLogFile(t, dir, defaultLogRWConfig, fm)
 	var es expectResult
@@ -125,13 +122,12 @@ func TestLogFileAndReplay_Metadata(t *testing.T) {
 }
 
 func TestLogFileAndReplay_Snapshot(t *testing.T) {
-	dir, _ := ioutil.TempDir("", "logFile")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	fm := iwal.LogFileDesc{}
 	logW := newTestLogFile(t, dir, defaultLogRWConfig, fm)
 	var es expectResult
 	m1 := make([]byte, 16)
-	rand.Read(m1)
+	_, _ = rand.Read(m1)
 	es.crcs = append(es.crcs, 0)
 	assert.Nil(t, logW.Crc(es.crcs[0]))
 	es.metadata = append(es.metadata, m1)
@@ -166,13 +162,12 @@ func TestLogFileAndReplay_Snapshot(t *testing.T) {
 }
 
 func TestLogFileAndReplay_HardState(t *testing.T) {
-	dir, _ := ioutil.TempDir("", "logFile")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	fm := iwal.LogFileDesc{}
 	logW := newTestLogFile(t, dir, defaultLogRWConfig, fm)
 	var es expectResult
 	m1 := make([]byte, 16)
-	rand.Read(m1)
+	_, _ = rand.Read(m1)
 	es.crcs = append(es.crcs, 0)
 	assert.Nil(t, logW.Crc(es.crcs[0]))
 	es.metadata = append(es.metadata, m1)
@@ -200,13 +195,12 @@ func TestLogFileAndReplay_HardState(t *testing.T) {
 }
 
 func TestLogFileAndReplay_NextEntry(t *testing.T) {
-	dir, _ := ioutil.TempDir("", "logFile")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	fm := iwal.LogFileDesc{}
 	logW := newTestLogFile(t, dir, defaultLogRWConfig, fm)
 	var es expectResult
 	m1 := make([]byte, 16)
-	rand.Read(m1)
+	_, _ = rand.Read(m1)
 	es.crcs = append(es.crcs, 0)
 	assert.Nil(t, logW.Crc(es.crcs[0]))
 	es.metadata = append(es.metadata, m1)
@@ -233,13 +227,12 @@ func TestLogFileAndReplay_NextEntry(t *testing.T) {
 }
 
 func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
-	dir, _ := ioutil.TempDir("", "logFile")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	fm := iwal.LogFileDesc{}
 	logW := newTestLogFile(t, dir, defaultLogRWConfig, fm)
 	var expectSeg expectResult
 	m1 := make([]byte, 16)
-	rand.Read(m1)
+	_, _ = rand.Read(m1)
 	expectSeg.metadata = append(expectSeg.metadata, m1)
 	assert.Nil(t, logW.Metadata(expectSeg.metadata[0]))
 
@@ -248,14 +241,14 @@ func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
 		expectSeg.crcs = append(expectSeg.crcs, uint32(i))
 		assert.Nil(t, logW.Crc(expectSeg.crcs[len(expectSeg.crcs)-1]))
 		exEntries := termEntriesIndex{
-			entriesIndex: make([]walbase.EntryIndex[storage.EntryMetadata], numEntries),
+			entriesIndex: make([]walbase.EntryIndex[storage.EntryIndexMetadata], numEntries),
 		}
 		exEntries.nextEntry = pb.WalNextEntry{
 			NextTerm:  i + 1,
 			NextIndex: i*numEntries + 1}
 		assert.Nil(t, logW.NextEntry(exEntries.nextEntry))
 		for j := uint64(0); j < numEntries/2; j++ {
-			dataLen := rand.Intn(16) + 1
+			dataLen := mathRand.Intn(16) + 1
 			data := make([]byte, dataLen)
 			rand.Read(data)
 			exEntries.entriesIndex[j].Term = exEntries.nextEntry.NextTerm
@@ -283,7 +276,7 @@ func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
 	logR, parsedResult := newTestLogParser(t, entrycollection.NewIndexedEntryStore())
 	assert.ErrorIs(t, logR.Parse(reader), io.EOF)
 	entries, _ := parsedResult.EntryCollection().Entries()
-	resultEntries := entries.([]walbase.EntryIndex[storage.EntryMetadata])
+	resultEntries := entries.([]walbase.EntryIndex[storage.EntryIndexMetadata])
 	assert.Equal(t, numTerm*numEntries, uint64(len(resultEntries)))
 
 	for term := uint64(0); term < numTerm; term++ {
@@ -309,13 +302,12 @@ func TestLogFileAndReplay_EntryIndexFormat(t *testing.T) {
 }
 
 func TestLogFileAndReplay_EntryFormat(t *testing.T) {
-	dir, _ := ioutil.TempDir("", "logFile")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	fm := iwal.LogFileDesc{}
 	logW := newTestLogFile(t, dir, defaultLogRWConfig, fm)
 	var expectSeg expectResult
 	m1 := make([]byte, 16)
-	rand.Read(m1)
+	_, _ = rand.Read(m1)
 	expectSeg.metadata = append(expectSeg.metadata, m1)
 	assert.Nil(t, logW.Metadata(expectSeg.metadata[0]))
 
@@ -331,7 +323,7 @@ func TestLogFileAndReplay_EntryFormat(t *testing.T) {
 			NextIndex: i*numEntries + 1}
 		assert.Nil(t, logW.NextEntry(exEntries.nextEntry))
 		for j := uint64(0); j < numEntries/2; j++ {
-			dataLen := rand.Intn(16) + 1
+			dataLen := mathRand.Intn(16) + 1
 			data := make([]byte, dataLen)
 			rand.Read(data)
 			exEntries.entries[j].Term = exEntries.nextEntry.NextTerm

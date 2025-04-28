@@ -137,7 +137,7 @@ func GetLogFileReader(dir string, desc iwal.LogFileDesc) (*LogFileIoWrapper, err
 	}, nil
 }
 
-func ReadEntriesData(filePath string, readMetadata []walbase.EntryIndex[storage.EntryMetadata], destEnts []raftpb.Entry) error {
+func ReadEntriesData(filePath string, readMetadata []walbase.EntryIndex[storage.EntryIndexMetadata], destEnts []raftpb.Entry) error {
 	at, err := mmap.Open(filePath)
 	if err != nil {
 		return err

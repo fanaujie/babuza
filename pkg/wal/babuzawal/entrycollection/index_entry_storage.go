@@ -11,11 +11,11 @@ import (
 )
 
 type EntryIndexReader interface {
-	ReadEntriesData(readMetadata []walbase.EntryIndex[storage.EntryMetadata], ents []raftpb.Entry) error
+	ReadEntriesData(readMetadata []walbase.EntryIndex[storage.EntryIndexMetadata], ents []raftpb.Entry) error
 }
 
 type IndexedEntryStore struct {
-	entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
+	entriesIndex []walbase.EntryIndex[storage.EntryIndexMetadata]
 	reader       EntryIndexReader
 }
 
@@ -27,18 +27,18 @@ func (ei *IndexedEntryStore) Decode(fileId, snapshotIndex uint64, logType pb.Log
 	entryDataCapacity int64, r iwal.ReplayWalResult) error {
 
 	nextEntry := r.NextEntry()
-	entry := walbase.EntryIndex[storage.EntryMetadata]{
+	entry := walbase.EntryIndex[storage.EntryIndexMetadata]{
 		Term:  nextEntry.NextTerm,
 		Index: nextEntry.NextIndex,
 		Type:  raftpb.EntryType(logType),
-		Metadata: storage.EntryMetadata{
+		Metadata: storage.EntryIndexMetadata{
 			FileId:       fileId,
 			Offset:       r.LastValidLogOffset() + codec.HeaderSize,
 			DataLen:      int64(len(logBuf)),
 			DataCapacity: entryDataCapacity,
 		},
 	}
-	r.IncreaseNextIndex()
+
 	if entry.Index > snapshotIndex {
 		// prevent "panic: runtime error: slice bounds out of range [:13038096702221461992] with capacity 0"
 		up := entry.Index - snapshotIndex - 1
@@ -49,6 +49,7 @@ func (ei *IndexedEntryStore) Decode(fileId, snapshotIndex uint64, logType pb.Log
 		// The line below is potentially overriding some 'uncommitted' termEntriesIndex.
 		ei.entriesIndex = append(ei.entriesIndex[:up], entry)
 	}
+	r.SetNextIndex(entry.Index + 1)
 	return nil
 }
 
@@ -65,7 +66,7 @@ func (ei *IndexedEntryStore) VisitEntry(entryType raftpb.EntryType, visitor func
 		return errors.New("reader is nil")
 	}
 	var confEntries []raftpb.Entry
-	var entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
+	var entriesIndex []walbase.EntryIndex[storage.EntryIndexMetadata]
 
 	for i := range ei.entriesIndex {
 		e := &ei.entriesIndex[i]
