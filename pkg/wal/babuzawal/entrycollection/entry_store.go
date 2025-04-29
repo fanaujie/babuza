@@ -1,4 +1,4 @@
-package collection
+package entrycollection
 
 import (
 	"errors"
@@ -7,15 +7,15 @@ import (
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
-type Entry struct {
+type EntryStore struct {
 	entries []raftpb.Entry
 }
 
-func NewEntry() *Entry {
-	return &Entry{}
+func NewEntryStore() *EntryStore {
+	return &EntryStore{}
 }
 
-func (e *Entry) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf []byte,
+func (e *EntryStore) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf []byte,
 	entryDataCapacity int64, r iwal.ReplayWalResult) error {
 
 	nextEntry := r.NextEntry()
@@ -28,7 +28,6 @@ func (e *Entry) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf 
 		entry.Data = make([]byte, len(logBuf), entryDataCapacity)
 		copy(entry.Data, logBuf)
 	}
-	r.IncreaseNextIndex()
 	if entry.Index > snapshotIndex {
 		// prevent "panic: runtime error: slice bounds out of range [:13038096702221461992] with capacity 0"
 		up := entry.Index - snapshotIndex - 1
@@ -39,18 +38,19 @@ func (e *Entry) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf 
 		// The line below is potentially overriding some 'uncommitted' termEntriesIndex.
 		e.entries = append(e.entries[:up], entry)
 	}
+	r.SetNextIndex(entry.Index + 1)
 	return nil
 }
 
-func (e *Entry) Entries() (interface{}, error) {
+func (e *EntryStore) Entries() (interface{}, error) {
 	return e.entries, nil
 }
-func (e *Entry) ClearEntries() error {
+func (e *EntryStore) ClearEntries() error {
 	e.entries = nil
 	return nil
 }
 
-func (e *Entry) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry) error) error {
+func (e *EntryStore) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry) error) error {
 	var confEntries []raftpb.Entry
 	for i := range e.entries {
 		entry := &e.entries[i]
@@ -65,7 +65,7 @@ func (e *Entry) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry
 	}
 	return nil
 }
-func (e *Entry) DeleteUncommittedEntry(commitIndex uint64) error {
+func (e *EntryStore) DeleteUncommittedEntry(commitIndex uint64) error {
 	var deleteFrom int
 	entsLen := len(e.entries)
 	for i := 0; i < entsLen; i++ {

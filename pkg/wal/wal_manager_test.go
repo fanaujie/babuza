@@ -6,7 +6,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal"
-	babuzaWalStorage "github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
 	lstmWalStorage "github.com/fanaujie/babuza/pkg/wal/lsmtwal/storage"
 
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/utility"
@@ -32,17 +32,15 @@ import (
 func TestWalManager_Create(t *testing.T) {
 
 	t.Run("babuzawal wal manager: enable EntryIndex", func(t *testing.T) {
-		walDir, err := os.MkdirTemp("", "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(walDir)
+		walDir := t.TempDir()
 		b := babuzawal.NewWalManager(walDir, &logger.Mock{})
 		m, w, err := b.CreateWal(babuzapb.WalMetadata{
-			ClusterId:   100,
-			LocalPeerId: 1,
+			ClusterID:   100,
+			LocalPeerID: 1,
 		})
 		assert.Nil(t, err)
 		defer w.Close()
-		_, ok := m.(*babuzaWalStorage.EntryStorage)
+		_, ok := m.(*storage.EntryIndexRaftStorage)
 		assert.Equal(t, true, ok)
 
 		_, ok = w.(*babuzawal.Wal)
@@ -50,14 +48,12 @@ func TestWalManager_Create(t *testing.T) {
 	})
 
 	t.Run("babuzawal wal manager: disable EntryIndex", func(t *testing.T) {
-		walDir, err := os.MkdirTemp("", "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(walDir)
+		walDir := t.TempDir()
 		b := babuzawal.NewWalManager(walDir, &logger.Mock{},
 			babuzawal.SetOptsWithWalDisableEntryIndex(true))
 		m, w, err := b.CreateWal(babuzapb.WalMetadata{
-			ClusterId:   100,
-			LocalPeerId: 1,
+			ClusterID:   100,
+			LocalPeerID: 1,
 		})
 		assert.Nil(t, err)
 		defer w.Close()
@@ -68,14 +64,11 @@ func TestWalManager_Create(t *testing.T) {
 	})
 
 	t.Run("etcdwal wal manager", func(t *testing.T) {
-
-		walDir, err := os.MkdirTemp("", "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(walDir)
+		walDir := t.TempDir()
 		b := etcdwal.NewWalManager(walDir, zap.NewNop())
 		m, w, err := b.CreateWal(babuzapb.WalMetadata{
-			ClusterId:   100,
-			LocalPeerId: 1,
+			ClusterID:   100,
+			LocalPeerID: 1,
 		})
 		assert.Nil(t, err)
 		defer w.Close()
@@ -86,15 +79,13 @@ func TestWalManager_Create(t *testing.T) {
 	})
 
 	t.Run("lstm wal manager:", func(t *testing.T) {
-		walDir, err := os.MkdirTemp("", "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(walDir)
+		walDir := t.TempDir()
 		b := lsmtwal.NewBadgerWalManager(lsmtwal.Config{
 			WalDir: walDir,
 		}, &logger.Mock{})
 		m, w, err := b.CreateWal(babuzapb.WalMetadata{
-			ClusterId:   100,
-			LocalPeerId: 1,
+			ClusterID:   100,
+			LocalPeerID: 1,
 		})
 		assert.Nil(t, err)
 		defer w.Close()
@@ -150,16 +141,9 @@ func TestWalManager_FindSnapshot(t *testing.T) {
 			ConfState: &writeSnapshot[5].Metadata.ConfState,
 		},
 	}
-	bWalDir, err := os.MkdirTemp(t.TempDir(), "babuza-wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(bWalDir)
-	eWalDir, err := os.MkdirTemp(t.TempDir(), "etcd-wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(eWalDir)
-	lWalDir, err := os.MkdirTemp(t.TempDir(), "lstm-wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(lWalDir)
-
+	bWalDir := t.TempDir()
+	eWalDir := t.TempDir()
+	lWalDir := t.TempDir()
 	bw := babuzawal.NewWalManager(bWalDir, &logger.Mock{})
 	ew := etcdwal.NewWalManager(eWalDir, zap.NewNop())
 	lw := lsmtwal.NewBadgerWalManager(lsmtwal.Config{
@@ -168,8 +152,8 @@ func TestWalManager_FindSnapshot(t *testing.T) {
 	for _, tc := range []ibabuza.WalManager{bw, ew, lw} {
 		func(walManager ibabuza.WalManager) {
 			_, w, err := walManager.CreateWal(babuzapb.WalMetadata{
-				ClusterId:   100,
-				LocalPeerId: 1,
+				ClusterID:   100,
+				LocalPeerID: 1,
 			})
 			assert.Nil(t, err)
 			defer w.Close()
@@ -193,8 +177,8 @@ func TestWalManager_ReplayWal(t *testing.T) {
 	defaultSegmentSize := 64 * 1024 * 1024
 	testFunc := func(walManager ibabuza.WalManager) {
 		_, w, err := walManager.CreateWal(babuzapb.WalMetadata{
-			ClusterId:   100,
-			LocalPeerId: 1,
+			ClusterID:   100,
+			LocalPeerID: 1,
 		})
 		assert.Nil(t, err)
 		var expectedEntry = saveEntries(t, w, defaultSegmentSize, 4096, 1024)
@@ -207,26 +191,19 @@ func TestWalManager_ReplayWal(t *testing.T) {
 		assert.Equal(t, expectedEntry, resultEntry)
 	}
 	t.Run("babuzawal wal manager: replayWal", func(t *testing.T) {
-		walDir, err := os.MkdirTemp(t.TempDir(), "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(walDir)
-
+		walDir := t.TempDir()
 		b := babuzawal.NewWalManager(walDir, &logger.Mock{},
 			babuzawal.SetOptsWithWalDisableEntryIndex(false),
 			babuzawal.SetOptsWithWalLogFileChunkSize(4*1024*1024))
 		testFunc(b)
 	})
 	t.Run("etcdwal wal manager: replayWal", func(t *testing.T) {
-		walDir, err := os.MkdirTemp(t.TempDir(), "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(walDir)
+		walDir := t.TempDir()
 		b := etcdwal.NewWalManager(walDir, zap.NewNop())
 		testFunc(b)
 	})
 	t.Run("lstm wal manager: replayWal", func(t *testing.T) {
-		walDir, err := os.MkdirTemp(t.TempDir(), "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(walDir)
+		walDir := t.TempDir()
 		b := lsmtwal.NewBadgerWalManager(lsmtwal.Config{
 			WalDir: walDir,
 		}, &logger.Mock{})
@@ -239,8 +216,8 @@ func TestWalManager_StartWalPurgingProcess(t *testing.T) {
 	defaultSegmentSize := 4096
 	genWalFunc := func(walDir string, walManager ibabuza.WalManager) (ibabuza.Wal, []string) {
 		_, w, err := walManager.CreateWal(babuzapb.WalMetadata{
-			ClusterId:   100,
-			LocalPeerId: 1,
+			ClusterID:   100,
+			LocalPeerID: 1,
 		})
 		assert.Nil(t, err)
 		saveEntries(t, w, defaultSegmentSize, 64, 1024)
@@ -250,9 +227,7 @@ func TestWalManager_StartWalPurgingProcess(t *testing.T) {
 		return w, files
 	}
 	t.Run("etcdwal wal manager", func(t *testing.T) {
-		walDir, err := os.MkdirTemp(t.TempDir(), "raftStorage-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(walDir)
+		walDir := t.TempDir()
 		cls := syncutil.NewCloser()
 		purgeCfg := ibabuza.WalPurgeConfig{
 			WalDir:            walDir,
@@ -341,11 +316,7 @@ func TestValidSnapshotEntriesAfterPurgeWal(t *testing.T) {
 		Voters:    []uint64{0x00ffca74},
 		AutoLeave: false,
 	}
-	p, err := os.MkdirTemp(t.TempDir(), "waltest")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	writeSnapshot := []raftpb.Snapshot{
 		{Metadata: raftpb.SnapshotMetadata{Index: 1, Term: 1, ConfState: confState}},
 		{Metadata: raftpb.SnapshotMetadata{Index: 2, Term: 1, ConfState: confState}},
@@ -358,8 +329,8 @@ func TestValidSnapshotEntriesAfterPurgeWal(t *testing.T) {
 		babuzawal.SetOptsWithWalLogFileChunkSize(64))
 	func() {
 		_, w, err := b.CreateWal(babuzapb.WalMetadata{
-			ClusterId:   100,
-			LocalPeerId: 1,
+			ClusterID:   100,
+			LocalPeerID: 1,
 		})
 		assert.Nil(t, err)
 		defer w.Close()

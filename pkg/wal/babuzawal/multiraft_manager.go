@@ -15,7 +15,7 @@ import (
 type MultiRaftWalManager struct {
 	WalRootDir string
 	options    Options
-	memPool    *allocator.TwoLevelPool
+	memPool    *allocator.ByteSlicePool
 	logger     ibabuza.Logger
 }
 
@@ -24,7 +24,7 @@ func NewMultiRaftWalManager(walRootDir string, logger ibabuza.Logger, setOptions
 	for _, opt := range setOptions {
 		opt(&opts)
 	}
-	memPool := allocator.NewDefaultTwoLevelPool(opts.WalFixedEntryBufferSize, opts.WalMaxDynamicEntryBufferSize)
+	memPool := allocator.NewByteSlicePool(opts.WalMinEntryBufferSize, opts.WalMaxEntryBufferSize, 2)
 	logger.Infof("MultiRaftWalManager: create multi-raft wal manager with walRootDir=%s", walRootDir)
 	return &MultiRaftWalManager{
 		WalRootDir: walRootDir,

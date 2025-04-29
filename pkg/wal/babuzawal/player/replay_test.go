@@ -4,7 +4,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrycollection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
@@ -35,7 +35,7 @@ func genLogFilesWithEntrySectorInfo(t *testing.T, dir string, segmentFileSize in
 		AlignmentPageSize: 4096,
 		PageWriterBufSize: 4096,
 	}
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	cfg.WalDir = dir
 	logMgr, err := logfile.NewManager(cfg, cp)
 	assert.Nil(t, err)
@@ -125,7 +125,7 @@ func TestPlayer_Replay_Repair_CorruptByTornWrite(t *testing.T) {
 	if totalSize%sectorSize != 0 {
 		totalSector++
 	}
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	for i := 0; i < totalSector; i++ {
 		func(tornSector int) {
 			p, _ := ioutil.TempDir("", "player-torn")
@@ -164,7 +164,7 @@ func TestPlayer_Replay_Repair_CorruptByTornWrite(t *testing.T) {
 			}
 			player, err := Create(p, walpb.Snapshot{}, cp)
 			assert.Nil(t, err)
-			pr := NewReplayResult(collection.NewEntry())
+			pr := NewReplayResult(entrycollection.NewEntryStore())
 			err = player.Replay(pr, true)
 			if tornSector == 0 {
 				assert.Equal(t, "wal: corrupted file.(magic header mismatch)", err.Error())

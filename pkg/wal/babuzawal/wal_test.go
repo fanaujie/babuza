@@ -3,7 +3,7 @@ package babuzawal
 import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrycollection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
@@ -29,7 +29,7 @@ var (
 	}
 )
 
-func genWal(t *testing.T, cfg logfile.ManagerConfig, enableEntryIndexStorage bool, cp *allocator.TwoLevelPool,
+func genWal(t *testing.T, cfg logfile.ManagerConfig, enableEntryIndexStorage bool, cp *allocator.ByteSlicePool,
 	metadata []byte, segs, entriesInSeg, entrySize uint64) (*Wal, []raftpb.Entry, uint64) {
 
 	logMgr, err := logfile.NewManager(cfg, cp)
@@ -38,8 +38,8 @@ func genWal(t *testing.T, cfg logfile.ManagerConfig, enableEntryIndexStorage boo
 	assert.Nil(t, err)
 
 	if enableEntryIndexStorage {
-		w.SetEntryIndexStorage(&storage.EntryStorage{
-			EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](logMgr),
+		w.SetEntryIndexStorage(&storage.EntryIndexRaftStorage{
+			EntryStorage: walbase.NewEntryStorage[storage.EntryIndexMetadata](logMgr),
 		})
 	}
 	var expect []raftpb.Entry
@@ -72,12 +72,10 @@ func genWal(t *testing.T, cfg logfile.ManagerConfig, enableEntryIndexStorage boo
 
 func TestWal_Create(t *testing.T) {
 
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
 	t.Run("success", func(t *testing.T) {
-		p, err := os.MkdirTemp("", "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(p)
+		p := t.TempDir()
 		testWalMgrConfig.WalDir = p
 		logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 		assert.Nil(t, err)
@@ -93,15 +91,13 @@ func TestWal_Create(t *testing.T) {
 	})
 
 	t.Run("failure: exist tmp file", func(t *testing.T) {
-		p, err := os.MkdirTemp("", "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(p)
+		p := t.TempDir()
 		testWalMgrConfig.WalDir = p
 		desc := iwal.LogFileDesc{
 			Id:            0,
 			StartLogIndex: 0,
 		}
-		assert.Nil(t, ioutil.WriteFile(filepath.Join(p, desc.GetLogFileName())+".tmp",
+		assert.Nil(t, os.WriteFile(filepath.Join(p, desc.GetLogFileName())+".tmp",
 			[]byte{1, 2, 3, 4}, os.ModeTemporary))
 		logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 		assert.Nil(t, err)
@@ -110,16 +106,14 @@ func TestWal_Create(t *testing.T) {
 	})
 
 	t.Run("success: replace the existing wal file ", func(t *testing.T) {
-		p, err := os.MkdirTemp("", "wal-test")
-		assert.Nil(t, err)
-		defer os.RemoveAll(p)
+		p := t.TempDir()
 		testWalMgrConfig.WalDir = p
 		desc := iwal.LogFileDesc{
 			Id:            0,
 			StartLogIndex: 0,
 		}
 		wData := []byte{1, 2, 3, 4}
-		assert.Nil(t, ioutil.WriteFile(filepath.Join(p, desc.GetLogFileName()),
+		assert.Nil(t, os.WriteFile(filepath.Join(p, desc.GetLogFileName()),
 			wData, os.ModeTemporary))
 		logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 		assert.Nil(t, err)
@@ -154,11 +148,9 @@ func TestMakeBroken_File(t *testing.T) {
 }
 
 func TestWal_Save(t *testing.T) {
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
@@ -181,7 +173,7 @@ func TestWal_Save(t *testing.T) {
 	assert.Nil(t, w.Sync())
 	assert.Nil(t, w.Close())
 
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 	replay, err := player.Create(testWalMgrConfig.WalDir, EmptyWalpbSnapshot, cp)
 	assert.Nil(t, err)
 	assert.Nil(t, replay.Replay(pr, false))
@@ -192,11 +184,9 @@ func TestWal_Save(t *testing.T) {
 }
 
 func TestWal_SaveSnapshot(t *testing.T) {
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
@@ -213,7 +203,7 @@ func TestWal_SaveSnapshot(t *testing.T) {
 	assert.Nil(t, w.SaveSnapshot(snap))
 	assert.Nil(t, w.Sync())
 	assert.Nil(t, w.Close())
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 
 	walsnap := walpb.Snapshot{
 		Index:     snap.Metadata.Index,
@@ -227,11 +217,9 @@ func TestWal_SaveSnapshot(t *testing.T) {
 }
 
 func TestWal_SaveSnapshot_Cycle(t *testing.T) {
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
@@ -256,19 +244,17 @@ func TestWal_SaveSnapshot_Cycle(t *testing.T) {
 }
 
 func TestWal_ReadEntriesData(t *testing.T) {
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
 	testSegs := uint64(8)
 	testEntries := uint64(64)
 	w, expect, _ := genWal(t, testWalMgrConfig, true, cp, metadata, testSegs, testEntries, 57)
 	defer func() {
 		assert.Nil(t, w.Close())
 	}()
-	s := w.entryIndexStorage.(*storage.EntryStorage)
+	s := w.entryIndexStorage.(*storage.EntryIndexRaftStorage)
 	readEntryIndex := s.EntryIndex()
 	copyEnts := make([]raftpb.Entry, len(readEntryIndex))
 	for i := 0; i < len(readEntryIndex); i++ {
@@ -283,23 +269,21 @@ func TestWal_ReadEntriesData(t *testing.T) {
 	assert.Equal(t, expect, copyEnts)
 }
 func TestWal_ReadEntriesData_Fail(t *testing.T) {
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
 	w, _, _ := genWal(t, testWalMgrConfig, true, cp, metadata, 1, 1, 8)
 	defer func() {
 		assert.Nil(t, w.Close())
 	}()
 
 	//invalid file id
-	m := walbase.EntryIndex[storage.EntryMetadata]{
+	m := walbase.EntryIndex[storage.EntryIndexMetadata]{
 		Term:  1,
 		Index: 1,
 		Type:  raftpb.EntryNormal,
-		Metadata: storage.EntryMetadata{
+		Metadata: storage.EntryIndexMetadata{
 			FileId: 13,
 		},
 	}
@@ -308,7 +292,7 @@ func TestWal_ReadEntriesData_Fail(t *testing.T) {
 		Index: m.Index,
 		Type:  m.Type,
 	}
-	assert.Error(t, w.logMgr.ReadEntriesData([]walbase.EntryIndex[storage.EntryMetadata]{
+	assert.Error(t, w.logMgr.ReadEntriesData([]walbase.EntryIndex[storage.EntryIndexMetadata]{
 		m,
 	}, []raftpb.Entry{e}))
 
@@ -316,20 +300,17 @@ func TestWal_ReadEntriesData_Fail(t *testing.T) {
 	assert.Error(t, w.logMgr.ReadEntriesData(nil, nil))
 
 	//size did not match
-	assert.Error(t, w.logMgr.ReadEntriesData([]walbase.EntryIndex[storage.EntryMetadata]{
+	assert.Error(t, w.logMgr.ReadEntriesData([]walbase.EntryIndex[storage.EntryIndexMetadata]{
 		m,
 	}, []raftpb.Entry{e, e}))
 
 }
 
 func TestWal_Open(t *testing.T) {
-
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
 	for _, tc := range []struct {
 		segs             uint64
 		entriesInSeg     uint64
@@ -343,7 +324,7 @@ func TestWal_Open(t *testing.T) {
 			entriesInSeg:     64,
 			dataSize:         32,
 			enableEntryIndex: false,
-			p:                collection.NewEntry(),
+			p:                entrycollection.NewEntryStore(),
 			validateEntryFun: func(t *testing.T, w *Wal, expect []raftpb.Entry, result *player.ReplayResult) {
 				ents, _ := result.EntryCollection().Entries()
 				assert.Equal(t, expect, ents.([]raftpb.Entry))
@@ -354,9 +335,9 @@ func TestWal_Open(t *testing.T) {
 			entriesInSeg:     64,
 			dataSize:         32,
 			enableEntryIndex: true,
-			p:                collection.NewEntryIndex(),
+			p:                entrycollection.NewIndexedEntryStore(),
 			validateEntryFun: func(t *testing.T, w *Wal, expect []raftpb.Entry, result *player.ReplayResult) {
-				s := w.entryIndexStorage.(*storage.EntryStorage)
+				s := w.entryIndexStorage.(*storage.EntryIndexRaftStorage)
 				readEntryIndex := s.EntryIndex()
 				copyEnts := make([]raftpb.Entry, len(readEntryIndex))
 				for i := 0; i < len(readEntryIndex); i++ {
@@ -388,11 +369,11 @@ func TestWal_Open(t *testing.T) {
 		ow, err := OpenWal(logMgr, result)
 		assert.Nil(t, err)
 		if tc.enableEntryIndex {
-			es := &storage.EntryStorage{
-				EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](ow.logMgr),
+			es := &storage.EntryIndexRaftStorage{
+				EntryStorage: walbase.NewEntryStorage[storage.EntryIndexMetadata](ow.logMgr),
 			}
 			ents, _ := result.EntryCollection().Entries()
-			es.AppendEntryIndex(ents.([]walbase.EntryIndex[storage.EntryMetadata]))
+			es.AppendEntryIndex(ents.([]walbase.EntryIndex[storage.EntryIndexMetadata]))
 			ow.SetEntryIndexStorage(es)
 		}
 		assert.Equal(t, ow.currentLogFile.LastCrc(), result.LastValidLogCrc())
@@ -428,11 +409,11 @@ func TestWal_Open(t *testing.T) {
 		ow, err = OpenWal(logMgr, result)
 		assert.Nil(t, err)
 		if tc.enableEntryIndex {
-			es := &storage.EntryStorage{
-				EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](ow.logMgr),
+			es := &storage.EntryIndexRaftStorage{
+				EntryStorage: walbase.NewEntryStorage[storage.EntryIndexMetadata](ow.logMgr),
 			}
 			ents, _ := result.EntryCollection().Entries()
-			es.AppendEntryIndex(ents.([]walbase.EntryIndex[storage.EntryMetadata]))
+			es.AppendEntryIndex(ents.([]walbase.EntryIndex[storage.EntryIndexMetadata]))
 			ow.SetEntryIndexStorage(es)
 		}
 		assert.Nil(t, ow.Close())
@@ -444,17 +425,15 @@ func TestWal_Open(t *testing.T) {
 }
 
 func TestWal_Open_Snapshot(t *testing.T) {
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
 	w, err := CreateWal(metadata, logMgr)
 	assert.Nil(t, err)
-	w.SetEntryIndexStorage(walbase.NewEntryStorage[storage.EntryMetadata](w.logMgr))
+	w.SetEntryIndexStorage(walbase.NewEntryStorage[storage.EntryIndexMetadata](w.logMgr))
 	var testSegs uint64 = 8
 	var expect []raftpb.Entry
 	for i := uint64(0); i < testSegs; i++ {
@@ -487,7 +466,7 @@ func TestWal_Open_Snapshot(t *testing.T) {
 			validateEntryFun func(t *testing.T, w *Wal, segId uint64, result iwal.ReplayWalResult)
 		}{
 			{
-				result: player.NewReplayResult(collection.NewEntry()),
+				result: player.NewReplayResult(entrycollection.NewEntryStore()),
 				validateEntryFun: func(t *testing.T, w *Wal, segId uint64, result iwal.ReplayWalResult) {
 					ents, _ := result.EntryCollection().Entries()
 					entries := ents.([]raftpb.Entry)
@@ -498,10 +477,10 @@ func TestWal_Open_Snapshot(t *testing.T) {
 				},
 			},
 			{
-				result: player.NewReplayResult(collection.NewEntryIndex()),
+				result: player.NewReplayResult(entrycollection.NewIndexedEntryStore()),
 				validateEntryFun: func(t *testing.T, w *Wal, segId uint64, result iwal.ReplayWalResult) {
 					ents, _ := result.EntryCollection().Entries()
-					entries := ents.([]walbase.EntryIndex[storage.EntryMetadata])
+					entries := ents.([]walbase.EntryIndex[storage.EntryIndexMetadata])
 					assert.Equal(t, testSegs-1-segId, uint64(len(entries)))
 					for eIndex, ent := range entries {
 						assert.Equal(t, segId+uint64(eIndex)+1, ent.Index)
@@ -525,12 +504,9 @@ func TestWal_Open_Snapshot(t *testing.T) {
 }
 
 func TestWal_NextEntryChange(t *testing.T) {
-
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
@@ -553,7 +529,7 @@ func TestWal_NextEntryChange(t *testing.T) {
 	assert.Nil(t, w.saveHardState(raftpb.HardState{}))
 	assert.Nil(t, w.cycle())
 	assert.Nil(t, w.Close())
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 	replay, err := player.Create(testWalMgrConfig.WalDir, EmptyWalpbSnapshot, cp)
 	assert.Nil(t, err)
 	assert.Nil(t, replay.Replay(pr, false))
@@ -565,11 +541,9 @@ func TestWal_NextEntryChange(t *testing.T) {
 }
 
 func TestWal_NextEntry_NotContinuous(t *testing.T) {
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
@@ -625,7 +599,7 @@ func TestWal_NextEntry_NotContinuous(t *testing.T) {
 		assert.Nil(t, w.Save(raftpb.HardState{}, batchEnts))
 	}
 	assert.Nil(t, w.Sync())
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 	replay, err := player.Create(testWalMgrConfig.WalDir, EmptyWalpbSnapshot, cp)
 	assert.Nil(t, err)
 	assert.Nil(t, replay.Replay(pr, false))
@@ -640,12 +614,9 @@ func TestWal_NextEntry_NotContinuous(t *testing.T) {
 }
 
 func TestWal_CoverEntries(t *testing.T) {
-
-	p, err := os.MkdirTemp("", "wal-test")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	testWalMgrConfig.WalDir = p
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
@@ -690,7 +661,7 @@ func TestWal_CoverEntries(t *testing.T) {
 	assert.Nil(t, w.Sync())
 	assert.Nil(t, w.Close())
 	expect = append(expect, entries...)
-	pr := player.NewReplayResult(collection.NewEntry())
+	pr := player.NewReplayResult(entrycollection.NewEntryStore())
 
 	replay, err := player.Create(testWalMgrConfig.WalDir, EmptyWalpbSnapshot, cp)
 	assert.Nil(t, err)

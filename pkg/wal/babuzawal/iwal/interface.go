@@ -42,7 +42,7 @@ type LogFileManager interface {
 	FinalizeTempLogFile(id uint64) error
 	Purge(snapshotIndex uint64) error
 	LastLogFileDesc() (LogFileDesc, error)
-	ReadEntriesData(readMetadata []walbase.EntryIndex[storage.EntryMetadata], ents []raftpb.Entry) error
+	ReadEntriesData(readMetadata []walbase.EntryIndex[storage.EntryIndexMetadata], ents []raftpb.Entry) error
 	SyncWalFolder() error
 	Close() error
 }
@@ -93,7 +93,7 @@ type ReplayWalResult interface {
 	SetLastLogFileDesc(LogFileDesc)
 	UnmarshalHardState([]byte) error
 	UnmarshalNextEntry([]byte) error
-	IncreaseNextIndex()
+	SetNextIndex(nextIndex uint64)
 	AppendWalSnapshots(walpb.Snapshot)
 	SetLastValidLogFileOffset(int64)
 	IncreaseLastValidLogFileOffset(int64)

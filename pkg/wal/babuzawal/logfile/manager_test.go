@@ -22,19 +22,15 @@ var (
 )
 
 func TestManager_ScanDir(t *testing.T) {
-
-	p, err := ioutil.TempDir("", "log file manager")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
-
 	t.Run("continue", func(t *testing.T) {
+		p := t.TempDir()
 		for i := uint64(0); i < 8; i++ {
 			desc := iwal.LogFileDesc{
 				Id:            i,
 				StartLogIndex: i,
 			}
 			f := filepath.Join(p, desc.GetLogFileName())
-			assert.Nil(t, ioutil.WriteFile(f, []byte{1}, 0600))
+			assert.Nil(t, os.WriteFile(f, []byte{1}, 0600))
 		}
 		mgr, err := NewManagerWithScan(ManagerConfig{
 			WalDir: p,
@@ -47,6 +43,7 @@ func TestManager_ScanDir(t *testing.T) {
 	})
 
 	t.Run("not continue", func(t *testing.T) {
+		p := t.TempDir()
 		for i := uint64(0); i < 8; i++ {
 			desc := iwal.LogFileDesc{
 				Id:            i,
@@ -60,7 +57,7 @@ func TestManager_ScanDir(t *testing.T) {
 			StartLogIndex: 4,
 		}
 		assert.Nil(t, os.Remove(filepath.Join(p, desc.GetLogFileName())))
-		_, err = NewManagerWithScan(ManagerConfig{
+		_, err := NewManagerWithScan(ManagerConfig{
 			WalDir: p,
 		}, walpb.Snapshot{}, nil)
 		//assert.Nil(t, err)
@@ -71,9 +68,7 @@ func TestManager_ScanDir(t *testing.T) {
 func TestManager_CreateNextTempLogFile(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
-		p, err := ioutil.TempDir("", "log file manager")
-		assert.Nil(t, err)
-		defer os.RemoveAll(p)
+		p := t.TempDir()
 		cp := allocator.NewDefaultTwoLevelPool(1024, 1024*1024*4)
 		defaultManagerConfig.WalDir = p
 		m, err := NewManager(defaultManagerConfig, cp)
@@ -91,9 +86,7 @@ func TestManager_CreateNextTempLogFile(t *testing.T) {
 	})
 
 	t.Run("failure: not expected next id", func(t *testing.T) {
-		p, err := ioutil.TempDir("", "log file manager")
-		assert.Nil(t, err)
-		defer os.RemoveAll(p)
+		p := t.TempDir()
 		cp := allocator.NewDefaultTwoLevelPool(1024, 1024*1024*4)
 		defaultManagerConfig.WalDir = p
 		m, err := NewManager(defaultManagerConfig, cp)
@@ -104,9 +97,7 @@ func TestManager_CreateNextTempLogFile(t *testing.T) {
 }
 
 func TestManager_FinalizeTempLogFile(t *testing.T) {
-	p, err := ioutil.TempDir("", "log file manager")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	cp := allocator.NewDefaultTwoLevelPool(1024, 1024*1024*4)
 	defaultManagerConfig.WalDir = p
 	m, err := NewManager(defaultManagerConfig, cp)
@@ -127,9 +118,7 @@ func TestManager_FinalizeTempLogFile(t *testing.T) {
 }
 
 func TestManager_OpenLogFile(t *testing.T) {
-	p, err := ioutil.TempDir("", "log file manager")
-	assert.Nil(t, err)
-	defer os.RemoveAll(p)
+	p := t.TempDir()
 	cp := allocator.NewDefaultTwoLevelPool(1024, 1024*1024*4)
 	defaultManagerConfig.WalDir = p
 	m, err := NewManager(defaultManagerConfig, cp)
@@ -199,10 +188,7 @@ func TestManager_Purge(t *testing.T) {
 		},
 	} {
 		func() {
-			p, err := ioutil.TempDir("", "snapshot")
-			assert.Nil(t, err)
-			defer os.RemoveAll(p)
-
+			p := t.TempDir()
 			for id, snapIndex := range tc.logStartIndex {
 				desc := iwal.LogFileDesc{
 					Id:            uint64(id),

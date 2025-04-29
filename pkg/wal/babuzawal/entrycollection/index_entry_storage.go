@@ -1,4 +1,4 @@
-package collection
+package entrycollection
 
 import (
 	"errors"
@@ -11,34 +11,34 @@ import (
 )
 
 type EntryIndexReader interface {
-	ReadEntriesData(readMetadata []walbase.EntryIndex[storage.EntryMetadata], ents []raftpb.Entry) error
+	ReadEntriesData(readMetadata []walbase.EntryIndex[storage.EntryIndexMetadata], ents []raftpb.Entry) error
 }
 
-type EntryIndex struct {
-	entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
+type IndexedEntryStore struct {
+	entriesIndex []walbase.EntryIndex[storage.EntryIndexMetadata]
 	reader       EntryIndexReader
 }
 
-func NewEntryIndex() *EntryIndex {
-	return &EntryIndex{}
+func NewIndexedEntryStore() *IndexedEntryStore {
+	return &IndexedEntryStore{}
 }
 
-func (ei *EntryIndex) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf []byte,
+func (ei *IndexedEntryStore) Decode(fileId, snapshotIndex uint64, logType pb.LogType, logBuf []byte,
 	entryDataCapacity int64, r iwal.ReplayWalResult) error {
 
 	nextEntry := r.NextEntry()
-	entry := walbase.EntryIndex[storage.EntryMetadata]{
+	entry := walbase.EntryIndex[storage.EntryIndexMetadata]{
 		Term:  nextEntry.NextTerm,
 		Index: nextEntry.NextIndex,
 		Type:  raftpb.EntryType(logType),
-		Metadata: storage.EntryMetadata{
+		Metadata: storage.EntryIndexMetadata{
 			FileId:       fileId,
 			Offset:       r.LastValidLogOffset() + codec.HeaderSize,
 			DataLen:      int64(len(logBuf)),
 			DataCapacity: entryDataCapacity,
 		},
 	}
-	r.IncreaseNextIndex()
+
 	if entry.Index > snapshotIndex {
 		// prevent "panic: runtime error: slice bounds out of range [:13038096702221461992] with capacity 0"
 		up := entry.Index - snapshotIndex - 1
@@ -49,23 +49,24 @@ func (ei *EntryIndex) Decode(fileId, snapshotIndex uint64, logType pb.LogType, l
 		// The line below is potentially overriding some 'uncommitted' termEntriesIndex.
 		ei.entriesIndex = append(ei.entriesIndex[:up], entry)
 	}
+	r.SetNextIndex(entry.Index + 1)
 	return nil
 }
 
-func (ei *EntryIndex) Entries() (interface{}, error) {
+func (ei *IndexedEntryStore) Entries() (interface{}, error) {
 	return ei.entriesIndex, nil
 }
-func (ei *EntryIndex) ClearEntries() error {
+func (ei *IndexedEntryStore) ClearEntries() error {
 	ei.entriesIndex = nil
 	return nil
 }
 
-func (ei *EntryIndex) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry) error) error {
+func (ei *IndexedEntryStore) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb.Entry) error) error {
 	if ei.reader == nil {
 		return errors.New("reader is nil")
 	}
 	var confEntries []raftpb.Entry
-	var entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
+	var entriesIndex []walbase.EntryIndex[storage.EntryIndexMetadata]
 
 	for i := range ei.entriesIndex {
 		e := &ei.entriesIndex[i]
@@ -89,7 +90,7 @@ func (ei *EntryIndex) VisitEntry(entryType raftpb.EntryType, visitor func(raftpb
 	}
 	return nil
 }
-func (ei *EntryIndex) DeleteUncommittedEntry(commitIndex uint64) error {
+func (ei *IndexedEntryStore) DeleteUncommittedEntry(commitIndex uint64) error {
 	var deleteFrom int
 	entsLen := len(ei.entriesIndex)
 	for i := 0; i < entsLen; i++ {
@@ -105,6 +106,6 @@ func (ei *EntryIndex) DeleteUncommittedEntry(commitIndex uint64) error {
 	return nil
 }
 
-func (ei *EntryIndex) SetReader(r EntryIndexReader) {
+func (ei *IndexedEntryStore) SetReader(r EntryIndexReader) {
 	ei.reader = r
 }

@@ -11,29 +11,29 @@ import (
 type WalManager struct {
 	walDir  string
 	options Options
-	memPool *allocator.TwoLevelPool
+	memPool *allocator.ByteSlicePool
 	logger  ibabuza.Logger
 }
 
 type Options struct {
-	WalLogFileChunkSize          int
-	WalAlignmentPageSize         int
-	WalPageWriteBufferSize       int
-	WalFixedEntryBufferSize      int
-	WalMaxDynamicEntryBufferSize int
-	WalMaxKeepLogFiles           uint
-	DisableEntryIndex            bool
+	WalLogFileChunkSize    int
+	WalAlignmentPageSize   int
+	WalPageWriteBufferSize int
+	WalMinEntryBufferSize  int
+	WalMaxEntryBufferSize  int
+	WalMaxKeepLogFiles     uint
+	DisableEntryIndex      bool
 }
 
 func defaultOptions() Options {
 	return Options{
-		WalLogFileChunkSize:          64 * 1000 * 1000,
-		WalAlignmentPageSize:         4096,
-		WalPageWriteBufferSize:       4096 * 32,
-		WalFixedEntryBufferSize:      1024 * 1024,
-		WalMaxDynamicEntryBufferSize: 4 * 1024 * 1024,
-		WalMaxKeepLogFiles:           5,
-		DisableEntryIndex:            false,
+		WalLogFileChunkSize:    64 * 1000 * 1000,
+		WalAlignmentPageSize:   4096,
+		WalPageWriteBufferSize: 4096 * 32,
+		WalMinEntryBufferSize:  1024 * 1024,
+		WalMaxEntryBufferSize:  4 * 1024 * 1024,
+		WalMaxKeepLogFiles:     5,
+		DisableEntryIndex:      false,
 	}
 }
 
@@ -59,13 +59,13 @@ func SetOptsWithWalPageWriteBufferSize(d int) SetOptions {
 
 func SetOptsWithWalFixedEntryBufferSize(d int) SetOptions {
 	return func(opt *Options) {
-		opt.WalFixedEntryBufferSize = d
+		opt.WalMinEntryBufferSize = d
 	}
 }
 
 func SetOptsWithWalMaxDynamicEntryBufferSize(d int) SetOptions {
 	return func(opt *Options) {
-		opt.WalMaxDynamicEntryBufferSize = d
+		opt.WalMaxEntryBufferSize = d
 	}
 }
 
@@ -90,7 +90,7 @@ func NewWalManager(walDir string, logger ibabuza.Logger, setOptions ...SetOption
 	return &WalManager{
 		walDir:  walDir,
 		options: opts,
-		memPool: allocator.NewDefaultTwoLevelPool(opts.WalFixedEntryBufferSize, opts.WalMaxDynamicEntryBufferSize),
+		memPool: allocator.NewByteSlicePool(opts.WalMinEntryBufferSize, opts.WalMaxEntryBufferSize, 2),
 		logger:  logger,
 	}
 }
