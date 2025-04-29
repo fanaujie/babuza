@@ -8,6 +8,7 @@ import (
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/raft/v3/raftpb"
+	"sort"
 	"sync"
 )
 
@@ -86,6 +87,26 @@ func (n *Node) CreateRaftGroup(groupID ibabuza.RaftGroupID, peersConfig *babuza.
 	}
 	n.replicaSet.replica[groupID] = r
 	return r.Start()
+}
+
+func (n *Node) GetGroupIDs() []ibabuza.RaftGroupID {
+	n.replicaSet.mu.RLock()
+	defer n.replicaSet.mu.RUnlock()
+	groupIDs := make([]ibabuza.RaftGroupID, 0, len(n.replicaSet.replica))
+	for groupID := range n.replicaSet.replica {
+		groupIDs = append(groupIDs, groupID)
+	}
+	if len(groupIDs) > 1 {
+		sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	}
+	return groupIDs
+}
+
+func (n *Node) HasGroupID(groupID ibabuza.RaftGroupID) bool {
+	n.replicaSet.mu.RLock()
+	defer n.replicaSet.mu.RUnlock()
+	_, ok := n.replicaSet.replica[groupID]
+	return ok
 }
 
 func (n *Node) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession, log []byte) babuza.ProposedResult {

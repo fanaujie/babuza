@@ -2,6 +2,7 @@ package multiraft
 
 import (
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/cluster"
 	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/session"
@@ -55,6 +56,23 @@ func (c *ComponentFactory) CreateSessionManager(logger ibabuza.Logger) ibabuza.S
 	return session.NewNoOpManager(logger)
 }
 
+func createNodeManager(t *testing.T, configuration *babuza.PeersConfiguration) (*NodeManager, error) {
+	if err := configuration.Validate(); err != nil {
+		return nil, err
+	}
+	nm := NewNodeManager()
+	if err := configuration.Visit(func(attribute babuzapb.RaftPeerAttribute) error {
+		node, err := createNode(100, attribute.Id, attribute.RaftListenAddr, t.TempDir())
+		if err != nil {
+			return err
+		}
+		return nm.Add(node)
+	}); err != nil {
+		return nil, err
+	}
+	return nm, nil
+}
+
 func createNode(clusterID uint64, nodeID uint64, nodeRaftListenAddr string, rootDir string) (*Node, error) {
 	config := DefaultNodeConfig(clusterID, nodeID, rootDir, nodeRaftListenAddr)
 	log := logger.NewRaftLogger(zap.NewExample().Sugar())
@@ -72,40 +90,50 @@ func createNode(clusterID uint64, nodeID uint64, nodeRaftListenAddr string, root
 }
 
 func TestBootstrap(t *testing.T) {
-	node1ID := uint64(1)
-	clusterID := uint64(100)
-	raftGroupID := ibabuza.RaftGroupID(500)
-	node1RaftListenAddr := "localhost:14201"
-	node1, err := createNode(clusterID, node1ID, node1RaftListenAddr, t.TempDir())
-	assert.NoError(t, err)
-	assert.Nil(t, node1.Start())
-	defer node1.Stop()
-	node2ID := uint64(2)
-	node2RaftListenAddr := "localhost:14202"
-	node2, err := createNode(clusterID, node2ID, node2RaftListenAddr, t.TempDir())
-	assert.NoError(t, err)
-	assert.Nil(t, node2.Start())
-	defer node2.Stop()
-
 	peersConfig := babuza.NewPeersConfiguration()
-	assert.NoError(t, peersConfig.AddPeer(node1ID, node1RaftListenAddr, false))
-	assert.NoError(t, peersConfig.AddPeer(node2ID, node2RaftListenAddr, false))
-	assert.NoError(t, node1.CreateRaftGroup(raftGroupID, peersConfig, false))
-	assert.NoError(t, node2.CreateRaftGroup(raftGroupID, peersConfig, false))
-	assert.NoError(t, node1.CreateRaftGroup(raftGroupID+1, peersConfig, false))
-	assert.NoError(t, node2.CreateRaftGroup(raftGroupID+1, peersConfig, false))
+	assert.NoError(t, peersConfig.AddPeer(1, "localhost:14201", false))
+	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
+	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
+	nm, err := createNodeManager(t, peersConfig)
+	assert.NoError(t, err)
+	assert.NotNil(t, nm)
+	assert.NoError(t, nm.Start(1))
+	assert.NoError(t, nm.Start(2))
+	assert.NoError(t, nm.Start(3))
+	defer func() {
+		_ = nm.Stop(1)
+		_ = nm.Stop(2)
+		_ = nm.Stop(3)
+	}()
+	raftGroup1 := ibabuza.RaftGroupID(10)
+	raftGroup2 := ibabuza.RaftGroupID(11)
+	group1PeersConfig := peersConfig.Clone()
+	group1PeersConfig.RemovePeer(3)
+	group2PeersConfig := peersConfig.Clone()
+	group2PeersConfig.RemovePeer(1)
+	assert.NoError(t, nm.CreateRaftGroup(1, raftGroup1, group1PeersConfig, false))
+	assert.NoError(t, nm.CreateRaftGroup(2, raftGroup1, group1PeersConfig, false))
+	assert.NoError(t, nm.CreateRaftGroup(2, raftGroup2, group2PeersConfig, false))
+	assert.NoError(t, nm.CreateRaftGroup(3, raftGroup2, group2PeersConfig, false))
+	groupIDs, err := nm.GetGroupIDsByNodeID(1)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(groupIDs))
+	assert.Equal(t, raftGroup1, groupIDs[0])
+	groupIDs, err = nm.GetGroupIDsByNodeID(2)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(groupIDs))
+	assert.Equal(t, raftGroup1, groupIDs[0])
+	assert.Equal(t, raftGroup2, groupIDs[1])
+	groupIDs, err = nm.GetGroupIDsByNodeID(3)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(groupIDs))
+	assert.Equal(t, raftGroup2, groupIDs[0])
+	// wait for leader election
 	time.Sleep(time.Second * 3)
-	node1Group1Status, err := node1.Status(raftGroupID)
+	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
-	node2Group1Status, err := node2.Status(raftGroupID)
+	t.Logf("group1 leader: %d", group1LeaderID)
+	group2LeaderID, err := nm.CheckSameLeader(raftGroup2)
 	assert.NoError(t, err)
-	assert.NotEqual(t, 0, node1Group1Status.LeaderID)
-	assert.Equal(t, node1Group1Status.LeaderID, node2Group1Status.LeaderID)
-
-	node1Group2Status, err := node1.Status(raftGroupID + 1)
-	assert.NoError(t, err)
-	node2Group2Status, err := node2.Status(raftGroupID + 1)
-	assert.NoError(t, err)
-	assert.NotEqual(t, 0, node1Group2Status.LeaderID)
-	assert.Equal(t, node2Group2Status.LeaderID, node2Group2Status.LeaderID)
+	t.Logf("group2 leader: %d", group2LeaderID)
 }

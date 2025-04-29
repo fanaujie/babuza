@@ -29,6 +29,9 @@ type ComponentsFactory interface {
 
 func BootstrapOrRecoverNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
 	snapshotManager ibabuza.MultiRaftSnapshotManager, logger ibabuza.Logger) (*Node, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	stateMachineRootDir := filepath.Join(cfg.NodeHostDir, stateMachineDir)
 	storage := newBootstrapStorage(stateMachineRootDir, factory, walManager, snapshotManager, logger)
 	if err := trans.SetupTransportConfig(ibabuza.TransportConfig{

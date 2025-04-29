@@ -1,9 +1,16 @@
 package multiraft
 
 import (
+	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
+)
+
+var (
+	ErrInvalidNodeID            = errors.New("invalid node id")
+	ErrInvalidRaftListenAddress = errors.New("invalid raft listen address")
 )
 
 type NodeConfig struct {
@@ -44,6 +51,17 @@ func DefaultNodeConfig(ClusterId, nodeID uint64, nodeHostDir string, raftListenA
 		SchedulerMaxTicks:       5,
 		JobQueueSize:            128,
 	}
+}
+
+func (c *NodeConfig) Validate() error {
+	if c.NodeID == 0 {
+		return ErrInvalidNodeID
+	}
+	if !netutil.IsValidAddress(c.RaftListenAddress) {
+		return ErrInvalidRaftListenAddress
+	}
+	// TODO: validate other fields
+	return nil
 }
 
 type ReplicaRaftConfig struct {

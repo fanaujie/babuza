@@ -105,6 +105,15 @@ func (c *PeersConfiguration) Validate() error {
 	return nil
 }
 
+func (c *PeersConfiguration) Visit(visitor func(babuzapb.RaftPeerAttribute) error) error {
+	for _, raftPeerAttr := range c.raftPeersAttr {
+		if err := visitor(raftPeerAttr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *PeersConfiguration) MatchRemoteCluster(remoteCtx context.Context, clusterID, fromID uint64,
 	client ibabuza.TransportClient) error {
 	req := babuzapb.GetClusterPeersRequest{
