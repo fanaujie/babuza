@@ -4,12 +4,6 @@ import (
 	"io"
 )
 
-type ApplyResult struct {
-	LogIndex uint64
-	Response any
-	Error    error
-}
-
 type ApplyResultSerializer interface {
 	Marshal(io.Writer, ApplyResult) error
 	Unmarshal(io.Reader) (ApplyResult, error)

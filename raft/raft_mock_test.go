@@ -354,7 +354,8 @@ func (m *mockStorageMgr) GetStateMachineAppliedIndex() uint64 {
 func (m *mockStorageMgr) SetStateMachineAppliedIndex(index uint64) {
 }
 
-func (m *mockStorageMgr) Apply(e ibabuza.Entry) {
+func (m *mockStorageMgr) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
+	return ibabuza.ApplyResult{}
 }
 
 func (m *mockStorageMgr) SupportConcurrentSnapshot() bool {

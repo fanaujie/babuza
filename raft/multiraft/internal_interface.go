@@ -9,8 +9,8 @@ import (
 )
 
 type Scheduler interface {
-	EnqueueBatchState(state int, groupIDs []ibabuza.RaftGroupID) error
-	EnqueueState(state int, groupID ibabuza.RaftGroupID) error
+	EnqueueBatchState(state int, groupIDs []ibabuza.RaftGroupID)
+	EnqueueState(state int, groupID ibabuza.RaftGroupID)
 	Start() error
 	Stop()
 }

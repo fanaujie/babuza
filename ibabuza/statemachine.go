@@ -5,15 +5,20 @@ import (
 	"io"
 )
 
-type Entry interface {
-	Term() uint64
-	Index() uint64
-	Command() []byte
-	SendResponse(result any, err error)
+type Entry struct {
+	Term    uint64
+	Index   uint64
+	Command []byte
 }
 
-type Iterator interface {
-	Next() Entry
+type ApplyResult struct {
+	LogIndex uint64
+	Response any
+	Error    error
+}
+
+func (ar ApplyResult) IsEmpty() bool {
+	return ar.LogIndex == 0 && ar.Response == nil && ar.Error == nil
 }
 
 type StateMachineSnapshotWriter interface {
@@ -27,7 +32,7 @@ type StateMachineSnapshotReader interface {
 }
 
 type BaseStateMachine interface {
-	Apply(Entry)
+	Apply(Entry) ApplyResult
 	SaveSnapshot(StateMachineSnapshotContext, StateMachineSnapshotWriter) error
 	RestoreFromSnapshot(StateMachineSnapshotReader) error
 	Close() error

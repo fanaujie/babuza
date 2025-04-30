@@ -228,8 +228,8 @@ func (s *raftStorage) SetStateMachineAppliedIndex(index uint64) {
 	s.bsmInfo.appliedIndex = index
 }
 
-func (s *raftStorage) Apply(e ibabuza.Entry) {
-	s.stateMachine.Apply(e)
+func (s *raftStorage) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
+	return s.stateMachine.Apply(e)
 }
 
 func (s *raftStorage) SupportConcurrentSnapshot() bool {

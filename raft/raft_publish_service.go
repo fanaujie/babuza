@@ -31,22 +31,18 @@ func (r *Raft) applicationServiceStart(ctx context.Context,
 				if leaderID == r.config.LocalPeerID {
 					res := r.proposalPubAppService(ctx, replyID, appServiceAddresses)
 					return func() error {
-						pErr := res.Wait()
+						ar := res.WaitForApplyResult()
 						defer res.Release()
-						if pErr != nil {
-							return pErr
-						}
-						_ = res.Response()
-						return pErr
+						return ar.Error
 					}()
 				} else {
 					return r.sendPubAppServiceMsgToLeader(ctx, leaderID, replyID, appServiceAddresses)
 				}
 			} else {
 				res := r.proposalPubAppService(ctx, replyID, appServiceAddresses)
-				err := res.Wait()
+				ar := res.WaitForApplyResult()
 				res.Release()
-				return err
+				return ar.Error
 			}
 		}(); err != nil {
 			if errors.Is(err, ErrStopped) || errors.Is(err, context.DeadlineExceeded) {
@@ -118,10 +114,7 @@ func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderID, reply
 		case <-ctx.Done():
 			return ctx.Err()
 		case result := <-resultCh:
-			if result.Error != nil {
-				return result.Error
-			}
-			return nil
+			return result.Error
 		}
 	}
 	return errors.New(res.Message)

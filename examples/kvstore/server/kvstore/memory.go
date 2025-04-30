@@ -23,10 +23,10 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-func (m *MemoryStore) Apply(e ibabuza.Entry) {
+func (m *MemoryStore) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
 	var req KvCommand
 
-	if err := req.Unmarshal(e.Command()); err != nil {
+	if err := req.Unmarshal(e.Command); err != nil {
 		panic(err)
 	}
 	switch req.Command {
@@ -39,7 +39,10 @@ func (m *MemoryStore) Apply(e ibabuza.Entry) {
 			Key:     req.Key,
 			Value:   req.Value,
 		}
-		e.SendResponse(&res, nil)
+		return ibabuza.ApplyResult{
+			LogIndex: e.Index,
+			Response: &res,
+		}
 	case Append:
 		m.mu.Lock()
 		result := m.store.Append(string(req.Key), req.Value)
@@ -49,7 +52,10 @@ func (m *MemoryStore) Apply(e ibabuza.Entry) {
 			Key:     req.Key,
 			Value:   result,
 		}
-		e.SendResponse(&res, nil)
+		return ibabuza.ApplyResult{
+			LogIndex: e.Index,
+			Response: &res,
+		}
 	case Delete:
 		m.mu.Lock()
 		ok := m.store.Delete(string(req.Key))
@@ -59,10 +65,20 @@ func (m *MemoryStore) Apply(e ibabuza.Entry) {
 				Command: Delete,
 				Key:     req.Key,
 			}
-			e.SendResponse(&res, nil)
+			return ibabuza.ApplyResult{
+				LogIndex: e.Index,
+				Response: &res,
+			}
 		} else {
-			e.SendResponse(nil, kverror.ErrKeyNotFound)
+			return ibabuza.ApplyResult{
+				LogIndex: e.Index,
+				Error:    kverror.ErrKeyNotFound,
+			}
 		}
+	}
+	return ibabuza.ApplyResult{
+		LogIndex: e.Index,
+		Error:    kverror.ErrUnknownCommand,
 	}
 }
 func (m *MemoryStore) SaveSnapshot(ctx ibabuza.StateMachineSnapshotContext, writer ibabuza.StateMachineSnapshotWriter) error {

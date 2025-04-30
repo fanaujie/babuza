@@ -114,9 +114,6 @@ func (n *Node) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session
 	if !ok {
 		return babuza.NewErrorResult(errors.Errorf("Node[%d] raft group %d not found", n.config.NodeID, groupID))
 	}
-	if err := n.scheduler.EnqueueState(stateProposal, groupID); err != nil {
-		return babuza.NewErrorResult(err)
-	}
 	return r.EnqueueProposal(ctx, session, log)
 }
 
@@ -131,9 +128,6 @@ func (n *Node) AddVotingPeer(ctx context.Context, groupID ibabuza.RaftGroupID, s
 	}
 	if raftPeerAttr.IsLearner {
 		return babuza.NewErrorResult(babuza.ErrLearnerCanNotVote)
-	}
-	if err := n.scheduler.EnqueueState(stateConfigChange, groupID); err != nil {
-		return babuza.NewErrorResult(err)
 	}
 	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddNode, raftPeerAttr, false)
 }

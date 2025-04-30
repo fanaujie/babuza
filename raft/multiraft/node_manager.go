@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
-	babuza "github.com/fanaujie/babuza/raft"
 	"sort"
 	"sync"
 )
@@ -36,14 +35,6 @@ func (nm *NodeManager) Remove(nodeID uint64) error {
 	return nil
 }
 
-func (nm *NodeManager) GetGroupIDsByNodeID(nodeID uint64) ([]ibabuza.RaftGroupID, error) {
-	v, ok := nm.nodeMap.Load(nodeID)
-	if !ok {
-		return nil, fmt.Errorf("node not found: %d", nodeID)
-	}
-	return v.(*Node).GetGroupIDs(), nil
-}
-
 func (nm *NodeManager) GetNodeIDsByGroupID(groupID ibabuza.RaftGroupID) []uint64 {
 	allNodes := make([]uint64, 0)
 	nm.nodeMap.Range(func(key, value interface{}) bool {
@@ -68,6 +59,14 @@ func (nm *NodeManager) GetAllNodes() []*Node {
 	return allNodes
 }
 
+func (nm *NodeManager) GetNode(nodeID uint64) (*Node, error) {
+	v, ok := nm.nodeMap.Load(nodeID)
+	if !ok {
+		return nil, fmt.Errorf("node not found: %d", nodeID)
+	}
+	return v.(*Node), nil
+}
+
 func (nm *NodeManager) CheckSameLeader(groupID ibabuza.RaftGroupID) (uint64, error) {
 	nodes := nm.GetNodeIDsByGroupID(groupID)
 	if len(nodes) == 0 {
@@ -79,7 +78,11 @@ func (nm *NodeManager) CheckSameLeader(groupID ibabuza.RaftGroupID) (uint64, err
 		if !ok {
 			return 0, fmt.Errorf("node not found: %d", nodeID)
 		}
-		s, err := v.(*Node).Status(groupID)
+		n := v.(*Node)
+		if !n.HasGroupID(groupID) {
+			continue
+		}
+		s, err := n.Status(groupID)
 		if err != nil {
 			return 0, err
 		}
@@ -94,37 +97,4 @@ func (nm *NodeManager) CheckSameLeader(groupID ibabuza.RaftGroupID) (uint64, err
 		}
 	}
 	return leaderID, nil
-}
-
-func (nm *NodeManager) Start(nodeID uint64) error {
-	v, ok := nm.nodeMap.Load(nodeID)
-	if !ok {
-		return fmt.Errorf("node not found: %d", nodeID)
-	}
-	return v.(*Node).Start()
-}
-
-func (nm *NodeManager) Stop(nodeID uint64) error {
-	v, ok := nm.nodeMap.Load(nodeID)
-	if !ok {
-		return fmt.Errorf("node not found: %d", nodeID)
-	}
-	v.(*Node).Stop()
-	return nil
-}
-
-func (nm *NodeManager) CreateRaftGroup(nodeID uint64, groupID ibabuza.RaftGroupID, peersConfig *babuza.PeersConfiguration, join bool) error {
-	v, ok := nm.nodeMap.Load(nodeID)
-	if !ok {
-		return fmt.Errorf("node not found: %d", nodeID)
-	}
-	return v.(*Node).CreateRaftGroup(groupID, peersConfig, join)
-}
-
-func (nm *NodeManager) Status(nodeID uint64, groupID ibabuza.RaftGroupID) (babuza.Status, error) {
-	v, ok := nm.nodeMap.Load(nodeID)
-	if !ok {
-		return babuza.Status{}, fmt.Errorf("node not found: %d", nodeID)
-	}
-	return v.(*Node).Status(groupID)
 }

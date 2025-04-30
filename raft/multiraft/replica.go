@@ -22,6 +22,16 @@ type leaderChange struct {
 	isLeader bool
 }
 
+type reportUnreachable struct {
+	NodeID uint64
+	Status raft.SnapshotStatus
+}
+
+type reportSnapshotStatus struct {
+	NodeID uint64
+	Status raft.SnapshotStatus
+}
+
 type replica struct {
 	raftGroup                 RaftGroup
 	config                    ReplicaRaftConfig
@@ -38,12 +48,13 @@ type replica struct {
 	firstCommitInTermNotifier *syncutil.Notifier
 	leaderChangeNotifier      *syncutil.Notifier
 	leaderCh                  chan leaderChange
+	scheduler                 Scheduler
 	applyJobQueue             JobQueue
 	proposalQueue             *queue.Queue
 	configChangeQueue         *queue.Queue
 	stepQueue                 *queue.Queue
 	reportUnreachableQueue    *queue.Queue
-	reportSnapshotQueue       *queue.Queue
+	reportSnapshotStateQueue  *queue.Queue
 	logger                    ibabuza.Logger
 	closer                    *syncutil.Closer
 }
@@ -77,6 +88,7 @@ func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSess
 		poolReleaseProposal(proposal)
 		return babuza.NewErrorResult(err)
 	}
+	r.scheduler.EnqueueState(stateProposal, r.raftGroup.GroupID)
 	ch, err := r.resultReplier.AcquireResultChan(replyID)
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
@@ -95,7 +107,7 @@ func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 	if err = r.configChangeQueue.Put(configChange); err != nil {
 		return babuza.NewErrorResult(err)
 	}
-
+	r.scheduler.EnqueueState(stateConfigChange, r.raftGroup.GroupID)
 	ch, err := r.resultReplier.AcquireResultChan(replyID)
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
@@ -104,27 +116,27 @@ func (r *replica) EnqueueStep(batchMsg babuzapb.BatchMessage) error {
 	if err := r.stepQueue.Put(batchMsg); err != nil {
 		return errors.Wrapf(err, "GroupID[%d] enqueue step error", r.raftGroup.GroupID)
 	}
+	r.scheduler.EnqueueState(stateStep, r.raftGroup.GroupID)
 	return nil
 }
 
-func (r *replica) EnqueueReportUnreachable(id uint64) error {
-	if err := r.reportUnreachableQueue.Put(id); err != nil {
+func (r *replica) EnqueueReportUnreachable(groupID ibabuza.RaftGroupID, nodeID uint64) error {
+	if err := r.reportUnreachableQueue.Put(reportUnreachable{
+		NodeID: nodeID,
+	}); err != nil {
 		return errors.Wrapf(err, "GroupID[%d] enqueue report unreachable error", r.raftGroup.GroupID)
 	}
+	r.scheduler.EnqueueState(stateStep, r.raftGroup.GroupID)
 	return nil
 }
 
-type reportSnapshot struct {
-	ID     uint64
-	Status raft.SnapshotStatus
-}
-
-func (r *replica) EnqueueReportSnapshot(id uint64, status raft.SnapshotStatus) error {
-	if err := r.reportSnapshotQueue.Put(reportSnapshot{
-		ID:     id,
+func (r *replica) EnqueueReportSnapshot(groupID ibabuza.RaftGroupID, nodeID uint64, status raft.SnapshotStatus) error {
+	if err := r.reportSnapshotStateQueue.Put(reportSnapshotStatus{
+		NodeID: nodeID,
 		Status: status,
 	}); err != nil {
 		return errors.Wrapf(err, "GroupID[%d] enqueue report snapshot error", r.raftGroup.GroupID)
 	}
+	r.scheduler.EnqueueState(stateStep, r.raftGroup.GroupID)
 	return nil
 }

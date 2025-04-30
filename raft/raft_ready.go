@@ -97,12 +97,14 @@ func (r *Raft) processRaftReady() {
 func (r *Raft) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
 	for _, entry := range committedEntries {
 		if entry.Type == raftpb.EntryConfChange {
-			confState, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
+			reqCtx, ar, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
+			if ar.Response != nil {
+				r.status.SetConfState(*ar.Response.(*raftpb.ConfState))
+			}
+			ar.Response = nil
+			r.appliedFacade.SendAppliedResult(reqCtx.ReplyID, ar)
 			if removeSelf {
 				return true
-			}
-			if confState != nil {
-				r.status.SetConfState(*confState)
 			}
 		}
 	}

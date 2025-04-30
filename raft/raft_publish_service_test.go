@@ -53,18 +53,17 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 			status:           status.New(),
 			closer:           closer,
 		}
-		res := r.proposalPubAppService(context.Background(), 1, nil)
-		defer res.Release()
 		r.resultReplier.SendResult(1, ibabuza.ApplyResult{
 			LogIndex: uint64(100),
 			Response: uint64(1000),
 		})
-		err := res.Wait()
-		assert.Nil(t, err)
-		assert.Equal(t, uint64(100), res.LogIndex())
-		ar := res.Response()
-		assert.Nil(t, err)
-		assert.Equal(t, uint64(1000), ar.(uint64))
+		res := r.proposalPubAppService(context.Background(), 1, nil)
+		defer res.Release()
+
+		ar := res.WaitForResult()
+		assert.Nil(t, ar.Error)
+		assert.Equal(t, uint64(100), ar.LogIndex)
+		assert.Equal(t, uint64(1000), ar.Response.(uint64))
 	})
 
 	t.Run("raft stop", func(t *testing.T) {
@@ -79,8 +78,8 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		closer.Close()
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
-		err := res.Wait()
-		assert.Equal(t, ErrStopped, err)
+		ar := res.WaitForResult()
+		assert.Equal(t, ErrStopped, ar.Error)
 	})
 
 	t.Run("failure: raftNodeProposal ", func(t *testing.T) {
@@ -101,8 +100,8 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		}
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
-		err := res.Wait()
-		assert.Equal(t, ErrNotLeader, err)
+		ar := res.WaitForResult()
+		assert.Equal(t, ErrNotLeader, ar.Error)
 	})
 }
 

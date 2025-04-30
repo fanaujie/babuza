@@ -43,7 +43,7 @@ type Storage interface {
 
 	GetStateMachineAppliedIndex() uint64
 	SetStateMachineAppliedIndex(index uint64)
-	Apply(e ibabuza.Entry)
+	Apply(e ibabuza.Entry) ibabuza.ApplyResult
 	SupportConcurrentSnapshot() bool
 	CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error)
 	GetStateMachine() ibabuza.BaseStateMachine
@@ -67,7 +67,7 @@ type InternalCompletionReplier interface {
 
 type InternalAppliedFacade interface {
 	ApplyNilEntryInNewTerm(index, term uint64)
-	ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry
-	ApplyConfChangeEntry(entry raftpb.Entry) (*raftpb.ConfState, bool)
-	SendStateMachineAppliedResult(e *Entry, ar ibabuza.ApplyResult)
+	ApplyNormalEntry(entry raftpb.Entry) (babuzapb.NormalRequest, ibabuza.ApplyResult)
+	ApplyConfChangeEntry(entry raftpb.Entry) (babuzapb.RequestContext, ibabuza.ApplyResult, bool)
+	SendAppliedResult(replyID uint64, ar ibabuza.ApplyResult)
 }

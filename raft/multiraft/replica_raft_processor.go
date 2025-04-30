@@ -14,12 +14,11 @@ func (r *replica) ProcessTick() {
 
 func (r *replica) ProcessReady() {
 	if r.rawNode.HasReady() {
-		var isLeader bool
 		rd := r.rawNode.Ready()
 		if rd.SoftState != nil {
 			r.updateLeadership(*rd.SoftState)
-			isLeader = rd.SoftState.RaftState == raft.StateLeader
 		}
+		isLeader := r.status.IsLeader()
 		if len(rd.ReadStates) != 0 {
 			//TODO: implement read state
 		}
@@ -81,42 +80,48 @@ func (r *replica) ProcessReady() {
 }
 
 func (r *replica) ProcessStep() {
-	if r.stepQueue.Len() > 0 {
-		items, err := r.stepQueue.Get(r.stepQueue.Len())
-		if err != nil {
-			r.logger.Panicf("groupID[%d] raft[id=%d]: error getting step: %v", r.cluster.ClusterID(),
-				r.cluster.LocalPeerID(), err)
-		}
-		for _, item := range items {
-			msg := item.(babuzapb.BatchMessage)
-			for _, m := range msg.Messages {
-				if err = r.rawNode.Step(m); err != nil {
-					r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.ClusterID(),
-						r.cluster.LocalPeerID(), err)
-				}
+	r.processStepQueue()
+	r.processReportUnreachableQueue()
+	r.processReportSnapshotStateQueue()
+}
+
+func (r *replica) processReportSnapshotStateQueue() {
+	items, err := r.reportSnapshotStateQueue.Get(r.reportSnapshotStateQueue.Len())
+	if err != nil {
+		r.logger.Panicf("groupID[%d] raft[id=%d]: error getting report snapshot: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+	}
+	for _, item := range items {
+		msg := item.(reportSnapshotStatus)
+		r.rawNode.ReportSnapshot(msg.NodeID, msg.Status)
+	}
+}
+
+func (r *replica) processReportUnreachableQueue() {
+	items, err := r.reportUnreachableQueue.Get(r.reportUnreachableQueue.Len())
+	if err != nil {
+		r.logger.Panicf("groupID[%d] raft[id=%d]: error getting report unreachable: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+	}
+	for _, item := range items {
+		nodeID := item.(uint64)
+		r.rawNode.ReportUnreachable(nodeID)
+	}
+}
+
+func (r *replica) processStepQueue() {
+	items, err := r.stepQueue.Get(r.stepQueue.Len())
+	if err != nil {
+		r.logger.Panicf("groupID[%d] raft[id=%d]: error getting step: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+	}
+	for _, item := range items {
+		msg := item.(babuzapb.BatchMessage)
+		for _, m := range msg.Messages {
+			if err = r.rawNode.Step(m); err != nil {
+				r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.ClusterID(),
+					r.cluster.LocalPeerID(), err)
 			}
-		}
-	}
-	if r.reportUnreachableQueue.Len() > 0 {
-		items, err := r.reportUnreachableQueue.Get(r.reportUnreachableQueue.Len())
-		if err != nil {
-			r.logger.Panicf("groupID[%d] raft[id=%d]: error getting report unreachable: %v", r.cluster.ClusterID(),
-				r.cluster.LocalPeerID(), err)
-		}
-		for _, item := range items {
-			nodeID := item.(uint64)
-			r.rawNode.ReportUnreachable(nodeID)
-		}
-	}
-	if r.reportSnapshotQueue.Len() > 0 {
-		items, err := r.reportSnapshotQueue.Get(r.reportSnapshotQueue.Len())
-		if err != nil {
-			r.logger.Panicf("groupID[%d] raft[id=%d]: error getting report snapshot: %v", r.cluster.ClusterID(),
-				r.cluster.LocalPeerID(), err)
-		}
-		for _, item := range items {
-			msg := item.(reportSnapshot)
-			r.rawNode.ReportSnapshot(msg.ID, msg.Status)
 		}
 	}
 }
@@ -152,11 +157,11 @@ func (r *replica) ProcessConfigChange() {
 			r.cluster.LocalPeerID(), err)
 	}
 	for _, configChang := range configChanges {
-		ccd := configChang.(*configChangeRequest)
-		if err = r.rawNode.ProposeConfChange(ccd.confChange); err != nil {
+		ccRequest := configChang.(*configChangeRequest)
+		if err = r.rawNode.ProposeConfChange(ccRequest.confChange); err != nil {
 			r.logger.Warningf("groupID[%d] raft[%d] error config change: %v", r.cluster.ClusterID(),
 				r.cluster.LocalPeerID(), err)
-			r.resultReplier.CancelResult(ccd.replyID)
+			r.resultReplier.CancelResult(ccRequest.replyID)
 			if errors.Is(err, raft.ErrProposalDropped) {
 				err = babuza.ErrNotLeader
 			} else if errors.Is(err, raft.ErrStopped) {
@@ -165,19 +170,21 @@ func (r *replica) ProcessConfigChange() {
 			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.ClusterID(),
 				r.cluster.LocalPeerID(), err)
 		}
-		poolReleaseConfigChange(ccd)
+		poolReleaseConfigChange(ccRequest)
 	}
 }
 
 func (r *replica) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
 	for _, entry := range committedEntries {
 		if entry.Type == raftpb.EntryConfChange {
-			confState, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
+			reqCtx, ar, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
+			if ar.Response != nil {
+				r.status.SetConfState(*ar.Response.(*raftpb.ConfState))
+			}
+			ar.Response = nil
+			r.appliedFacade.SendAppliedResult(reqCtx.ReplyID, ar)
 			if removeSelf {
 				return true
-			}
-			if confState != nil {
-				r.status.SetConfState(*confState)
 			}
 		}
 	}
@@ -197,7 +204,7 @@ func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
 				lastAppRespMsgIndex = i
 				optimiseAppendEntryResp = true
 			} else {
-				r.transport.SendSnapshot(babuzapb.MultiRaftMessage{
+				r.transport.Send(babuzapb.MultiRaftMessage{
 					GroupID: r.cluster.ClusterID(),
 					Message: *m,
 				})

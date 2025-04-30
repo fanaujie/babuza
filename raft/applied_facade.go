@@ -102,7 +102,7 @@ func (a *appliedFacadeImpl) ApplyNilEntryInNewTerm(index, term uint64) {
 	a.firstCommitNotifier.CloseAndRenew()
 }
 
-func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry {
+func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) (babuzapb.NormalRequest, ibabuza.ApplyResult) {
 	var req babuzapb.NormalRequest
 	if err := req.Unmarshal(e.Data); err != nil {
 		a.log.Errorf("CRITICAL: Failed to unmarshal entry at index %d, term %d: %v",
@@ -114,74 +114,61 @@ func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) ibabuza.Entry {
 
 	reqTime := time.Now().UnixNano()
 	if req.Register != nil {
-		a.handleSessionRegister(e, req, reqTime)
-		return nil
+		return req, a.handleSessionRegister(e, req, reqTime)
 	} else if req.PubAppService != nil {
-		a.handlePubAppService(e, req)
-		return nil
+		return req, a.handlePubAppService(e, req)
 	}
-	toApply, session := a.doExactlyOnce(e.Index, reqTime, req.Context)
+	toApply, ar := a.doExactlyOnce(e.Index, reqTime, req.Context)
 	if !toApply || e.Index <= a.storage.GetStateMachineAppliedIndex() {
-		return nil
+		return req, ar
 	}
-	return NewEntry(
-		e.Index,
-		e.Term,
-		req.Context.ReplyID,
-		req.Context.SequenceNum,
-		reqTime,
-		req.StateMachineLog,
-		session,
-		a,
-	)
+	return req, ibabuza.ApplyResult{}
 }
 
-func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) (*raftpb.ConfState, bool) {
+func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) (babuzapb.RequestContext, ibabuza.ApplyResult, bool) {
 	cc, confReq, err := a.parseConfChangeEntry(entry)
 	if err != nil {
 		a.log.Panicf("Failed to parse conf change: %v", err)
 	}
 	reqTime := time.Now().UnixNano()
-	toApply, session := a.doExactlyOnce(entry.Index, reqTime, confReq.Context)
+	toApply, ar := a.doExactlyOnce(entry.Index, reqTime, confReq.Context)
 	if !toApply {
-		return nil, false
+		return confReq.Context, ar, false
 	}
 	confChange, removeSelf, err := a.processConfChange(cc, confReq)
-	a.sendConfChangeResult(session, confReq.Context, entry.Index, err)
-	return confChange, removeSelf
+	return confReq.Context, ibabuza.ApplyResult{
+		LogIndex: entry.Index,
+		Response: confChange,
+		Error:    err,
+	}, removeSelf
 }
 
-func (a *appliedFacadeImpl) SendStateMachineAppliedResult(e *Entry, ar ibabuza.ApplyResult) {
-	index := e.Index()
-	a.replier.SendResult(e.ReplyId(), ar)
-	a.storage.SetStateMachineAppliedIndex(index)
-	e.Release()
+func (a *appliedFacadeImpl) SendAppliedResult(replyID uint64, ar ibabuza.ApplyResult) {
+	a.replier.SendResult(replyID, ar)
+	a.storage.SetStateMachineAppliedIndex(ar.LogIndex)
 }
 
-func (a *appliedFacadeImpl) doExactlyOnce(index uint64, requestTime int64, ctx babuzapb.RequestContext) (bool, ibabuza.Session) {
+func (a *appliedFacadeImpl) doExactlyOnce(index uint64, requestTime int64, ctx babuzapb.RequestContext) (bool, ibabuza.ApplyResult) {
 	a.sessionMgr.ExpireSession(requestTime)
-	sess, err := a.sessionMgr.GetSession(ctx.SessionID)
+	session, err := a.sessionMgr.GetSession(ctx.SessionID)
 	if err != nil {
-		a.replier.SendResult(ctx.ReplyID, ibabuza.ApplyResult{
+		return false, ibabuza.ApplyResult{
 			LogIndex: index,
 			Error:    err,
-		})
-		return false, nil
-	}
-	defer sess.ClearResult(ctx.LowestSeqNumNotYetReplied)
-	if sess.RepeatSequenceNum(ctx.SequenceNum) {
-		if ar, ok := sess.GetResult(ctx.SequenceNum); ok == false {
-			err = fmt.Errorf("seesion id(%d) seqence nume(%d): not found apply result", ctx.SessionID, ctx.SequenceNum)
-			a.replier.SendResult(ctx.ReplyID, ibabuza.ApplyResult{
-				LogIndex: index,
-				Error:    err,
-			})
-		} else {
-			a.replier.SendResult(ctx.ReplyID, ar)
 		}
-		return false, nil
 	}
-	return true, sess
+	defer session.ClearResult(ctx.LowestSeqNumNotYetReplied)
+	if session.RepeatSequenceNum(ctx.SequenceNum) {
+		if ar, ok := session.GetResult(ctx.SequenceNum); ok == false {
+			return false, ibabuza.ApplyResult{
+				LogIndex: index,
+				Error:    fmt.Errorf("seesion id(%d) seqence nume(%d): not found apply result", ctx.SessionID, ctx.SequenceNum),
+			}
+		} else {
+			return false, ar
+		}
+	}
+	return true, ibabuza.ApplyResult{}
 }
 
 func (a *appliedFacadeImpl) clusterValidateAndApply(changeType raftpb.ConfChangeType, req babuzapb.ConfChangeRequest) error {
@@ -271,21 +258,20 @@ func (a *appliedFacadeImpl) sendConfChangeResult(session ibabuza.Session, ctx ba
 	a.replier.SendResult(ctx.ReplyID, ar)
 }
 
-func (a *appliedFacadeImpl) handleSessionRegister(e raftpb.Entry, req babuzapb.NormalRequest, reqTime int64) {
+func (a *appliedFacadeImpl) handleSessionRegister(e raftpb.Entry, req babuzapb.NormalRequest, reqTime int64) ibabuza.ApplyResult {
 	a.sessionMgr.Register(e.Index, reqTime)
-	a.replier.SendResult(req.Context.ReplyID, ibabuza.ApplyResult{
+	return ibabuza.ApplyResult{
 		LogIndex: e.Index,
-	})
+	}
 }
 
-func (a *appliedFacadeImpl) handlePubAppService(e raftpb.Entry, req babuzapb.NormalRequest) {
+func (a *appliedFacadeImpl) handlePubAppService(e raftpb.Entry, req babuzapb.NormalRequest) ibabuza.ApplyResult {
 	result := a.cluster.UpdateAppServiceAddresses(
 		req.PubAppService.PubServicePeerID,
 		req.PubAppService.AppServiceAddresses,
 	)
-
-	a.replier.SendResult(req.Context.ReplyID, ibabuza.ApplyResult{
+	return ibabuza.ApplyResult{
 		LogIndex: e.Index,
 		Response: result,
-	})
+	}
 }

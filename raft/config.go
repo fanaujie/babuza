@@ -33,6 +33,14 @@ func (c *PeersConfiguration) AddPeer(id uint64, raftListenAddr string, isLearner
 	return nil
 }
 
+func (c *PeersConfiguration) GetPeer(id uint64) (babuzapb.RaftPeerAttribute, error) {
+	raftPeerAttr, ok := c.raftPeersAttr[id]
+	if !ok {
+		return babuzapb.RaftPeerAttribute{}, fmt.Errorf("peer not found: %d", id)
+	}
+	return raftPeerAttr, nil
+}
+
 func (c *PeersConfiguration) RemovePeer(id uint64) {
 	delete(c.raftPeersAttr, id)
 }

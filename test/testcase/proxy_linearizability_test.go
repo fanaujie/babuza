@@ -59,8 +59,9 @@ func NewKvClientProxy(kvStoreCluster []*babuza.Raft) *KvClientProxy {
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		res := c.kvStores[c.leader].RegisterSession(ctx)
-		if err := res.Wait(); err == nil {
-			c.client = NewMyClient(res.LogIndex())
+		result := res.WaitForApplyResult()
+		if result.Error == nil {
+			c.client = NewMyClient(result.LogIndex)
 			res.Release()
 			cancel()
 			break
@@ -124,15 +125,15 @@ func (c *KvClientProxy) command(command []byte) {
 		r := c.kvStores[c.leader]
 		if r.Status().IsLeader() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-			_, err := r.ProposeThenWaitResponse(ctx, cs, command)
-			if err == nil {
+			result := r.ProposeThenWaitResponse(ctx, cs, command)
+			if result.Error == nil {
 				cancel()
 				//TODO: finish
 				c.client.Response(0)
 				return
 			}
 			cancel()
-			fmt.Println("KvClientProxy: failed to propose command, retrying...", err.Error())
+			fmt.Println("KvClientProxy: failed to propose command, retrying...", result.Error)
 		}
 		c.nextTryLeader()
 		time.Sleep(time.Millisecond * 100)

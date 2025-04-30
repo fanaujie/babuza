@@ -153,14 +153,15 @@ func (c *SnapshotManualTrigger) Run(tc *testcluster.BabuzaCluster, testParams an
 			return err
 		}
 		// Verify snapshot
-		assert.Equal(c.t, result.SnapshotMetadata().Snapshot.Metadata.Index, r.Status().LastSnapshotIndex)
-		assert.Equal(c.t, result.SnapshotMetadata().Snapshot.Metadata.Term, r.Status().LastSnapshotTerm)
+		m, _ := result.SnapshotMetadata()
+		assert.Equal(c.t, m.Snapshot.Metadata.Index, r.Status().LastSnapshotIndex)
+		assert.Equal(c.t, m.Snapshot.Metadata.Term, r.Status().LastSnapshotTerm)
 		tagMap := map[babuzapb.SnapshotFileType]struct{}{
 			babuzapb.SnapshotFileType_Cluster:      {},
 			babuzapb.SnapshotFileType_StateMachine: {},
 			babuzapb.SnapshotFileType_Session:      {},
 		}
-		for _, tag := range result.SnapshotMetadata().Files {
+		for _, tag := range m.Files {
 			delete(tagMap, tag.FileType)
 		}
 		assert.Equal(c.t, 0, len(tagMap))

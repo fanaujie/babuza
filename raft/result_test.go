@@ -24,7 +24,7 @@ func TestRaft_ProposalResult(t *testing.T) {
 			Response: "bar",
 		}
 		r.Release()
-		assert.Nil(t, r.resulCh)
+		assert.Nil(t, r.resultCh)
 		assert.Nil(t, r.closer)
 		assert.Nil(t, r.ctx)
 		r2 := NewProposalResult(ctx, closer, ch).(*proposalResult)
@@ -38,14 +38,14 @@ func TestRaft_ProposalResult(t *testing.T) {
 			Response: "bar",
 		}
 		r := NewProposalResult(ctx, closer, ch)
-		assert.Nil(t, r.Wait())
-		assert.Equal(t, uint64(100), r.LogIndex())
-		ar := r.Response()
-		assert.Equal(t, "bar", ar.(string))
-		ar = r.Response()
-		assert.Equal(t, uint64(100), r.LogIndex())
-		assert.Equal(t, "bar", ar.(string))
-		r.Release()
+		defer r.Release()
+		ar := r.WaitForResult()
+		assert.Nil(t, ar.Error)
+		assert.Equal(t, uint64(100), ar.LogIndex)
+		assert.Equal(t, "bar", ar.Response.(string))
+		ar = r.WaitForResult()
+		assert.Equal(t, uint64(100), ar.LogIndex)
+		assert.Equal(t, "bar", ar.Response.(string))
 	})
 
 	t.Run("error: get apply result", func(t *testing.T) {
@@ -55,17 +55,20 @@ func TestRaft_ProposalResult(t *testing.T) {
 			Error:    e,
 		}
 		r := NewProposalResult(ctx, closer, ch)
-		assert.Equal(t, e, r.Wait())
-		assert.Equal(t, uint64(100), r.LogIndex())
-		ar := r.Response()
-		assert.Nil(t, ar)
-		assert.Equal(t, e, r.Wait()) // call wait() twice
-		r.Release()
+		defer r.Release()
+		ar := r.WaitForResult()
+		assert.Error(t, ar.Error)
+		assert.Equal(t, uint64(100), ar.LogIndex)
+		ar = r.WaitForResult()
+		assert.Error(t, ar.Error)
+		assert.Equal(t, uint64(100), ar.LogIndex)
+
 	})
 	t.Run("close", func(t *testing.T) {
 		r := NewProposalResult(ctx, closer, ch)
 		closer.Close()
-		assert.Equal(t, ErrStopped, r.Wait())
+		ar := r.WaitForResult()
+		assert.Equal(t, ErrStopped, ar.Error)
 		r.Release()
 	})
 
@@ -96,12 +99,13 @@ func TestRaft_ManualSnapshotResult(t *testing.T) {
 		ch <- SnapshotResult{
 			metadata: storage.snapMetadata,
 		}
-		assert.Nil(t, r.Wait())
+		assert.Nil(t, r.WaitForCompletion())
 		assert.Equal(t, true, r.done)
-		m := r.SnapshotMetadata()
+		m, err := r.SnapshotMetadata()
+		assert.Nil(t, err)
 		assert.Equal(t, uint64(10), m.Snapshot.Metadata.Term)
 		assert.Equal(t, uint64(100), m.Snapshot.Metadata.Index)
-		assert.Nil(t, r.Wait()) // call wait() twice
+		assert.Nil(t, r.WaitForCompletion()) // call wait() twice
 	})
 	t.Run("error", func(t *testing.T) {
 		mr := manualSnapshotResult{
@@ -113,9 +117,9 @@ func TestRaft_ManualSnapshotResult(t *testing.T) {
 		ch <- SnapshotResult{
 			err: e,
 		}
-		assert.Equal(t, e, mr.Wait())
+		assert.Equal(t, e, mr.WaitForCompletion())
 		assert.Equal(t, true, mr.done)
-		assert.Equal(t, e, mr.Wait())
+		assert.Equal(t, e, mr.WaitForCompletion())
 	})
 	t.Run("close", func(t *testing.T) {
 		r := manualSnapshotResult{
@@ -124,16 +128,16 @@ func TestRaft_ManualSnapshotResult(t *testing.T) {
 			resulCh: ch,
 		}
 		closer.Close()
-		assert.Equal(t, ErrStopped, r.Wait())
-		assert.Equal(t, ErrStopped, r.Wait()) // call wait() twice
+		assert.Equal(t, ErrStopped, r.WaitForCompletion())
+		assert.Equal(t, ErrStopped, r.WaitForCompletion()) // call wait() twice
 	})
 }
 
 func TestRaft_ShutdownResult(t *testing.T) {
 	r := NewShutdownResult(func() {
 	})
-	assert.Nil(t, r.Wait())
-	assert.Nil(t, r.Wait()) // call wait() twice
+	assert.Nil(t, r.WaitForCompletion())
+	assert.Nil(t, r.WaitForCompletion()) // call wait() twice
 }
 
 func TestRaft_TransferLeaderResult(t *testing.T) {
@@ -144,9 +148,9 @@ func TestRaft_TransferLeaderResult(t *testing.T) {
 		r := NewTransferLeaderResult(ctx, 1, closer, time.Millisecond*300, func() uint64 {
 			return 1
 		})
-		assert.Nil(t, r.Wait())
+		assert.Nil(t, r.WaitForCompletion())
 		assert.Equal(t, true, r.(*transferLeaderResult).done)
-		assert.Nil(t, r.Wait()) // call wait() twice
+		assert.Nil(t, r.WaitForCompletion()) // call wait() twice
 	})
 	t.Run("deadline", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -154,8 +158,8 @@ func TestRaft_TransferLeaderResult(t *testing.T) {
 		r := NewTransferLeaderResult(ctx, 1, closer, time.Millisecond*300, func() uint64 {
 			return 0
 		})
-		assert.Equal(t, context.DeadlineExceeded, r.Wait())
-		assert.Equal(t, context.DeadlineExceeded, r.Wait()) // call wait() twice
+		assert.Equal(t, context.DeadlineExceeded, r.WaitForCompletion())
+		assert.Equal(t, context.DeadlineExceeded, r.WaitForCompletion()) // call wait() twice
 	})
 	t.Run("close", func(t *testing.T) {
 		ctx := context.Background()
@@ -163,7 +167,7 @@ func TestRaft_TransferLeaderResult(t *testing.T) {
 			return 0
 		})
 		closer.Close()
-		assert.Equal(t, ErrStopped, r.Wait())
-		assert.Equal(t, ErrStopped, r.Wait()) // call wait() twice
+		assert.Equal(t, ErrStopped, r.WaitForCompletion())
+		assert.Equal(t, ErrStopped, r.WaitForCompletion()) // call wait() twice
 	})
 }

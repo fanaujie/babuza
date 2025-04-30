@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -61,12 +62,17 @@ func (r *Raft) applyEntries(entries []raftpb.Entry) {
 		} else {
 			switch entry.Type {
 			case raftpb.EntryNormal:
-				applyEntry := r.appliedFacade.ApplyNormalEntry(entry)
-				if applyEntry != nil {
+				normalReq, ar := r.appliedFacade.ApplyNormalEntry(entry)
+				if ar.IsEmpty() {
 					now := time.Now()
-					r.storage.Apply(applyEntry)
+					ar = r.storage.Apply(ibabuza.Entry{
+						Term:    entry.Term,
+						Index:   entry.Index,
+						Command: normalReq.StateMachineLog,
+					})
 					r.metricsCollector.RecordApplySec(time.Since(now).Seconds())
 				}
+				r.appliedFacade.SendAppliedResult(normalReq.Context.ReplyID, ar)
 			case raftpb.EntryConfChange:
 				// do nothing, just apply conf change entry before
 			default:

@@ -34,11 +34,12 @@ func (h *SessionResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	var res response.RegisterSessionResponse
 	babuzaRes := h.r.RegisterSession(r.Context())
 	defer babuzaRes.Release()
-	if err := babuzaRes.Wait(); err != nil {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
+	ar := babuzaRes.WaitForApplyResult()
+	if ar.Error != nil {
+		processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}
-	res.SessionId = babuzaRes.LogIndex()
+	res.SessionId = ar.LogIndex
 	if err := writeHttpResponse(w, res); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

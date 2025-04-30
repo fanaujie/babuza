@@ -1,6 +1,7 @@
 package multiraft
 
 import (
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
@@ -63,10 +64,15 @@ func (r *replica) applyEntries(entries []raftpb.Entry) {
 		} else {
 			switch entry.Type {
 			case raftpb.EntryNormal:
-				toApplyEntry := r.appliedFacade.ApplyNormalEntry(entry)
-				if toApplyEntry != nil {
-					r.storage.Apply(toApplyEntry)
+				normalReq, ar := r.appliedFacade.ApplyNormalEntry(entry)
+				if ar.IsEmpty() {
+					ar = r.storage.Apply(ibabuza.Entry{
+						Term:    entry.Term,
+						Index:   entry.Index,
+						Command: normalReq.StateMachineLog,
+					})
 				}
+				r.appliedFacade.SendAppliedResult(normalReq.Context.ReplyID, ar)
 			case raftpb.EntryConfChange:
 				// do nothing, just apply conf change entry before
 			default:
