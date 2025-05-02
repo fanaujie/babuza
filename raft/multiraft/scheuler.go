@@ -81,39 +81,27 @@ func (s *raftScheduler) EnqueueState(state int, groupID ibabuza.RaftGroupID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	shardQueue := s.shardQueue[groupID%ibabuza.RaftGroupID(s.config.shardNum)]
-	st, ok := s.groupState[groupID]
-	if !ok {
-		iState := internalState{
-			state: state,
+	oldState := s.groupState[groupID]
+	if state&stateTick != stateTick {
+		// if the state is not tick, we need to check if the state is already set
+		if oldState.state&state == state {
+			return
 		}
-		if state&stateTick == stateTick {
-			iState.ticks = 1
-		}
-		s.groupState[groupID] = iState
-	} else {
-		if state&stateTick != stateTick {
-			// if the state is not tick, we need to check if the state is already set
-			if st.state&state == state {
-				return
-			}
-		}
-		st.state = st.state | state
-		if state&stateTick == stateTick {
-			st.ticks++
-			if st.ticks > s.config.maxTicks {
-				st.ticks = s.config.maxTicks
-			}
-		}
-		s.groupState[groupID] = st
 	}
-	if st.state&stateQueue == 0 {
-		st.state |= stateQueue
+	oldState.state |= state
+	if state&stateTick == stateTick {
+		oldState.ticks++
+		if oldState.ticks > s.config.maxTicks {
+			oldState.ticks = s.config.maxTicks
+		}
+	}
+	s.groupState[groupID] = oldState
+	if oldState.state&stateQueue == 0 {
+		oldState.state |= stateQueue
 		if err := shardQueue.Put(groupID); err != nil {
 			s.log.Panicf("GroupID[%d] raftScheduler enqueue state %d error: %v", groupID, state, err)
 		}
-		return
 	}
-	return
 }
 
 func (s *raftScheduler) EnqueueBatchState(state int, groupIDs []ibabuza.RaftGroupID) {
@@ -165,7 +153,7 @@ func (s *raftScheduler) worker(shardID, workderID int, q *queue.RingBuffer) {
 		}
 		s.mu.Lock()
 		newState, _ := s.groupState[groupID]
-		if newState.state&stateQueue == stateQueue {
+		if newState.state == stateQueue {
 			delete(s.groupState, groupID)
 			s.mu.Unlock()
 		} else {

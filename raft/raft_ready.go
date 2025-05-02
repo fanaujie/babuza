@@ -49,17 +49,7 @@ func (r *Raft) processRaftReady() {
 
 			emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
 			if len(rd.CommittedEntries) > 0 || !emptySnapshot {
-				if r.applyConfChangeEntry(rd.CommittedEntries) {
-					close(r.removeSelfCh)
-					select {
-					case <-r.shutdownCh: //already shutdown
-					default:
-						time.AfterFunc(time.Second, func() {
-							r.stop()
-						})
-					}
-					return
-				}
+
 				select {
 				case <-r.closer.CloseCh():
 					return
@@ -85,6 +75,19 @@ func (r *Raft) processRaftReady() {
 			}
 			if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
 				r.logger.Panicf("raft[id=%d]: append entries failed: %v", r.cluster.LocalPeerID(), err)
+			}
+			// The applyConfChangeEntry must be handled here to ensure the leader sends out messages (e.g., removing a follower) first.
+			// This guarantees that the follower receives the message before the configuration change is actually applied.
+			if r.applyConfChangeEntry(rd.CommittedEntries) {
+				close(r.removeSelfCh)
+				select {
+				case <-r.shutdownCh: //already shutdown
+				default:
+					time.AfterFunc(time.Second, func() {
+						r.stop()
+					})
+				}
+				return
 			}
 			if !isLeader {
 				r.sendRaftMessage(rd.Messages)

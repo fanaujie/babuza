@@ -167,6 +167,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			firstCommitInTermNotifier: firstCommitInTermNotifier,
 			leaderChangeNotifier:      syncutil.NewNotifier(),
 			leaderCh:                  nil,
+			replicaEventCh:            n.replicaEventCh,
 			scheduler:                 n.scheduler,
 			applyJobQueue:             newJobQueue(groupID, n.config.JobQueueSize, n.logger),
 			proposalQueue:             &queue.Queue{},
@@ -184,12 +185,13 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 
 func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger) *Node {
 	n := &Node{
-		config:  config,
-		trans:   trans,
-		storage: storage,
-		factory: factory,
-		logger:  logger,
-		closer:  syncutil.NewCloser(),
+		config:         config,
+		trans:          trans,
+		storage:        storage,
+		factory:        factory,
+		logger:         logger,
+		closer:         syncutil.NewCloser(),
+		replicaEventCh: make(chan replicaEvent, 8),
 	}
 	scheduler := newScheduler(config.NodeID, schedulerConfig{
 		shardNum:       config.SchedulerShardNum,
@@ -311,6 +313,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		firstCommitInTermNotifier: firstCommitInTermNotifier,
 		leaderChangeNotifier:      syncutil.NewNotifier(),
 		leaderCh:                  nil,
+		replicaEventCh:            node.replicaEventCh,
 		scheduler:                 node.scheduler,
 		applyJobQueue:             newJobQueue(groupID, node.config.JobQueueSize, node.logger),
 		proposalQueue:             &queue.Queue{},

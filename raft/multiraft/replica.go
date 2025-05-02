@@ -48,6 +48,7 @@ type replica struct {
 	firstCommitInTermNotifier *syncutil.Notifier
 	leaderChangeNotifier      *syncutil.Notifier
 	leaderCh                  chan leaderChange
+	replicaEventCh            chan replicaEvent
 	scheduler                 Scheduler
 	applyJobQueue             JobQueue
 	proposalQueue             *queue.Queue
@@ -71,6 +72,9 @@ func (r *replica) Stop() {
 	r.closer.Close()
 	r.proposalQueue.Dispose()
 	r.configChangeQueue.Dispose()
+	r.stepQueue.Dispose()
+	r.reportUnreachableQueue.Dispose()
+	r.reportSnapshotStateQueue.Dispose()
 	r.applyJobQueue.Stop()
 }
 

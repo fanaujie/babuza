@@ -13,15 +13,15 @@ import (
 )
 
 type Node struct {
-	config    NodeConfig
-	trans     ibabuza.MultiRaftTransport
-	storage   BootstrapStorage
-	factory   ComponentsFactory
-	logger    ibabuza.Logger
-	scheduler Scheduler
-
-	closer     *syncutil.Closer
-	replicaSet struct {
+	config         NodeConfig
+	trans          ibabuza.MultiRaftTransport
+	storage        BootstrapStorage
+	factory        ComponentsFactory
+	logger         ibabuza.Logger
+	scheduler      Scheduler
+	replicaEventCh chan replicaEvent
+	closer         *syncutil.Closer
+	replicaSet     struct {
 		mu      sync.RWMutex
 		replica map[ibabuza.RaftGroupID]*replica
 	}
@@ -58,7 +58,10 @@ func (n *Node) Start() error {
 		}
 	}
 	n.closer.Run(func() {
-		n.raftTickStart()
+		n.replicaRaftTick()
+	})
+	n.closer.Run(func() {
+		n.replicaListener()
 	})
 	return nil
 }
@@ -109,6 +112,17 @@ func (n *Node) HasGroupID(groupID ibabuza.RaftGroupID) bool {
 	return ok
 }
 
+func (n *Node) StateMachine(groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, error) {
+	n.replicaSet.mu.RLock()
+	defer n.replicaSet.mu.RUnlock()
+	r, ok := n.replicaSet.replica[groupID]
+	if !ok {
+		return nil, errors.Errorf("Node[%d] raft group %d not found", n.config.NodeID, groupID)
+	}
+	return r.storage.GetStateMachine(), nil
+
+}
+
 func (n *Node) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession, log []byte) babuza.ProposedResult {
 	r, ok := n.replicaSet.replica[groupID]
 	if !ok {
@@ -130,6 +144,18 @@ func (n *Node) AddVotingPeer(ctx context.Context, groupID ibabuza.RaftGroupID, s
 		return babuza.NewErrorResult(babuza.ErrLearnerCanNotVote)
 	}
 	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddNode, raftPeerAttr, false)
+}
+
+func (n *Node) RemovePeer(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
+	peerID uint64) babuza.ProposedResult {
+	r, ok := n.replicaSet.replica[groupID]
+	if !ok {
+		return babuza.NewErrorResult(errors.Errorf("Node[%d]  raft group %d not found", n.config.NodeID, groupID))
+	}
+	if n.config.DisableProposalForwarding && r.Status().IsLeader() == false {
+		return babuza.NewErrorResult(babuza.ErrNotLeader)
+	}
+	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeRemoveNode, babuzapb.RaftPeerAttribute{Id: peerID}, false)
 }
 
 func (n *Node) Status(groupID ibabuza.RaftGroupID) (babuza.Status, error) {

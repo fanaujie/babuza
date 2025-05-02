@@ -2,6 +2,9 @@ package multiraft
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/cluster"
@@ -17,28 +20,131 @@ import (
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"io"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
 
-type simpleStateMachine struct {
+const CounterSnapshotTag = "counter-state-machine"
+
+type CounterOperationType string
+
+const (
+	Increment CounterOperationType = "increment"
+	Decrement CounterOperationType = "decrement"
+	Reset     CounterOperationType = "reset"
+	GetValue  CounterOperationType = "get"
+)
+
+type CounterCommand struct {
+	Operation CounterOperationType `json:"operation"`
+	Value     int64                `json:"value,omitempty"` // 用于增量或重置值
 }
 
-func (s *simpleStateMachine) Apply(entry ibabuza.Entry) ibabuza.ApplyResult {
-	return ibabuza.ApplyResult{}
+type CounterResult struct {
+	Operation CounterOperationType `json:"operation"`
+	Success   bool                 `json:"success"`
+	Value     int64                `json:"value"`
 }
 
-func (s *simpleStateMachine) SaveSnapshot(context ibabuza.StateMachineSnapshotContext, writer ibabuza.StateMachineSnapshotWriter) error {
+type SimpleStateMachine struct {
+	counter int64
+	mu      sync.RWMutex
+}
+
+func NewSimpleStateMachine() *SimpleStateMachine {
+	return &SimpleStateMachine{
+		counter: 0,
+	}
+}
+
+func (s *SimpleStateMachine) Apply(entry ibabuza.Entry) ibabuza.ApplyResult {
+	var cmd CounterCommand
+
+	if err := json.Unmarshal(entry.Command, &cmd); err != nil {
+		return ibabuza.ApplyResult{
+			LogIndex: entry.Index,
+			Error:    err,
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var result CounterResult
+	result.Operation = cmd.Operation
+	result.Success = true
+
+	switch cmd.Operation {
+	case Increment:
+		s.counter += cmd.Value
+		result.Value = s.counter
+	case Decrement:
+		s.counter -= cmd.Value
+		result.Value = s.counter
+	case Reset:
+		s.counter = cmd.Value
+		result.Value = s.counter
+	case GetValue:
+		result.Value = s.counter
+	default:
+		return ibabuza.ApplyResult{
+			LogIndex: entry.Index,
+			Error:    errors.New("unknown counter operation"),
+		}
+	}
+
+	return ibabuza.ApplyResult{
+		LogIndex: entry.Index,
+		Response: &result,
+	}
+}
+
+func (s *SimpleStateMachine) SaveSnapshot(ctx ibabuza.StateMachineSnapshotContext, writer ibabuza.StateMachineSnapshotWriter) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	wc, err := writer.CreateStateMachineFile(CounterSnapshotTag, babuzapb.SnapshotFileCompression_None)
+	if err != nil {
+		return err
+	}
+	defer wc.Close()
+
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, uint64(s.counter))
+
+	_, err = wc.Write(buf)
+	return err
+}
+
+func (s *SimpleStateMachine) RestoreFromSnapshot(reader ibabuza.StateMachineSnapshotReader) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	r, _, err := reader.Open(CounterSnapshotTag)
+	if err != nil {
+		return err
+	}
+
+	buf := make([]byte, 8)
+	if _, err = io.ReadFull(r, buf); err != nil {
+		return err
+	}
+
+	s.counter = int64(binary.LittleEndian.Uint64(buf))
 	return nil
 }
 
-func (s *simpleStateMachine) RestoreFromSnapshot(reader ibabuza.StateMachineSnapshotReader) error {
+func (s *SimpleStateMachine) Close() error {
 	return nil
 }
 
-func (s *simpleStateMachine) Close() error {
-	return nil
+func (s *SimpleStateMachine) Counter() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.counter
 }
 
 type ComponentFactory struct {
@@ -47,7 +153,7 @@ type ComponentFactory struct {
 func (c *ComponentFactory) CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID,
 	logger ibabuza.Logger) (ibabuza.BaseStateMachine, error) {
 
-	return &simpleStateMachine{}, nil
+	return NewSimpleStateMachine(), nil
 }
 
 func (c *ComponentFactory) CreateCluster(logger ibabuza.Logger) ibabuza.Cluster {
@@ -77,7 +183,8 @@ func createNodeManager(t *testing.T, configuration *babuza.PeersConfiguration) (
 
 func createNode(clusterID uint64, nodeID uint64, nodeRaftListenAddr string, rootDir string) (*Node, error) {
 	config := DefaultNodeConfig(clusterID, nodeID, rootDir, nodeRaftListenAddr)
-	log := logger.NewRaftLogger(zap.NewExample().Sugar())
+	z, _ := zap.NewProduction(zap.AddCallerSkip(1))
+	log := logger.NewRaftLogger(z.Sugar())
 	walMgr := babuzawal.NewMultiRaftWalManager(filepath.Join(rootDir, "wal"), log)
 	snapshotMgr := snapshot.NewMultiRaftSnapshotManager(snapshot.Config{
 		SnapshotVersion: 1,
@@ -89,6 +196,57 @@ func createNode(clusterID uint64, nodeID uint64, nodeRaftListenAddr string, root
 		breaker.NewNoOpBreaker(), protocol.NewGrpcMultiRaft(log), log)
 
 	return BootstrapOrRecoverNode(config, &ComponentFactory{}, trans, walMgr, snapshotMgr, log)
+}
+
+func proposeCommand(node *Node, groupID ibabuza.RaftGroupID, cmd CounterCommand) (*CounterResult, error) {
+	cmdBytes, err := json.Marshal(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	res := node.Propose(context.Background(), groupID, babuza.ClientSession{}, cmdBytes)
+	ar := res.WaitForApplyResult()
+	defer res.Release()
+	if ar.Error != nil {
+		return nil, ar.Error
+	}
+	result, ok := ar.Response.(*CounterResult)
+	if !ok {
+		return nil, errors.New("invalid response type")
+	}
+	return result, nil
+}
+
+func verifyCounterValue(nm *NodeManager, groupID ibabuza.RaftGroupID, expectedValue int64) error {
+	c := int64(0)
+	init := false
+
+	for _, nodeID := range nm.GetNodeIDsByGroupID(groupID) {
+		node, err := nm.GetNode(nodeID)
+		if err != nil {
+			return err
+		}
+		stateMachine, err := node.StateMachine(groupID)
+		if err != nil {
+			return err
+		}
+		counterStateMachine, ok := stateMachine.(*SimpleStateMachine)
+		if !ok {
+			return errors.New("invalid state machine type")
+		}
+		if !init {
+			c = counterStateMachine.Counter()
+			init = true
+		} else {
+			if counterStateMachine.Counter() != c {
+				return errors.New("counter value mismatch")
+			}
+		}
+	}
+	if c != expectedValue {
+		return errors.New("counter value mismatch")
+	}
+	return nil
 }
 
 func TestBootstrap(t *testing.T) {
@@ -144,6 +302,32 @@ func TestBootstrap(t *testing.T) {
 	group2LeaderID, err := nm.CheckSameLeader(raftGroup2)
 	assert.NoError(t, err)
 	t.Logf("group2 leader: %d", group2LeaderID)
+
+	group1LeaderNode, err := nm.GetNode(group1LeaderID)
+	assert.NoError(t, err)
+
+	result, err := proposeCommand(group1LeaderNode, raftGroup1, CounterCommand{Operation: Reset, Value: 10})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(10), result.Value)
+
+	result, err = proposeCommand(group1LeaderNode, raftGroup1, CounterCommand{Operation: Increment, Value: 5})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(15), result.Value)
+	// wait for the command to be applied
+	time.Sleep(time.Second)
+	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 15))
+
+	group2LeaderNode, err := nm.GetNode(group2LeaderID)
+	assert.NoError(t, err)
+	result, err = proposeCommand(group2LeaderNode, raftGroup2, CounterCommand{Operation: Reset, Value: 20})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(20), result.Value)
+	result, err = proposeCommand(group2LeaderNode, raftGroup2, CounterCommand{Operation: Decrement, Value: 8})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(12), result.Value)
+	// wait for the command to be applied
+	time.Sleep(time.Second)
+	assert.NoError(t, verifyCounterValue(nm, raftGroup2, 12))
 }
 
 func TestJoinVotingGroup(t *testing.T) {
@@ -190,19 +374,112 @@ func TestJoinVotingGroup(t *testing.T) {
 	group1LeaderNode, err := nm.GetNode(group1LeaderID)
 	assert.NoError(t, err)
 
+	result, err := proposeCommand(group1LeaderNode, raftGroup1, CounterCommand{Operation: Reset, Value: 50})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(50), result.Value)
+
+	result, err = proposeCommand(group1LeaderNode, raftGroup1, CounterCommand{Operation: Increment, Value: 10})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(60), result.Value)
+	// wait for the command to be applied
+	time.Sleep(time.Second)
+	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 60))
+
+	//node3 join group1
 	peer3, _ := peersConfig.GetPeer(3)
 	res := group1LeaderNode.AddVotingPeer(context.Background(), raftGroup1, babuza.ClientSession{}, peer3)
-	ar := res.WaitForResult()
+	ar := res.WaitForApplyResult()
 	res.Release()
 	assert.Nil(t, ar.Error)
 	assert.NoError(t, node3.CreateRaftGroup(raftGroup1, peersConfig, true))
-	//wait for node3 to join group1
-	time.Sleep(time.Second)
+
+	//wait for node3 to join group1 and apply the command
+	time.Sleep(time.Second * 3)
 	groupIDs = node3.GetGroupIDs()
 	assert.Equal(t, 1, len(groupIDs))
 	assert.Equal(t, raftGroup1, groupIDs[0])
-
 	lastGroup1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	assert.Equal(t, group1LeaderID, lastGroup1LeaderID)
+	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 60))
+}
+
+func TestRemoveVotingGroup(t *testing.T) {
+	peersConfig := babuza.NewPeersConfiguration()
+	assert.NoError(t, peersConfig.AddPeer(1, "localhost:14201", false))
+	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
+	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
+
+	nm, err := createNodeManager(t, peersConfig)
+	assert.NoError(t, err)
+	assert.NotNil(t, nm)
+	assert.Equal(t, 3, len(nm.GetAllNodes()))
+	node1, err := nm.GetNode(1)
+	assert.NoError(t, err)
+	node2, err := nm.GetNode(2)
+	assert.NoError(t, err)
+	node3, err := nm.GetNode(3)
+	assert.NoError(t, err)
+	assert.NoError(t, node1.Start())
+	assert.NoError(t, node2.Start())
+	assert.NoError(t, node3.Start())
+	defer func() {
+		node1.Stop()
+		node2.Stop()
+		node3.Stop()
+	}()
+	raftGroup1 := ibabuza.RaftGroupID(10)
+	group1PeersConfig := peersConfig.Clone()
+	assert.NoError(t, node1.CreateRaftGroup(raftGroup1, group1PeersConfig, false))
+	assert.NoError(t, node2.CreateRaftGroup(raftGroup1, group1PeersConfig, false))
+	assert.NoError(t, node3.CreateRaftGroup(raftGroup1, group1PeersConfig, false))
+	groupIDs := node1.GetGroupIDs()
+	assert.Equal(t, 1, len(groupIDs))
+	assert.Equal(t, raftGroup1, groupIDs[0])
+	groupIDs = node2.GetGroupIDs()
+	assert.Equal(t, 1, len(groupIDs))
+	assert.Equal(t, raftGroup1, groupIDs[0])
+	groupIDs = node3.GetGroupIDs()
+	assert.Equal(t, 1, len(groupIDs))
+	assert.Equal(t, raftGroup1, groupIDs[0])
+	//wait for leader election
+	time.Sleep(time.Second * 3)
+	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
+	assert.NoError(t, err)
+	t.Logf("group1 leader: %d", group1LeaderID)
+
+	group1LeaderNode, err := nm.GetNode(group1LeaderID)
+	assert.NoError(t, err)
+
+	removeID := (group1LeaderID % 3) + 1
+	remainIDs := make([]uint64, 0)
+	for i := uint64(1); i <= 3; i++ {
+		if i != removeID {
+			remainIDs = append(remainIDs, i)
+		}
+	}
+	//remove group1
+	res := group1LeaderNode.RemovePeer(context.Background(), raftGroup1, babuza.ClientSession{}, removeID)
+	ar := res.WaitForApplyResult()
+	res.Release()
+	assert.Nil(t, ar.Error)
+
+	//wait for removeNode to leave group1
+	time.Sleep(time.Second * 1)
+	removeNode, err := nm.GetNode(removeID)
+	assert.NoError(t, err)
+	groupIDs = removeNode.GetGroupIDs()
+	assert.Equal(t, 0, len(groupIDs))
+
+	result, err := proposeCommand(group1LeaderNode, raftGroup1, CounterCommand{Operation: Reset, Value: 50})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(50), result.Value)
+	//wait for  apply the command
+	time.Sleep(time.Second)
+	nodeIDs := nm.GetNodeIDsByGroupID(raftGroup1)
+	assert.Equal(t, len(remainIDs), len(nodeIDs))
+	for index, nodeID := range nodeIDs {
+		assert.Equal(t, remainIDs[index], nodeID)
+	}
+	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 50))
 }

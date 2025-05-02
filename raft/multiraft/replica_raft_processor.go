@@ -2,6 +2,8 @@ package multiraft
 
 import (
 	"errors"
+	"fmt"
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
@@ -36,11 +38,6 @@ func (r *replica) ProcessReady() {
 
 		emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
 		if len(rd.CommittedEntries) > 0 || !emptySnapshot {
-			if r.applyConfChangeEntry(rd.CommittedEntries) {
-				//TODO: implement remove self
-				return
-			}
-
 			applyData := poolGetApplyEntry()
 			applyData.entries = rd.CommittedEntries
 			applyData.snapshot = rd.Snapshot
@@ -71,6 +68,15 @@ func (r *replica) ProcessReady() {
 		if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
 			r.logger.Panicf("groupID[%d] raft[id=%d]: append entries failed: %v", r.cluster.ClusterID(),
 				r.cluster.LocalPeerID(), err)
+		}
+		// The applyConfChangeEntry must be handled here to ensure the leader sends out messages (e.g., removing a follower) first.
+		// This guarantees that the follower receives the message before the configuration change is actually applied.
+		if r.applyConfChangeEntry(rd.CommittedEntries) {
+			r.replicaEventCh <- replicaEvent{
+				groupID: ibabuza.RaftGroupID(r.cluster.ClusterID()),
+				event:   eventRemovePeer,
+			}
+			return
 		}
 		if !isLeader {
 			r.sendRaftMessage(rd.Messages)
@@ -177,14 +183,17 @@ func (r *replica) ProcessConfigChange() {
 func (r *replica) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
 	for _, entry := range committedEntries {
 		if entry.Type == raftpb.EntryConfChange {
+			fmt.Println(entry)
 			reqCtx, ar, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
-			if ar.Response != nil {
+			if ar.Error != nil {
+				r.appliedFacade.SendAppliedResult(reqCtx.ReplyID, ar)
+			} else {
 				r.status.SetConfState(*ar.Response.(*raftpb.ConfState))
-			}
-			ar.Response = nil
-			r.appliedFacade.SendAppliedResult(reqCtx.ReplyID, ar)
-			if removeSelf {
-				return true
+				ar.Response = nil
+				r.appliedFacade.SendAppliedResult(reqCtx.ReplyID, ar)
+				if removeSelf {
+					return true
+				}
 			}
 		}
 	}
