@@ -56,10 +56,16 @@ func NewSwapBufferQueue[T any](size uint64, onRelease func([]T)) *SwapBufferQueu
 	return q
 }
 
-func (q *SwapBufferQueue[T]) Disposed() {
+func (q *SwapBufferQueue[T]) Dispose() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.stopped = true
+}
+
+func (q *SwapBufferQueue[T]) Disposed() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.stopped
 }
 
 func (q *SwapBufferQueue[T]) Len() uint64 {

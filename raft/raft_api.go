@@ -232,7 +232,7 @@ func (r *Raft) AddLearner(ctx context.Context, session ClientSession, raftPeerAt
 		return NewErrorResult(ErrNotLeader)
 	}
 	if raftPeerAttr.IsLearner == false {
-		return NewErrorResult(ErrVotingMemberCanNotPromote)
+		return NewErrorResult(ErrNotLearner)
 	}
 	replyID := r.idGenerator.Next()
 	confChange, err := EncodeClusterConfigurationChange(replyID, session, raftpb.ConfChangeAddLearnerNode, raftPeerAttr, false)

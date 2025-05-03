@@ -113,29 +113,26 @@ func (n *Node) HasGroupID(groupID ibabuza.RaftGroupID) bool {
 }
 
 func (n *Node) StateMachine(groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, error) {
-	n.replicaSet.mu.RLock()
-	defer n.replicaSet.mu.RUnlock()
-	r, ok := n.replicaSet.replica[groupID]
-	if !ok {
-		return nil, errors.Errorf("Node[%d] raft group %d not found", n.config.NodeID, groupID)
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return nil, err
 	}
 	return r.storage.GetStateMachine(), nil
-
 }
 
 func (n *Node) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession, log []byte) babuza.ProposedResult {
-	r, ok := n.replicaSet.replica[groupID]
-	if !ok {
-		return babuza.NewErrorResult(errors.Errorf("Node[%d] raft group %d not found", n.config.NodeID, groupID))
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
 	}
 	return r.EnqueueProposal(ctx, session, log)
 }
 
 func (n *Node) AddVotingPeer(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
 	raftPeerAttr babuzapb.RaftPeerAttribute) babuza.ProposedResult {
-	r, ok := n.replicaSet.replica[groupID]
-	if !ok {
-		return babuza.NewErrorResult(errors.Errorf("Node[%d]  raft group %d not found", n.config.NodeID, groupID))
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
 	}
 	if n.config.DisableProposalForwarding && r.Status().IsLeader() == false {
 		return babuza.NewErrorResult(babuza.ErrNotLeader)
@@ -148,9 +145,9 @@ func (n *Node) AddVotingPeer(ctx context.Context, groupID ibabuza.RaftGroupID, s
 
 func (n *Node) RemovePeer(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
 	peerID uint64) babuza.ProposedResult {
-	r, ok := n.replicaSet.replica[groupID]
-	if !ok {
-		return babuza.NewErrorResult(errors.Errorf("Node[%d]  raft group %d not found", n.config.NodeID, groupID))
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
 	}
 	if n.config.DisableProposalForwarding && r.Status().IsLeader() == false {
 		return babuza.NewErrorResult(babuza.ErrNotLeader)
@@ -160,27 +157,64 @@ func (n *Node) RemovePeer(ctx context.Context, groupID ibabuza.RaftGroupID, sess
 
 func (n *Node) AddLearner(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
 	raftPeerAttr babuzapb.RaftPeerAttribute) babuza.ProposedResult {
-	r, ok := n.replicaSet.replica[groupID]
-	if !ok {
-		return babuza.NewErrorResult(errors.Errorf("Node[%d]  raft group %d not found", n.config.NodeID, groupID))
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	if !raftPeerAttr.IsLearner {
+		return babuza.NewErrorResult(babuza.ErrNotLearner)
 	}
 	if n.config.DisableProposalForwarding && r.Status().IsLeader() == false {
 		return babuza.NewErrorResult(babuza.ErrNotLeader)
 	}
-	if !raftPeerAttr.IsLearner {
-		return babuza.NewErrorResult(babuza.ErrVotingMemberCanNotPromote)
-	}
 	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddLearnerNode, raftPeerAttr, false)
 }
 
-func (n *Node) Status(groupID ibabuza.RaftGroupID) (babuza.Status, error) {
-	n.replicaSet.mu.RLock()
-	r, ok := n.replicaSet.replica[groupID]
-	n.replicaSet.mu.RUnlock()
-	if !ok {
-		return babuza.Status{}, errors.Errorf("Node[%d] groupID[%d] not found", n.config.NodeID, groupID)
+func (n *Node) PromoteLearner(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
+	peerID uint64) babuza.ProposedResult {
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
 	}
+	result, err := func() (babuza.ProposedResult, error) {
+		p, err := r.cluster.Peer(peerID)
+		if err != nil {
+			return nil, err
+		}
+		if p.RaftPeerAttr.IsLearner == false {
+			return nil, babuza.ErrVotingMemberCanNotPromote
+		}
+		// only leader can check if the learner is ready
+		if err = r.learnerReady(ctx, peerID); err != nil {
+			return nil, err
+		}
+		return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddNode, p.RaftPeerAttr, true), nil
+	}()
+	if err != nil {
+		if !errors.Is(err, babuza.ErrNotLeader) {
+			return babuza.NewErrorResult(err)
+		}
+		// forward request to leader
+	} else {
+		return result
+	}
+	//TODO: forward request to leader when current node is not the leader
+	return babuza.NewErrorResult(babuza.ErrNotLeader)
+}
 
+func (n *Node) Configuration(groupID ibabuza.RaftGroupID) (babuza.ClusterConfiguration, error) {
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.ClusterConfiguration{}, err
+	}
+	return r.ClusterConfiguration(), nil
+}
+
+func (n *Node) Status(groupID ibabuza.RaftGroupID) (babuza.Status, error) {
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.Status{}, err
+	}
 	lastIndex, lastTerm, snapshot, err := r.storage.EntryStorageInfo()
 	if err != nil {
 		r.logger.Panic(err)
@@ -208,4 +242,14 @@ func (n *Node) Status(groupID ibabuza.RaftGroupID) (babuza.Status, error) {
 		LastSnapshotTerm:   snapshot.Metadata.Term,
 		LastSnapshotIndex:  snapshot.Metadata.Index,
 	}, nil
+}
+
+func (n *Node) getReplica(groupID ibabuza.RaftGroupID) (*replica, error) {
+	n.replicaSet.mu.RLock()
+	defer n.replicaSet.mu.RUnlock()
+	r, ok := n.replicaSet.replica[groupID]
+	if !ok {
+		return nil, errors.Errorf("Node[%d] raft group %d not found", n.config.NodeID, groupID)
+	}
+	return r, nil
 }

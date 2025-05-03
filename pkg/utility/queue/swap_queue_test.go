@@ -177,7 +177,7 @@ func TestQueueStopped(t *testing.T) {
 	q := NewSwapBufferQueue[int](5, nil)
 
 	// Stop the queue
-	q.Disposed()
+	q.Dispose()
 
 	// Try to put element
 	err := q.Put(1)

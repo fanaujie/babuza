@@ -15,6 +15,7 @@ const (
 	stateConfigChange = 8
 	stateStep         = 16
 	stateReady        = 32
+	stateRaftStatus   = 64
 )
 
 type internalState struct {
@@ -160,6 +161,9 @@ func (s *raftScheduler) worker(shardID, workderID int, sh *sharder) {
 		}
 		if oldState.state&stateReady == stateReady {
 			s.raftProcessor.ProcessReady(groupID)
+		}
+		if oldState.state&stateRaftStatus == stateRaftStatus {
+			s.raftProcessor.ProcessRaftStatus(groupID)
 		}
 		sh.mu.Lock()
 		newState, _ := sh.groupState[groupID]

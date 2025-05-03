@@ -484,7 +484,7 @@ func TestRemoveVotingGroup(t *testing.T) {
 	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 50))
 }
 
-func TestJoinLearner(t *testing.T) {
+func TestJoinLearnerAndPromoteLearner(t *testing.T) {
 	peersConfig := babuza.NewPeersConfiguration()
 	assert.NoError(t, peersConfig.AddPeer(1, "localhost:14201", false))
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
@@ -553,4 +553,22 @@ func TestJoinLearner(t *testing.T) {
 	assert.Equal(t, group1LeaderID, lastGroup1LeaderID)
 	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 107))
 
+	cfg, _ := group1LeaderNode.Configuration(groupIDs[0])
+	for _, peer := range cfg.Peers {
+		if peer.RaftPeerAttr.Id == peer3.Id {
+			assert.True(t, peer.RaftPeerAttr.IsLearner)
+		}
+	}
+
+	res = group1LeaderNode.PromoteLearner(context.Background(), raftGroup1, babuza.ClientSession{}, peer3.Id)
+	ar = res.WaitForApplyResult()
+	res.Release()
+	assert.Nil(t, ar.Error)
+
+	cfg, _ = group1LeaderNode.Configuration(groupIDs[0])
+	for _, peer := range cfg.Peers {
+		if peer.RaftPeerAttr.Id == peer3.Id {
+			assert.False(t, peer.RaftPeerAttr.IsLearner)
+		}
+	}
 }

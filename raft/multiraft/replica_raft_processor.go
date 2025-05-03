@@ -91,10 +91,10 @@ func (r *replica) ProcessStep() {
 }
 
 func (r *replica) processReportSnapshotStateQueue() {
-	if r.reportSnapshotStateQueue.Len() == 0 {
+	if r.requestQueue.reportSnapshotState.Len() == 0 {
 		return
 	}
-	items, err := r.reportSnapshotStateQueue.Get()
+	items, err := r.requestQueue.reportSnapshotState.Get()
 	if err != nil {
 		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting report snapshot state: %v", r.cluster.ClusterID(),
 			r.cluster.LocalPeerID(), err)
@@ -107,10 +107,10 @@ func (r *replica) processReportSnapshotStateQueue() {
 }
 
 func (r *replica) processReportUnreachableQueue() {
-	if r.reportUnreachableQueue.Len() == 0 {
+	if r.requestQueue.reportUnreachable.Len() == 0 {
 		return
 	}
-	items, err := r.reportUnreachableQueue.Get()
+	items, err := r.requestQueue.reportUnreachable.Get()
 	if err != nil {
 		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting report unreachable: %v", r.cluster.ClusterID(),
 			r.cluster.LocalPeerID(), err)
@@ -123,10 +123,10 @@ func (r *replica) processReportUnreachableQueue() {
 }
 
 func (r *replica) processStepQueue() {
-	if r.stepQueue.Len() == 0 {
+	if r.requestQueue.step.Len() == 0 {
 		return
 	}
-	items, err := r.stepQueue.Get()
+	items, err := r.requestQueue.step.Get()
 	if err != nil {
 		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting step: %v", r.cluster.ClusterID(),
 			r.cluster.LocalPeerID(), err)
@@ -144,10 +144,10 @@ func (r *replica) processStepQueue() {
 }
 
 func (r *replica) ProcessProposal() {
-	if r.proposalQueue.Len() == 0 {
+	if r.requestQueue.proposal.Len() == 0 {
 		return
 	}
-	items, err := r.proposalQueue.Get()
+	items, err := r.requestQueue.proposal.Get()
 	if err != nil {
 		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting proposals: %v", r.cluster.ClusterID(),
 			r.cluster.LocalPeerID(), err)
@@ -172,10 +172,10 @@ func (r *replica) ProcessProposal() {
 }
 
 func (r *replica) ProcessConfigChange() {
-	if r.configChangeQueue.Len() == 0 {
+	if r.requestQueue.configChange.Len() == 0 {
 		return
 	}
-	items, err := r.configChangeQueue.Get()
+	items, err := r.requestQueue.configChange.Get()
 	if err != nil {
 		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting config change: %v", r.cluster.ClusterID(),
 			r.cluster.LocalPeerID(), err)
@@ -195,6 +195,22 @@ func (r *replica) ProcessConfigChange() {
 			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.ClusterID(),
 				r.cluster.LocalPeerID(), err)
 		}
+	}
+}
+
+func (r *replica) ProcessRaftStatus() {
+	if r.requestQueue.raftStatus.Len() == 0 {
+		return
+	}
+	items, err := r.requestQueue.raftStatus.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting raft status: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	for _, item := range items.Data {
+		item.resultCh <- r.rawNode.Status()
 	}
 }
 

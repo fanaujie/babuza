@@ -29,6 +29,7 @@ type StateProcessor interface {
 	ProcessStep(groupID ibabuza.RaftGroupID)
 	ProcessProposal(groupID ibabuza.RaftGroupID)
 	ProcessConfigChange(groupID ibabuza.RaftGroupID)
+	ProcessRaftStatus(groupID ibabuza.RaftGroupID)
 }
 
 type BootstrapStorage interface {
