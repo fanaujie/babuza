@@ -1,20 +1,21 @@
 package multiraft
 
 import (
-	"github.com/Workiva/go-datastructures/queue"
+	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/utility/queue"
 )
 
 type jobQueue struct {
 	groupID ibabuza.RaftGroupID
-	q       *queue.Queue
+	q       *queue.Queue[JobFunc]
 	log     ibabuza.Logger
 }
 
 func newJobQueue(groupID ibabuza.RaftGroupID, queueSize int64, log ibabuza.Logger) JobQueue {
 	return &jobQueue{
 		groupID: groupID,
-		q:       queue.New(queueSize),
+		q:       queue.New[JobFunc](queueSize),
 		log:     log,
 	}
 }
@@ -36,14 +37,18 @@ func (j *jobQueue) Stop() {
 
 func (j *jobQueue) worker() {
 	defer j.log.Infof("GroupID[%d] Stopping job queue", j.groupID)
+	jobItems := make([]JobFunc, 64)
 	for {
-		v, err := j.q.Get(5)
+		v, err := j.q.Get(64, jobItems)
 		if err != nil {
-			j.log.Errorf("GroupID[%d] job queue dispose %v", j.groupID, err)
-			return
+			j.log.Warningf("GroupID[%d] job queue get error: %v", j.groupID, err)
+			if errors.Is(err, queue.ErrQueueDisposed) {
+				return
+			}
+			continue
 		}
-		for _, job := range v {
-			job.(JobFunc)()
+		for i := int64(0); i < v; i++ {
+			jobItems[i]()
 		}
 	}
 }

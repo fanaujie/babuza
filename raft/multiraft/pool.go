@@ -6,10 +6,8 @@ import (
 )
 
 var (
-	proposalPool        sync.Pool
-	configChangePool    sync.Pool
-	applyEntryPool      sync.Pool
-	confChangeApplyPool sync.Pool
+	proposalPool   sync.Pool
+	applyEntryPool sync.Pool
 )
 
 type proposalRequest struct {
@@ -47,21 +45,6 @@ func poolReleaseProposal(value *proposalRequest) {
 	proposalPool.Put(value)
 }
 
-func poolGetConfigChange() *configChangeRequest {
-	v := configChangePool.Get()
-	if v == nil {
-		return &configChangeRequest{}
-	}
-
-	return v.(*configChangeRequest)
-}
-
-func poolReleaseConfigChange(value *configChangeRequest) {
-	value.replyID = 0
-	value.confChange = raftpb.ConfChange{}
-	configChangePool.Put(value)
-}
-
 func poolGetApplyEntry() *applyEntry {
 	v := applyEntryPool.Get()
 	if v == nil {
@@ -75,19 +58,4 @@ func poolReleaseApplyEntry(value *applyEntry) {
 	value.entries = nil
 	value.snapshot = raftpb.Snapshot{}
 	applyEntryPool.Put(value)
-}
-
-func poolGetConfChangeApplyJob() *confChangeApplyJob {
-	v := confChangeApplyPool.Get()
-	if v == nil {
-		return &confChangeApplyJob{}
-	}
-
-	return v.(*confChangeApplyJob)
-}
-
-func poolReleaseConfChangeApplyJob(value *confChangeApplyJob) {
-	value.cc = nil
-	value.resultCh = nil
-	confChangeApplyPool.Put(value)
 }

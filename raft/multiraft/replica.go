@@ -2,9 +2,9 @@ package multiraft
 
 import (
 	"context"
-	"github.com/Workiva/go-datastructures/queue"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/utility/queue"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/pkg/errors"
@@ -51,11 +51,11 @@ type replica struct {
 	replicaEventCh            chan replicaEvent
 	scheduler                 Scheduler
 	applyJobQueue             JobQueue
-	proposalQueue             *queue.Queue
-	configChangeQueue         *queue.Queue
-	stepQueue                 *queue.Queue
-	reportUnreachableQueue    *queue.Queue
-	reportSnapshotStateQueue  *queue.Queue
+	proposalQueue             *queue.SwapBufferQueue[*proposalRequest]
+	configChangeQueue         *queue.SwapBufferQueue[configChangeRequest]
+	stepQueue                 *queue.SwapBufferQueue[babuzapb.BatchMessage]
+	reportUnreachableQueue    *queue.SwapBufferQueue[reportUnreachable]
+	reportSnapshotStateQueue  *queue.SwapBufferQueue[reportSnapshotStatus]
 	logger                    ibabuza.Logger
 	closer                    *syncutil.Closer
 }
@@ -70,11 +70,11 @@ func (r *replica) Start() error {
 
 func (r *replica) Stop() {
 	r.closer.Close()
-	r.proposalQueue.Dispose()
-	r.configChangeQueue.Dispose()
-	r.stepQueue.Dispose()
-	r.reportUnreachableQueue.Dispose()
-	r.reportSnapshotStateQueue.Dispose()
+	r.proposalQueue.Disposed()
+	r.configChangeQueue.Disposed()
+	r.stepQueue.Disposed()
+	r.reportUnreachableQueue.Disposed()
+	r.reportSnapshotStateQueue.Disposed()
 	r.applyJobQueue.Stop()
 }
 
@@ -105,10 +105,10 @@ func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 	if err != nil {
 		return babuza.NewErrorResult(err)
 	}
-	configChange := poolGetConfigChange()
-	configChange.replyID = replyID
-	configChange.confChange = config
-	if err = r.configChangeQueue.Put(configChange); err != nil {
+	if err = r.configChangeQueue.Put(configChangeRequest{
+		replyID:    replyID,
+		confChange: config,
+	}); err != nil {
 		return babuza.NewErrorResult(err)
 	}
 	r.scheduler.EnqueueState(stateConfigChange, r.raftGroup.GroupID)
@@ -124,7 +124,7 @@ func (r *replica) EnqueueStep(batchMsg babuzapb.BatchMessage) error {
 	return nil
 }
 
-func (r *replica) EnqueueReportUnreachable(groupID ibabuza.RaftGroupID, nodeID uint64) error {
+func (r *replica) EnqueueReportUnreachable(nodeID uint64) error {
 	if err := r.reportUnreachableQueue.Put(reportUnreachable{
 		NodeID: nodeID,
 	}); err != nil {
@@ -134,7 +134,7 @@ func (r *replica) EnqueueReportUnreachable(groupID ibabuza.RaftGroupID, nodeID u
 	return nil
 }
 
-func (r *replica) EnqueueReportSnapshot(groupID ibabuza.RaftGroupID, nodeID uint64, status raft.SnapshotStatus) error {
+func (r *replica) EnqueueReportSnapshot(nodeID uint64, status raft.SnapshotStatus) error {
 	if err := r.reportSnapshotStateQueue.Put(reportSnapshotStatus{
 		NodeID: nodeID,
 		Status: status,

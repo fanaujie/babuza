@@ -56,7 +56,7 @@ func (d *transportProcessor) ReportUnreachable(groupID ibabuza.RaftGroupID, node
 	r, ok := d.replicaSet.replica[groupID]
 	d.replicaSet.mu.RUnlock()
 	if ok {
-		if err := r.EnqueueReportUnreachable(groupID, nodeID); err != nil {
+		if err := r.EnqueueReportUnreachable(nodeID); err != nil {
 			d.logger.Errorf("Node[%d] ReportUnreachable groupID[%d] enqueue unreachable error: %v", d.config.NodeID, groupID, err)
 		}
 	} else {
@@ -69,7 +69,7 @@ func (d *transportProcessor) ReportSnapshot(groupID ibabuza.RaftGroupID, nodeID 
 	r, ok := d.replicaSet.replica[groupID]
 	d.replicaSet.mu.RUnlock()
 	if ok {
-		if err := r.EnqueueReportSnapshot(groupID, nodeID, status); err != nil {
+		if err := r.EnqueueReportSnapshot(nodeID, status); err != nil {
 			d.logger.Errorf("Node[%d] ReportSnapshot groupID[%d] enqueue snapshot error: %v", d.config.NodeID, groupID, err)
 		}
 	} else {

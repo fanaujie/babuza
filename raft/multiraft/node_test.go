@@ -465,7 +465,7 @@ func TestRemoveVotingGroup(t *testing.T) {
 	assert.Nil(t, ar.Error)
 
 	//wait for removeNode to leave group1
-	time.Sleep(time.Second * 1)
+	time.Sleep(time.Second)
 	removeNode, err := nm.GetNode(removeID)
 	assert.NoError(t, err)
 	groupIDs = removeNode.GetGroupIDs()

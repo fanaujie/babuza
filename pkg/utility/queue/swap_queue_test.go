@@ -114,10 +114,12 @@ func TestGetEmptyQueue(t *testing.T) {
 	q := NewSwapBufferQueue[int](5, nil)
 
 	slice, err := q.Get()
-	if err != nil {
-		t.Errorf("Expected nil error, got %v", err)
+	if err == nil {
+		t.Error("Expected not nil error, got nil")
 	}
-
+	if !errors.Is(err, ErrQueueEmpty) {
+		t.Errorf("Expected ErrBufferInUse, got %v", err)
+	}
 	if len(slice.Data) != 0 {
 		t.Errorf("Expected empty slice, got %d elements", len(slice.Data))
 	}
@@ -175,17 +177,17 @@ func TestQueueStopped(t *testing.T) {
 	q := NewSwapBufferQueue[int](5, nil)
 
 	// Stop the queue
-	q.Stop()
+	q.Disposed()
 
 	// Try to put element
 	err := q.Put(1)
-	if !errors.Is(err, ErrQueueStopped) {
+	if !errors.Is(err, ErrQueueDisposed) {
 		t.Errorf("Expected ErrQueueStopped, got %v", err)
 	}
 
 	// Try to get elements
 	_, err = q.Get()
-	if !errors.Is(err, ErrQueueStopped) {
+	if !errors.Is(err, ErrQueueDisposed) {
 		t.Errorf("Expected ErrQueueStopped, got %v", err)
 	}
 }
@@ -287,7 +289,7 @@ func TestConcurrentAccess(t *testing.T) {
 		for receivedItems < producers*itemsPerProducer {
 			slice, err := q.Get()
 			if err != nil {
-				if !errors.Is(err, ErrBufferInUse) {
+				if errors.Is(err, ErrQueueDisposed) {
 					t.Errorf("Unexpected error: %v", err)
 				}
 				time.Sleep(time.Millisecond)
@@ -310,5 +312,44 @@ func TestConcurrentAccess(t *testing.T) {
 
 	if receivedItems != producers*itemsPerProducer {
 		t.Errorf("Expected to receive %d items, got %d", producers*itemsPerProducer, receivedItems)
+	}
+}
+
+func TestLen(t *testing.T) {
+	q := NewSwapBufferQueue[int](5, nil)
+
+	if q.Len() != 0 {
+		t.Errorf("Empty queue should have length 0, got %d", q.Len())
+	}
+
+	for i := 0; i < 3; i++ {
+		err := q.Put(i)
+		if err != nil {
+			t.Errorf("Error putting element: %v", err)
+		}
+	}
+
+	if q.Len() != 3 {
+		t.Errorf("Queue length should be 3, got %d", q.Len())
+	}
+
+	slice, err := q.Get()
+	if err != nil {
+		t.Errorf("Error getting elements: %v", err)
+	}
+
+	if q.Len() != 0 {
+		t.Errorf("Queue length should be 0 after Get(), got %d", q.Len())
+	}
+
+	slice.Release()
+
+	err = q.Put(42)
+	if err != nil {
+		t.Errorf("Error putting element: %v", err)
+	}
+
+	if q.Len() != 1 {
+		t.Errorf("Queue length should be 1, got %d", q.Len())
 	}
 }

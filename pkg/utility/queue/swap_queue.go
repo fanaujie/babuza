@@ -7,9 +7,8 @@ import (
 )
 
 var (
-	ErrBufferInUse  = errors.New("buffer is currently in use")
-	ErrQueueStopped = errors.New("queue has been stopped")
-	ErrBufferFull   = errors.New("buffer is full")
+	ErrBufferInUse = errors.New("buffer is currently in use")
+	ErrBufferFull  = errors.New("buffer is full")
 )
 
 type SwapBufferQueue[T any] struct {
@@ -57,10 +56,16 @@ func NewSwapBufferQueue[T any](size uint64, onRelease func([]T)) *SwapBufferQueu
 	return q
 }
 
-func (q *SwapBufferQueue[T]) Stop() {
+func (q *SwapBufferQueue[T]) Disposed() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.stopped = true
+}
+
+func (q *SwapBufferQueue[T]) Len() uint64 {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.tail
 }
 
 func (q *SwapBufferQueue[T]) Put(element T) error {
@@ -68,7 +73,7 @@ func (q *SwapBufferQueue[T]) Put(element T) error {
 	defer q.mu.Unlock()
 
 	if q.stopped {
-		return ErrQueueStopped
+		return ErrQueueDisposed
 	}
 
 	if q.tail == q.size {
@@ -86,7 +91,7 @@ func (q *SwapBufferQueue[T]) Get() (BufferSlice[T], error) {
 
 	if q.stopped {
 		var zero BufferSlice[T]
-		return zero, ErrQueueStopped
+		return zero, ErrQueueDisposed
 	}
 
 	if q.bufferInUse {
@@ -96,7 +101,7 @@ func (q *SwapBufferQueue[T]) Get() (BufferSlice[T], error) {
 
 	if q.tail == 0 {
 		var zero BufferSlice[T]
-		return zero, nil
+		return zero, ErrQueueEmpty
 	}
 
 	q.bufferInUse = true

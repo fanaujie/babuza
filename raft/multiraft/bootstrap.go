@@ -3,13 +3,13 @@ package multiraft
 import (
 	"context"
 	"fmt"
-	"github.com/Workiva/go-datastructures/queue"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/idgenerator"
 	"github.com/fanaujie/babuza/pkg/metrics"
 	"github.com/fanaujie/babuza/pkg/replier"
 	"github.com/fanaujie/babuza/pkg/status"
+	"github.com/fanaujie/babuza/pkg/utility/queue"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
@@ -170,13 +170,21 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			replicaEventCh:            n.replicaEventCh,
 			scheduler:                 n.scheduler,
 			applyJobQueue:             newJobQueue(groupID, n.config.JobQueueSize, n.logger),
-			proposalQueue:             &queue.Queue{},
-			configChangeQueue:         &queue.Queue{},
-			stepQueue:                 &queue.Queue{},
-			reportUnreachableQueue:    &queue.Queue{},
-			reportSnapshotStateQueue:  &queue.Queue{},
-			logger:                    logger,
-			closer:                    syncutil.NewCloser(),
+			proposalQueue:             queue.NewSwapBufferQueue[*proposalRequest](128, nil),
+			configChangeQueue: queue.NewSwapBufferQueue[configChangeRequest](8, func(requests []configChangeRequest) {
+				for _, r := range requests {
+					r.confChange.Context = nil
+				}
+			}),
+			stepQueue: queue.NewSwapBufferQueue[babuzapb.BatchMessage](128, func(messages []babuzapb.BatchMessage) {
+				for _, m := range messages {
+					m.Messages = nil
+				}
+			}),
+			reportUnreachableQueue:   queue.NewSwapBufferQueue[reportUnreachable](8, nil),
+			reportSnapshotStateQueue: queue.NewSwapBufferQueue[reportSnapshotStatus](8, nil),
+			logger:                   logger,
+			closer:                   syncutil.NewCloser(),
 		}
 		n.replicaSet.replica[groupID] = r
 	}
@@ -316,13 +324,21 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		replicaEventCh:            node.replicaEventCh,
 		scheduler:                 node.scheduler,
 		applyJobQueue:             newJobQueue(groupID, node.config.JobQueueSize, node.logger),
-		proposalQueue:             &queue.Queue{},
-		configChangeQueue:         &queue.Queue{},
-		stepQueue:                 &queue.Queue{},
-		reportUnreachableQueue:    &queue.Queue{},
-		reportSnapshotStateQueue:  &queue.Queue{},
-		logger:                    node.logger,
-		closer:                    syncutil.NewCloser(),
+		proposalQueue:             queue.NewSwapBufferQueue[*proposalRequest](128, nil),
+		configChangeQueue: queue.NewSwapBufferQueue[configChangeRequest](8, func(requests []configChangeRequest) {
+			for _, request := range requests {
+				request.confChange.Context = nil
+			}
+		}),
+		stepQueue: queue.NewSwapBufferQueue[babuzapb.BatchMessage](128, func(messages []babuzapb.BatchMessage) {
+			for _, m := range messages {
+				m.Messages = nil
+			}
+		}),
+		reportUnreachableQueue:   queue.NewSwapBufferQueue[reportUnreachable](8, nil),
+		reportSnapshotStateQueue: queue.NewSwapBufferQueue[reportSnapshotStatus](8, nil),
+		logger:                   node.logger,
+		closer:                   syncutil.NewCloser(),
 	}
 	return r, nil
 }

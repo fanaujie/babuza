@@ -2,7 +2,6 @@ package multiraft
 
 import (
 	"errors"
-	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	babuza "github.com/fanaujie/babuza/raft"
@@ -92,39 +91,51 @@ func (r *replica) ProcessStep() {
 }
 
 func (r *replica) processReportSnapshotStateQueue() {
-	items, err := r.reportSnapshotStateQueue.Get(r.reportSnapshotStateQueue.Len())
-	if err != nil {
-		r.logger.Panicf("groupID[%d] raft[id=%d]: error getting report snapshot: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
+	if r.reportSnapshotStateQueue.Len() == 0 {
+		return
 	}
-	for _, item := range items {
-		msg := item.(reportSnapshotStatus)
-		r.rawNode.ReportSnapshot(msg.NodeID, msg.Status)
+	items, err := r.reportSnapshotStateQueue.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting report snapshot state: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	for _, item := range items.Data {
+		r.rawNode.ReportSnapshot(item.NodeID, item.Status)
 	}
 }
 
 func (r *replica) processReportUnreachableQueue() {
-	items, err := r.reportUnreachableQueue.Get(r.reportUnreachableQueue.Len())
-	if err != nil {
-		r.logger.Panicf("groupID[%d] raft[id=%d]: error getting report unreachable: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
+	if r.reportUnreachableQueue.Len() == 0 {
+		return
 	}
-	for _, item := range items {
-		nodeID := item.(uint64)
-		r.rawNode.ReportUnreachable(nodeID)
+	items, err := r.reportUnreachableQueue.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting report unreachable: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	for _, item := range items.Data {
+		r.rawNode.ReportUnreachable(item.NodeID)
 	}
 }
 
 func (r *replica) processStepQueue() {
-	items, err := r.stepQueue.Get(r.stepQueue.Len())
-	if err != nil {
-		r.logger.Panicf("groupID[%d] raft[id=%d]: error getting step: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
+	if r.stepQueue.Len() == 0 {
+		return
 	}
-	for _, item := range items {
-		msg := item.(babuzapb.BatchMessage)
-		for _, m := range msg.Messages {
-			if err = r.rawNode.Step(m); err != nil {
+	items, err := r.stepQueue.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting step: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	for _, m := range items.Data {
+		for _, msg := range m.Messages {
+			if err = r.rawNode.Step(msg); err != nil {
 				r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.ClusterID(),
 					r.cluster.LocalPeerID(), err)
 			}
@@ -133,57 +144,63 @@ func (r *replica) processStepQueue() {
 }
 
 func (r *replica) ProcessProposal() {
-	proposals, err := r.proposalQueue.Get(r.proposalQueue.Len())
-	if err != nil {
-		r.logger.Panicf("groupID[%d] raft[id=%d]: error getting proposals: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
+	if r.proposalQueue.Len() == 0 {
+		return
 	}
-	for _, proposal := range proposals {
-		pd := proposal.(*proposalRequest)
-		if err = r.rawNode.Propose(pd.data); err != nil {
-			r.logger.Warningf("groupID[%d] raft[id=%d]: error proposing: %v", r.cluster.ClusterID(),
-				r.cluster.LocalPeerID(), err)
-			r.resultReplier.CancelResult(pd.replyID)
+	items, err := r.proposalQueue.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting proposals: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	for _, item := range items.Data {
+		if err = r.rawNode.Propose(item.data); err != nil {
 			if errors.Is(err, raft.ErrProposalDropped) {
 				err = babuza.ErrNotLeader
 			} else if errors.Is(err, raft.ErrStopped) {
 				err = babuza.ErrStopped
 			}
+			r.resultReplier.SendResult(item.replyID, ibabuza.ApplyResult{
+				Error: err,
+			})
 			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.ClusterID(),
 				r.cluster.LocalPeerID(), err)
 		}
-		poolReleaseProposal(pd)
+		poolReleaseProposal(item)
 	}
 }
 
 func (r *replica) ProcessConfigChange() {
-	configChanges, err := r.configChangeQueue.Get(r.configChangeQueue.Len())
-	if err != nil {
-		r.logger.Panicf("groupID[%d] raft[%d] error getting config change: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
+	if r.configChangeQueue.Len() == 0 {
+		return
 	}
-	for _, configChang := range configChanges {
-		ccRequest := configChang.(*configChangeRequest)
-		if err = r.rawNode.ProposeConfChange(ccRequest.confChange); err != nil {
-			r.logger.Warningf("groupID[%d] raft[%d] error config change: %v", r.cluster.ClusterID(),
-				r.cluster.LocalPeerID(), err)
-			r.resultReplier.CancelResult(ccRequest.replyID)
+	items, err := r.configChangeQueue.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting config change: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	for _, item := range items.Data {
+		if err = r.rawNode.ProposeConfChange(item.confChange); err != nil {
 			if errors.Is(err, raft.ErrProposalDropped) {
 				err = babuza.ErrNotLeader
 			} else if errors.Is(err, raft.ErrStopped) {
 				err = babuza.ErrStopped
 			}
+			r.resultReplier.SendResult(item.replyID, ibabuza.ApplyResult{
+				Error: err,
+			})
 			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.ClusterID(),
 				r.cluster.LocalPeerID(), err)
 		}
-		poolReleaseConfigChange(ccRequest)
 	}
 }
 
 func (r *replica) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
 	for _, entry := range committedEntries {
 		if entry.Type == raftpb.EntryConfChange {
-			fmt.Println(entry)
 			reqCtx, ar, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
 			if ar.Error != nil {
 				r.appliedFacade.SendAppliedResult(reqCtx.ReplyID, ar)

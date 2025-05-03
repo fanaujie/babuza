@@ -1,8 +1,9 @@
 package multiraft
 
 import (
-	"github.com/Workiva/go-datastructures/queue"
+	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/utility/queue"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"sync"
 )
@@ -28,6 +29,12 @@ type schedulerConfig struct {
 	maxTicks       int
 }
 
+type sharder struct {
+	mu         sync.Mutex
+	queue      *queue.Queue[ibabuza.RaftGroupID]
+	groupState map[ibabuza.RaftGroupID]internalState
+}
+
 // raftScheduler manages the state processing of multiple Raft groups.
 // The design is inspired by CockroachDB's Raft raftScheduler implementation,
 // which improves performance and concurrency through sharded queues and
@@ -38,9 +45,7 @@ type raftScheduler struct {
 	raftProcessor StateProcessor
 	log           ibabuza.Logger
 	closer        *syncutil.Closer
-	mu            sync.Mutex
-	shardQueue    []*queue.RingBuffer
-	groupState    map[ibabuza.RaftGroupID]internalState
+	sharders      []*sharder
 }
 
 func newScheduler(nodeID uint64, config schedulerConfig, raftProcessor StateProcessor,
@@ -51,18 +56,21 @@ func newScheduler(nodeID uint64, config schedulerConfig, raftProcessor StateProc
 		raftProcessor: raftProcessor,
 		log:           log,
 		closer:        syncutil.NewCloser(),
-		groupState:    make(map[ibabuza.RaftGroupID]internalState),
 	}
 }
 
 func (s *raftScheduler) Start() error {
 	s.log.Infof("Node[%d] starting raftScheduler", s.nodeID)
 	for i := 0; i < s.config.shardNum; i++ {
-		q := queue.NewRingBuffer(s.config.queueSize)
-		s.shardQueue = append(s.shardQueue, q)
+		q := queue.New[ibabuza.RaftGroupID](int64(s.config.queueSize))
+		sh := &sharder{
+			queue:      q,
+			groupState: make(map[ibabuza.RaftGroupID]internalState),
+		}
+		s.sharders = append(s.sharders, sh)
 		for j := 0; j < s.config.shardWorkerNum; j++ {
 			s.closer.Run(func() {
-				s.worker(i, j, q)
+				s.worker(i, j, sh)
 			})
 		}
 	}
@@ -71,19 +79,19 @@ func (s *raftScheduler) Start() error {
 
 func (s *raftScheduler) Stop() {
 	s.log.Infof("Node[%d] stopping raftScheduler", s.nodeID)
-	for _, q := range s.shardQueue {
-		q.Dispose()
+	for _, sh := range s.sharders {
+		sh.queue.Dispose()
 	}
 	s.closer.Close()
 }
 
 func (s *raftScheduler) EnqueueState(state int, groupID ibabuza.RaftGroupID) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	shardQueue := s.shardQueue[groupID%ibabuza.RaftGroupID(s.config.shardNum)]
-	oldState := s.groupState[groupID]
+	shardIdx := groupID % ibabuza.RaftGroupID(s.config.shardNum)
+	sh := s.sharders[shardIdx]
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	oldState := sh.groupState[groupID]
 	if state&stateTick != stateTick {
-		// if the state is not tick, we need to check if the state is already set
 		if oldState.state&state == state {
 			return
 		}
@@ -95,10 +103,10 @@ func (s *raftScheduler) EnqueueState(state int, groupID ibabuza.RaftGroupID) {
 			oldState.ticks = s.config.maxTicks
 		}
 	}
-	s.groupState[groupID] = oldState
+	sh.groupState[groupID] = oldState
 	if oldState.state&stateQueue == 0 {
 		oldState.state |= stateQueue
-		if err := shardQueue.Put(groupID); err != nil {
+		if err := sh.queue.Put(groupID); err != nil {
 			s.log.Panicf("GroupID[%d] raftScheduler enqueue state %d error: %v", groupID, state, err)
 		}
 	}
@@ -111,22 +119,24 @@ func (s *raftScheduler) EnqueueBatchState(state int, groupIDs []ibabuza.RaftGrou
 	return
 }
 
-func (s *raftScheduler) worker(shardID, workderID int, q *queue.RingBuffer) {
+func (s *raftScheduler) worker(shardID, workderID int, sh *sharder) {
 	s.log.Infof("Node[%d] starting raftScheduler worker %d-%d", s.nodeID, shardID, workderID)
 	defer s.log.Infof("Node[%d] stopping raftScheduler worker %d-%d", s.nodeID, shardID, workderID)
 	for {
-		v, err := q.Get()
+		groupID, err := sh.queue.GetOne()
 		if err != nil {
+			if errors.Is(err, queue.ErrQueueEmpty) {
+				continue
+			}
 			s.log.Errorf("Node[%d] raftScheduler worker %d-%d get error: %v", s.nodeID, shardID, workderID, err)
 			return
 		}
-		groupID := v.(ibabuza.RaftGroupID)
-		s.mu.Lock()
-		oldState := s.groupState[groupID]
-		s.groupState[groupID] = internalState{
+		sh.mu.Lock()
+		oldState := sh.groupState[groupID]
+		sh.groupState[groupID] = internalState{
 			state: stateQueue,
 		}
-		s.mu.Unlock()
+		sh.mu.Unlock()
 		if oldState.state&stateProposal == stateProposal {
 			s.raftProcessor.ProcessProposal(groupID)
 			oldState.state |= stateReady
@@ -151,14 +161,14 @@ func (s *raftScheduler) worker(shardID, workderID int, q *queue.RingBuffer) {
 		if oldState.state&stateReady == stateReady {
 			s.raftProcessor.ProcessReady(groupID)
 		}
-		s.mu.Lock()
-		newState, _ := s.groupState[groupID]
+		sh.mu.Lock()
+		newState, _ := sh.groupState[groupID]
 		if newState.state == stateQueue {
-			delete(s.groupState, groupID)
-			s.mu.Unlock()
+			delete(sh.groupState, groupID)
+			sh.mu.Unlock()
 		} else {
-			s.mu.Unlock()
-			_ = q.Put(groupID)
+			sh.mu.Unlock()
+			_ = sh.queue.Put(groupID)
 		}
 	}
 }
