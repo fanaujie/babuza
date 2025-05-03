@@ -158,6 +158,21 @@ func (n *Node) RemovePeer(ctx context.Context, groupID ibabuza.RaftGroupID, sess
 	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeRemoveNode, babuzapb.RaftPeerAttribute{Id: peerID}, false)
 }
 
+func (n *Node) AddLearner(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
+	raftPeerAttr babuzapb.RaftPeerAttribute) babuza.ProposedResult {
+	r, ok := n.replicaSet.replica[groupID]
+	if !ok {
+		return babuza.NewErrorResult(errors.Errorf("Node[%d]  raft group %d not found", n.config.NodeID, groupID))
+	}
+	if n.config.DisableProposalForwarding && r.Status().IsLeader() == false {
+		return babuza.NewErrorResult(babuza.ErrNotLeader)
+	}
+	if !raftPeerAttr.IsLearner {
+		return babuza.NewErrorResult(babuza.ErrVotingMemberCanNotPromote)
+	}
+	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddLearnerNode, raftPeerAttr, false)
+}
+
 func (n *Node) Status(groupID ibabuza.RaftGroupID) (babuza.Status, error) {
 	n.replicaSet.mu.RLock()
 	r, ok := n.replicaSet.replica[groupID]
