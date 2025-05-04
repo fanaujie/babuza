@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
-	"os"
 	"testing"
 )
 
@@ -26,14 +25,13 @@ func TestNewWalManager(t *testing.T) {
 	assert.IsType(t, &BadgerWalManager{}, manager)
 
 	// Cleanup
-	err := manager.(*BadgerWalManager).db.Close()
+	err := manager.db.Close()
 	assert.NoError(t, err)
 }
 
 // setupTestManager creates a test manager with an in-memory database
 func setupTestManager(cfg Config) *BadgerWalManager {
-	manager := NewBadgerWalManager(cfg, &logger.Mock{})
-	return manager.(*BadgerWalManager)
+	return NewBadgerWalManager(cfg, &logger.Mock{})
 }
 
 // TestBadgerWalManager_FindSnapshot tests the FindSnapshot method
@@ -50,9 +48,9 @@ func TestBadgerWalManager_FindSnapshot(t *testing.T) {
 
 	// Add a snapshot entry and test again
 	err = manager.db.Update(func(txn *badger.Txn) error {
-		key := make([]byte, 16)
-		copy(key, keySnapshot)
-		binary.BigEndian.PutUint64(key[8:], 10) // snapshot with index 10
+		var key [24]byte
+		copy(key[:16], manager.keyPrefix.snapshot)
+		binary.BigEndian.PutUint64(key[16:], 10) // snapshot with index 10
 
 		walsnap := walpb.Snapshot{
 			Index: 10,
@@ -63,7 +61,7 @@ func TestBadgerWalManager_FindSnapshot(t *testing.T) {
 			return err
 		}
 
-		return txn.Set(key, data)
+		return txn.Set(key[:24], data)
 	})
 	assert.NoError(t, err)
 
@@ -80,8 +78,8 @@ func TestBadgerWalManager_CreateWal(t *testing.T) {
 	})
 	// Create test metadata
 	metadata := babuzapb.WalMetadata{
-		ClusterId:   123,
-		LocalPeerId: 456,
+		ClusterID:   123,
+		LocalPeerID: 456,
 	}
 
 	// Create WAL
@@ -92,15 +90,15 @@ func TestBadgerWalManager_CreateWal(t *testing.T) {
 
 	// Verify the metadata was saved
 	err = manager.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(keyMetadata))
+		item, err := txn.Get(manager.keyPrefix.metadata)
 		assert.NoError(t, err)
 
 		err = item.Value(func(val []byte) error {
 			var storedMetadata babuzapb.WalMetadata
 			err := storedMetadata.Unmarshal(val)
 			assert.NoError(t, err)
-			assert.Equal(t, metadata.ClusterId, storedMetadata.ClusterId)
-			assert.Equal(t, metadata.LocalPeerId, storedMetadata.LocalPeerId)
+			assert.Equal(t, metadata.ClusterID, storedMetadata.ClusterID)
+			assert.Equal(t, metadata.LocalPeerID, storedMetadata.LocalPeerID)
 			return nil
 		})
 		return err
@@ -114,15 +112,14 @@ func TestBadgerWalManager_CreateWal(t *testing.T) {
 
 // TestBadgerWalManager_ReplayWal tests the ReplayWal method
 func TestBadgerWalManager_ReplayWal(t *testing.T) {
-	tmpDir, _ := os.MkdirTemp("", "badger-test")
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 	manager := setupTestManager(Config{
 		WalDir: tmpDir,
 	})
 	// First, we need to create a WAL and add some entries
 	metadata := babuzapb.WalMetadata{
-		ClusterId:   123,
-		LocalPeerId: 456,
+		ClusterID:   123,
+		LocalPeerID: 456,
 	}
 
 	es, wal, err := manager.CreateWal(metadata)
@@ -159,6 +156,9 @@ func TestBadgerWalManager_ReplayWal(t *testing.T) {
 			Index: 0, // Start from the beginning
 		},
 	}
+	//close db
+	err = manager.db.Close()
+	assert.NoError(t, err)
 	//renew the manager
 	manager = setupTestManager(Config{
 		WalDir: tmpDir,
@@ -208,9 +208,9 @@ func TestBadgerWalManager_HasExistingWals(t *testing.T) {
 
 	// Add some entries that look like WAL entries
 	err = manager.db.Update(func(txn *badger.Txn) error {
-		key := make([]byte, 16)
-		copy(key, keyEntry)
-		binary.BigEndian.PutUint64(key[8:], 1)
+		var key [24]byte
+		copy(key[:16], manager.keyPrefix.entry)
+		binary.BigEndian.PutUint64(key[16:], 1)
 
 		entry := raftpb.Entry{
 			Term:  1,
@@ -223,7 +223,7 @@ func TestBadgerWalManager_HasExistingWals(t *testing.T) {
 			return err
 		}
 
-		return txn.Set(key, data)
+		return txn.Set(key[:24], data)
 	})
 	assert.NoError(t, err)
 
@@ -235,8 +235,7 @@ func TestBadgerWalManager_HasExistingWals(t *testing.T) {
 
 // TestBadgerWalManager_ReadEntriesData tests the ReadEntriesData method
 func TestBadgerWalManager_ReadEntriesData(t *testing.T) {
-	tmpDir, _ := os.MkdirTemp("", "badger-test")
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 	manager := setupTestManager(Config{
 		WalDir: tmpDir,
 	})
@@ -250,16 +249,16 @@ func TestBadgerWalManager_ReadEntriesData(t *testing.T) {
 
 	err := manager.db.Update(func(txn *badger.Txn) error {
 		for _, entry := range entries {
-			key := make([]byte, 16)
-			copy(key, keyEntry)
-			binary.BigEndian.PutUint64(key[8:], entry.Index)
+			var key [24]byte
+			copy(key[:16], manager.keyPrefix.entry)
+			binary.BigEndian.PutUint64(key[16:], entry.Index)
 
 			data, err := entry.Marshal()
 			if err != nil {
 				return err
 			}
 
-			if err = txn.Set(key, data); err != nil {
+			if err = txn.Set(key[:24], data); err != nil {
 				return err
 			}
 		}

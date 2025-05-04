@@ -3,7 +3,6 @@ package lsmtwal
 import (
 	"encoding/binary"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
-	"os"
 	"testing"
 	"time"
 
@@ -15,9 +14,7 @@ import (
 // setupTestDB creates a temporary Badger database for testing
 func setupTestDB(t *testing.T) (*badger.DB, string) {
 	// Create a temporary directory
-	dir, err := os.MkdirTemp("", "badger-wal-test")
-	assert.NoError(t, err)
-
+	dir := t.TempDir()
 	// Open a Badger database with the temporary directory
 	opts := badger.DefaultOptions(dir).
 		WithLogger(nil).
@@ -32,7 +29,6 @@ func setupTestDB(t *testing.T) (*badger.DB, string) {
 // cleanup closes the database and removes the temporary directory
 func cleanup(db *badger.DB, dir string) {
 	db.Close()
-	os.RemoveAll(dir)
 }
 
 // Test creating a new BadgerWal instance
@@ -40,7 +36,7 @@ func TestNewBadgerWal(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 	defer wal.Close()
 
 	assert.NotNil(t, wal)
@@ -54,7 +50,7 @@ func TestBadgerWal_SetUnsafeNoFsync(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 	defer wal.Close()
 
 	assert.False(t, wal.noFsync)
@@ -67,7 +63,7 @@ func TestBadgerWal_Save(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 	defer wal.Close()
 
 	// Create test data
@@ -98,7 +94,7 @@ func TestBadgerWal_Save(t *testing.T) {
 
 	// Verify hardState was saved correctly
 	err = db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(keyHardState))
+		item, err := txn.Get(wal.keyPrefix.hardState)
 		assert.NoError(t, err)
 
 		err = item.Value(func(val []byte) error {
@@ -115,11 +111,11 @@ func TestBadgerWal_Save(t *testing.T) {
 	// Verify entries were saved correctly
 
 	err = db.View(func(txn *badger.Txn) error {
-		key := make([]byte, 16)
-		copy(key, keyEntry)
 		for _, entry := range entries {
-			binary.BigEndian.PutUint64(key[8:], entry.Index)
-			item, err := txn.Get(key)
+			var key [24]byte
+			copy(key[:16], wal.keyPrefix.entry)
+			binary.BigEndian.PutUint64(key[16:], entry.Index)
+			item, err := txn.Get(key[:24])
 			assert.NoError(t, err)
 			if err = item.Value(func(val []byte) error {
 				var storedEntry raftpb.Entry
@@ -142,7 +138,7 @@ func TestBadgerWal_SaveEmptyHardState(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 	defer wal.Close()
 
 	// Create empty hardState
@@ -158,7 +154,7 @@ func TestBadgerWal_SaveEmptyHardState(t *testing.T) {
 
 	// Verify hardState was not saved (as it's empty)
 	err = db.View(func(txn *badger.Txn) error {
-		_, err = txn.Get([]byte(keyHardState))
+		_, err = txn.Get(wal.keyPrefix.hardState)
 		// Should return error since the key doesn't exist
 		return err
 	})
@@ -171,7 +167,7 @@ func TestBadgerWal_SaveSnapshot(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 	defer wal.Close()
 
 	// Create a test snapshot
@@ -192,11 +188,11 @@ func TestBadgerWal_SaveSnapshot(t *testing.T) {
 
 	// Verify the snapshot was saved correctly
 	err = db.View(func(txn *badger.Txn) error {
-		key := make([]byte, 16)
-		copy(key, keySnapshot)
-		binary.BigEndian.PutUint64(key[8:], snapshot.Metadata.Index)
+		var key [24]byte
+		copy(key[:16], wal.keyPrefix.snapshot)
+		binary.BigEndian.PutUint64(key[16:], snapshot.Metadata.Index)
 
-		item, err := txn.Get(key)
+		item, err := txn.Get(key[:24])
 		assert.NoError(t, err)
 
 		return item.Value(func(val []byte) error {
@@ -217,7 +213,7 @@ func TestBadgerWal_SaveEmptySnapshot(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 	defer wal.Close()
 
 	// Create an empty snapshot
@@ -235,11 +231,11 @@ func TestBadgerWal_SaveEmptySnapshot(t *testing.T) {
 
 	// Verify no snapshot was saved
 	err = db.View(func(txn *badger.Txn) error {
-		key := make([]byte, 16)
-		copy(key, keySnapshot)
-		binary.BigEndian.PutUint64(key[8:], snapshot.Metadata.Index)
+		var key [24]byte
+		copy(key[:16], wal.keyPrefix.snapshot)
+		binary.BigEndian.PutUint64(key[16:], snapshot.Metadata.Index)
 
-		_, err = txn.Get(key)
+		_, err = txn.Get(key[:24])
 		// Should return error since the key doesn't exist
 		return err
 	})
@@ -252,7 +248,7 @@ func TestBadgerWal_Purge(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 	defer wal.Close()
 
 	// Add some entries to purge later
@@ -284,22 +280,22 @@ func TestBadgerWal_Purge(t *testing.T) {
 	err = db.View(func(txn *badger.Txn) error {
 		// Check that entries 1-3 are purged
 		for i := uint64(1); i <= 3; i++ {
-			key := make([]byte, 16)
-			copy(key, keyEntry)
-			binary.BigEndian.PutUint64(key[8:], i)
+			var key [24]byte
+			copy(key[:16], wal.keyPrefix.entry)
+			binary.BigEndian.PutUint64(key[16:], i)
 
-			_, err = txn.Get(key)
+			_, err = txn.Get(key[:24])
 			assert.Error(t, err, "Entry with index %d should be purged", i)
 			assert.Equal(t, badger.ErrKeyNotFound, err)
 		}
 
 		// Check that entries 4-5 still exist
 		for i := uint64(4); i <= 5; i++ {
-			key := make([]byte, 16)
-			copy(key, keyEntry)
-			binary.BigEndian.PutUint64(key[8:], i)
+			var key [24]byte
+			copy(key[:16], wal.keyPrefix.entry)
+			binary.BigEndian.PutUint64(key[16:], i)
 
-			item, err := txn.Get(key)
+			item, err := txn.Get(key[:24])
 			assert.NoError(t, err, "Entry with index %d should still exist", i)
 
 			err = item.Value(func(val []byte) error {
@@ -321,7 +317,7 @@ func TestBadgerWal_PurgeEmptySnapshot(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 	defer wal.Close()
 
 	// Add some entries
@@ -348,11 +344,11 @@ func TestBadgerWal_PurgeEmptySnapshot(t *testing.T) {
 	// Verify entries still exist
 	err = db.View(func(txn *badger.Txn) error {
 		for i := uint64(1); i <= 2; i++ {
-			key := make([]byte, 16)
-			copy(key, keyEntry)
-			binary.BigEndian.PutUint64(key[8:], i)
+			var key [24]byte
+			copy(key[:16], wal.keyPrefix.entry)
+			binary.BigEndian.PutUint64(key[16:], i)
 
-			item, err := txn.Get(key)
+			item, err := txn.Get(key[:24])
 			assert.NoError(t, err, "Entry with index %d should still exist", i)
 
 			err = item.Value(func(val []byte) error {
@@ -374,7 +370,7 @@ func TestBadgerWal_Sync(t *testing.T) {
 	db, dir := setupTestDB(t)
 	defer cleanup(db, dir)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 	defer wal.Close()
 
 	// Test normal sync
@@ -389,10 +385,9 @@ func TestBadgerWal_Sync(t *testing.T) {
 
 // Test the Close method
 func TestBadgerWal_Close(t *testing.T) {
-	db, dir := setupTestDB(t)
-	defer os.RemoveAll(dir) // We'll close the DB in the test
+	db, _ := setupTestDB(t)
 
-	wal := NewBadgerWal(db, nil)
+	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
 
 	// Close should succeed
 	err := wal.Close()

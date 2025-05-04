@@ -16,7 +16,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal"
+	"github.com/fanaujie/babuza/pkg/wal/lsmtwal"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -185,7 +185,11 @@ func createNode(clusterID uint64, nodeID uint64, nodeRaftListenAddr string, root
 	config := DefaultNodeConfig(clusterID, nodeID, rootDir, nodeRaftListenAddr)
 	z, _ := zap.NewProduction(zap.AddCallerSkip(1))
 	log := logger.NewRaftLogger(z.Sugar())
-	walMgr := babuzawal.NewMultiRaftWalManager(filepath.Join(rootDir, "wal"), log)
+	walMgr := lsmtwal.NewMultiRaftBadgerWalManager(lsmtwal.MultiRaftConfig{
+		InMemory:           false,
+		WalDir:             filepath.Join(rootDir, "wal"),
+		KeyPrefixCacheSize: 1024,
+	}, log)
 	snapshotMgr := snapshot.NewMultiRaftSnapshotManager(snapshot.Config{
 		SnapshotVersion: 1,
 		MaxSnapFiles:    3,

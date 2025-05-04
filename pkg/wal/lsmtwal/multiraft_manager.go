@@ -11,80 +11,78 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"time"
 )
 
-const (
-	prefixLength = 16
-	keyHardState = 1
-	keySnapshot  = 2
-	keyEntry     = 3
-	keyMetadata  = 4
-)
-
-type keyPrefix struct {
-	hardState       []byte
-	snapshot        []byte
-	entry           []byte
-	metadata        []byte
-	reverseMetadata []byte
+type MultiRaftBadgerWalManager struct {
+	logger      ibabuza.Logger
+	db          *badger.DB
+	prefixCache *keyPrefixCache
 }
 
-type BadgerWalManager struct {
-	logger    ibabuza.Logger
-	db        *badger.DB
-	keyPrefix *keyPrefix
+type GroupEntryDataReader struct {
+	manager *MultiRaftBadgerWalManager
+	groupID ibabuza.RaftGroupID
 }
 
-type Config struct {
-	InMemory bool
-	WalDir   string
+func (r *GroupEntryDataReader) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryMetadata], destEnts []raftpb.Entry) error {
+	return r.manager.ReadEntriesData(r.groupID, readEntryIndex, destEnts)
 }
 
-func newKeyPrefix(groupID ibabuza.RaftGroupID) *keyPrefix {
-	createKey := func(typeID uint64) []byte {
-		key := make([]byte, prefixLength)
-		binary.BigEndian.PutUint64(key[:8], uint64(groupID))
-		binary.BigEndian.PutUint64(key[8:], typeID)
-		return key
-	}
-	createReverseKey := func(typeID uint64) []byte {
-		key := make([]byte, prefixLength)
-		binary.BigEndian.PutUint64(key[:8], typeID)
-		binary.BigEndian.PutUint64(key[8:], uint64(groupID))
-		return key
-	}
-
-	return &keyPrefix{
-		hardState:       createKey(uint64(keyHardState)),
-		snapshot:        createKey(uint64(keySnapshot)),
-		entry:           createKey(uint64(keyEntry)),
-		metadata:        createKey(uint64(keyMetadata)),
-		reverseMetadata: createReverseKey(uint64(keyMetadata)),
-	}
+type MultiRaftConfig struct {
+	InMemory           bool
+	WalDir             string
+	KeyPrefixCacheSize int
 }
 
-func NewBadgerWalManager(config Config, logger ibabuza.Logger) *BadgerWalManager {
+func NewMultiRaftBadgerWalManager(config MultiRaftConfig, logger ibabuza.Logger) ibabuza.MultiRaftWalManager {
 	db, err := badger.Open(badger.DefaultOptions(config.WalDir).WithInMemory(config.InMemory))
 	if err != nil {
 		logger.Panicf("failed to open badger database: %v", err)
 	}
-	return &BadgerWalManager{
-		logger:    logger,
-		db:        db,
-		keyPrefix: newKeyPrefix(0),
+
+	manager := &MultiRaftBadgerWalManager{
+		logger:      logger,
+		db:          db,
+		prefixCache: newKeyPrefixCache(config.KeyPrefixCacheSize),
 	}
+
+	// Start a background goroutine to run value log GC periodically
+	stopCh := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+			again:
+				err := db.RunValueLogGC(0.7)
+				if err == nil {
+					goto again
+				}
+			}
+		}
+	}()
+
+	return manager
 }
 
-func (m *BadgerWalManager) FindSnapshot() ([]walpb.Snapshot, error) {
+func (m *MultiRaftBadgerWalManager) FindSnapshot(groupID ibabuza.RaftGroupID) ([]walpb.Snapshot, error) {
 	snapshots := make([]walpb.Snapshot, 0)
+
+	groupPrefix := m.prefixCache.get(groupID)
+
 	if err := m.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
 
 		it := txn.NewIterator(opts)
 		defer it.Close()
-		prefix := m.keyPrefix.snapshot
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		var prefix [16]byte
+		copy(prefix[:16], groupPrefix.snapshot)
+		for it.Seek(prefix[:16]); it.ValidForPrefix(prefix[:16]); it.Next() {
 			ws := walpb.Snapshot{}
 			if err := it.Item().Value(func(value []byte) error {
 				if err := ws.Unmarshal(value); err != nil {
@@ -103,12 +101,19 @@ func (m *BadgerWalManager) FindSnapshot() ([]walpb.Snapshot, error) {
 	return snapshots, nil
 }
 
-func (m *BadgerWalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.EntryStorage, ibabuza.Wal, error) {
+func (m *MultiRaftBadgerWalManager) CreateWal(groupID ibabuza.RaftGroupID, metadata babuzapb.WalMetadata) (ibabuza.EntryStorage, ibabuza.Wal, error) {
+	groupPrefix := m.prefixCache.get(groupID)
 
-	es := &storage.EntryStorage{
-		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
+	reader := &GroupEntryDataReader{
+		manager: m,
+		groupID: groupID,
 	}
-	w := NewBadgerWal(m.db, es, m.keyPrefix)
+	es := &storage.EntryStorage{
+		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](reader),
+	}
+
+	w := NewBadgerWal(m.db, es, m.prefixCache.get(groupID))
+
 	// write empty snapshot and metadata to the database
 	if err := m.db.Update(func(txn *badger.Txn) error {
 		snapshot := walpb.Snapshot{}
@@ -116,22 +121,28 @@ func (m *BadgerWalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.Ent
 		if err != nil {
 			return err
 		}
-		if err = txn.Set(m.keyPrefix.snapshot, data); err != nil {
+		if err = txn.Set(groupPrefix.snapshot, data); err != nil {
 			return err
 		}
 		data, err = metadata.Marshal()
 		if err != nil {
 			return err
 		}
-		return txn.Set(m.keyPrefix.metadata, data)
+		if err = txn.Set(groupPrefix.metadata, data); err != nil {
+			return err
+		}
+		return txn.Set(groupPrefix.reverseMetadata, nil)
 	}); err != nil {
 		return nil, nil, err
 	}
+
 	return es, w, nil
 }
 
-func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (
+func (m *MultiRaftBadgerWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (
 	ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
+
+	groupPrefix := m.prefixCache.get(groupID)
 
 	var hardState raftpb.HardState
 	var metadata []byte
@@ -143,9 +154,10 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 			ConfState: &snapshot.Metadata.ConfState,
 		}
 	}
+
 	entries := make([]raftpb.Entry, 0)
 	err := m.db.View(func(txn *badger.Txn) error {
-		hardStateBytes, err := txn.Get(m.keyPrefix.hardState)
+		hardStateBytes, err := txn.Get(groupPrefix.hardState)
 		if err == nil {
 			if err = hardStateBytes.Value(func(value []byte) error {
 				if err = hardState.Unmarshal(value); err != nil {
@@ -156,7 +168,8 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 				return err
 			}
 		}
-		walMetadata, err := txn.Get(m.keyPrefix.metadata)
+
+		walMetadata, err := txn.Get(groupPrefix.metadata)
 		if err != nil {
 			return err
 		}
@@ -167,11 +180,12 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 		}); err != nil {
 			return err
 		}
+
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
 		defer it.Close()
-		prefix := m.keyPrefix.entry
+		prefix := groupPrefix.entry
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			entry := raftpb.Entry{}
 			if err = it.Item().Value(func(value []byte) error {
@@ -195,14 +209,20 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
 	result := walbase.NewReplayResult(metadata, hardState, entries)
 	if deleteUncommitted {
 		if err = result.DeleteUncommittedEntry(result.HardState().Commit); err != nil {
 			return nil, nil, nil, err
 		}
 	}
+
+	reader := &GroupEntryDataReader{
+		manager: m,
+		groupID: groupID,
+	}
 	es := &storage.EntryStorage{
-		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
+		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](reader),
 	}
 	if snapshot != nil {
 		es.ApplySnapshot(*snapshot)
@@ -211,52 +231,63 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 	if err = es.Append(entries); err != nil {
 		return nil, nil, nil, err
 	}
-	return es, NewBadgerWal(m.db, es, m.keyPrefix), result, nil
+
+	return es, NewBadgerWal(m.db, es, m.prefixCache.get(groupID)), result, nil
 }
 
-func (m *BadgerWalManager) HasExistingWals() (bool, error) {
-	err := m.db.View(func(txn *badger.Txn) error {
+func (m *MultiRaftBadgerWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {
+	var groupIDs []ibabuza.RaftGroupID
+
+	if err := m.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
 		defer it.Close()
-		prefix := m.keyPrefix.entry
-		it.Seek(prefix)
-		if it.ValidForPrefix(prefix) {
-			return nil
+		var prefix [8]byte
+		binary.BigEndian.PutUint64(prefix[:8], keyMetadata)
+		for it.Seek(prefix[:8]); it.ValidForPrefix(prefix[:8]); it.Next() {
+			groupID := ibabuza.RaftGroupID(binary.BigEndian.Uint64(it.Item().Key()[8:16]))
+			groupIDs = append(groupIDs, groupID)
 		}
-		return errors.New("no existing WALs found")
-	})
-	if err != nil {
-		return false, nil
+		return nil
+	}); err != nil {
+		return nil, err
 	}
-	return true, nil
+	return groupIDs, nil
 }
 
-func (m *BadgerWalManager) PurgeWals(config ibabuza.WalPurgeConfig) {
-	//TODO: implement this
+func (m *MultiRaftBadgerWalManager) PurgeWals(config ibabuza.WalPurgeConfig) {
+	// TODO: implement this
 }
 
-func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryMetadata],
+func (m *MultiRaftBadgerWalManager) ReadEntriesData(groupID ibabuza.RaftGroupID, readEntryIndex []walbase.EntryIndex[storage.EntryMetadata],
 	destEnts []raftpb.Entry) error {
+
+	groupPrefix := m.prefixCache.get(groupID)
 
 	if len(readEntryIndex) != len(destEnts) || len(readEntryIndex) == 0 {
 		return errors.New("invalid the size of entryIndex and raftpb.Entry")
 	}
+
 	return m.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
 		defer it.Close()
+
 		var startKey [24]byte
-		copy(startKey[:16], m.keyPrefix.entry)
+		copy(startKey[:16], groupPrefix.entry)
 		startIndex := 0
 		binary.BigEndian.PutUint64(startKey[16:], readEntryIndex[startIndex].Index)
+
 		for it.Seek(startKey[:24]); startIndex < len(readEntryIndex) && it.ValidForPrefix(startKey[:16]); it.Next() {
-			if binary.BigEndian.Uint64(it.Item().Key()[16:]) != readEntryIndex[startIndex].Index {
+			keyBytes := it.Item().Key()
+			entryIndex := binary.BigEndian.Uint64(keyBytes[16:])
+			if entryIndex != readEntryIndex[startIndex].Index {
 				return fmt.Errorf("invalid entry index %d expected %d",
-					binary.BigEndian.Uint64(it.Item().Key()), readEntryIndex[startIndex].Index)
+					entryIndex, readEntryIndex[startIndex].Index)
 			}
+
 			if err := it.Item().Value(func(value []byte) error {
 				var ent raftpb.Entry
 				if err := ent.Unmarshal(value); err != nil {
@@ -267,11 +298,14 @@ func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[s
 			}); err != nil {
 				return err
 			}
+
 			startIndex++
 		}
+
 		if startIndex == 0 {
 			return fmt.Errorf("no entries found for readEntryIndex %v", readEntryIndex)
 		}
+
 		return nil
 	})
 }
