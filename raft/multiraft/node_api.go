@@ -7,9 +7,11 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/pkg/errors"
+	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"sort"
 	"sync"
+	"time"
 )
 
 type Node struct {
@@ -200,6 +202,31 @@ func (n *Node) PromoteLearner(ctx context.Context, groupID ibabuza.RaftGroupID, 
 	}
 	//TODO: forward request to leader when current node is not the leader
 	return babuza.NewErrorResult(babuza.ErrNotLeader)
+}
+
+func (n *Node) TransferLeader(ctx context.Context, groupID ibabuza.RaftGroupID, transferee uint64) babuza.TransferLeaderResult {
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	toPeer, err := r.cluster.Peer(transferee)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	if toPeer.RaftPeerAttr.IsLearner {
+		return babuza.NewErrorResult(babuza.ErrLearnerCanNotSwitchLeadership)
+	}
+	leaderID := r.status.CloneSoftState().Lead
+	if leaderID != raft.None {
+		if err = r.EnqueueTransferLeader(transferee); err != nil {
+			return babuza.NewErrorResult(err)
+		}
+		return babuza.NewTransferLeaderResult(ctx, transferee, r.closer, time.Second,
+			func() uint64 {
+				return r.status.CloneSoftState().Lead
+			})
+	}
+	return babuza.NewErrorResult(babuza.ErrNoLeader)
 }
 
 func (n *Node) Configuration(groupID ibabuza.RaftGroupID) (babuza.ClusterConfiguration, error) {

@@ -576,3 +576,89 @@ func TestJoinLearnerAndPromoteLearner(t *testing.T) {
 		}
 	}
 }
+
+func TestTransferLeader(t *testing.T) {
+	peersConfig := babuza.NewPeersConfiguration()
+	assert.NoError(t, peersConfig.AddPeer(1, "localhost:14201", false))
+	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
+	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
+
+	nm, err := createNodeManager(t, peersConfig)
+	assert.NoError(t, err)
+	assert.NotNil(t, nm)
+	assert.Equal(t, 3, len(nm.GetAllNodes()))
+	node1, err := nm.GetNode(1)
+	assert.NoError(t, err)
+	node2, err := nm.GetNode(2)
+	assert.NoError(t, err)
+	node3, err := nm.GetNode(3)
+	assert.NoError(t, err)
+	assert.NoError(t, node1.Start())
+	assert.NoError(t, node2.Start())
+	assert.NoError(t, node3.Start())
+	defer func() {
+		node1.Stop()
+		node2.Stop()
+		node3.Stop()
+	}()
+	raftGroup1 := ibabuza.RaftGroupID(10)
+	raftGroup2 := ibabuza.RaftGroupID(11)
+	assert.NoError(t, node1.CreateRaftGroup(raftGroup1, peersConfig, false))
+	assert.NoError(t, node1.CreateRaftGroup(raftGroup2, peersConfig, false))
+	assert.NoError(t, node2.CreateRaftGroup(raftGroup1, peersConfig, false))
+	assert.NoError(t, node2.CreateRaftGroup(raftGroup2, peersConfig, false))
+	assert.NoError(t, node3.CreateRaftGroup(raftGroup1, peersConfig, false))
+	assert.NoError(t, node3.CreateRaftGroup(raftGroup2, peersConfig, false))
+
+	//wait for leader election
+	time.Sleep(time.Second * 3)
+	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
+	assert.NoError(t, err)
+	t.Logf("group1 leader: %d", group1LeaderID)
+	group2LeaderID, err := nm.CheckSameLeader(raftGroup2)
+	assert.NoError(t, err)
+	t.Logf("group2 leader: %d", group2LeaderID)
+
+	group1LeaderNode, err := nm.GetNode(group1LeaderID)
+	assert.NoError(t, err)
+
+	group2LeaderNode, err := nm.GetNode(group2LeaderID)
+	assert.NoError(t, err)
+
+	result, err := proposeCommand(group1LeaderNode, raftGroup1, CounterCommand{Operation: Reset, Value: 10})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(10), result.Value)
+
+	result, err = proposeCommand(group1LeaderNode, raftGroup1, CounterCommand{Operation: Increment, Value: 5})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(15), result.Value)
+
+	assert.NoError(t, err)
+	result, err = proposeCommand(group2LeaderNode, raftGroup2, CounterCommand{Operation: Reset, Value: 20})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(20), result.Value)
+	result, err = proposeCommand(group2LeaderNode, raftGroup2, CounterCommand{Operation: Decrement, Value: 8})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(12), result.Value)
+
+	// wait for the command to be applied
+	time.Sleep(time.Second)
+	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 15))
+	assert.NoError(t, verifyCounterValue(nm, raftGroup2, 12))
+
+	// Transfer leadership
+	group1Transferee := (group1LeaderID % 3) + 1
+	group2Transferee := (group2LeaderID % 3) + 1
+	result1 := node1.TransferLeader(context.Background(), raftGroup1, group1Transferee)
+	result2 := node2.TransferLeader(context.Background(), raftGroup2, group2Transferee)
+	assert.NoError(t, result1.Wait())
+	assert.NoError(t, result2.Wait())
+
+	// check if the new leader is the one we transferred to
+	group1LeaderID2, err := nm.CheckSameLeader(raftGroup1)
+	assert.NoError(t, err)
+	assert.Equal(t, group1Transferee, group1LeaderID2)
+	group2LeaderID2, err := nm.CheckSameLeader(raftGroup2)
+	assert.NoError(t, err)
+	assert.Equal(t, group2Transferee, group2LeaderID2)
+}

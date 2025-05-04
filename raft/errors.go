@@ -3,6 +3,7 @@ package raft
 import "errors"
 
 var (
+	ErrNoLeader                      = errors.New("raft: no leader")
 	ErrNotLeader                     = errors.New("raft: not leader")
 	ErrLearnerNotReady               = errors.New("raft: can only promote a learner which is in sync with leader")
 	ErrLearnerCanNotSwitchLeadership = errors.New("raft: learner can not switch to leadership")

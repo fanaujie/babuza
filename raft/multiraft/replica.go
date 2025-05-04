@@ -43,17 +43,18 @@ type replicaRequestQueue struct {
 	reportUnreachable   *queue.SwapBufferQueue[reportUnreachable]
 	reportSnapshotState *queue.SwapBufferQueue[reportSnapshotStatus]
 	raftStatus          *queue.SwapBufferQueue[raftStatus]
+	transferLeader      *queue.SwapBufferQueue[uint64]
 }
 
 func newReplicaRequestQueue() *replicaRequestQueue {
 	return &replicaRequestQueue{
-		proposal: queue.NewSwapBufferQueue[*proposalRequest](128, nil),
+		proposal: queue.NewSwapBufferQueue[*proposalRequest](1024, nil),
 		configChange: queue.NewSwapBufferQueue[configChangeRequest](8, func(requests []configChangeRequest) {
 			for i := 0; i < len(requests); i++ {
 				requests[i].confChange.Context = nil
 			}
 		}),
-		step: queue.NewSwapBufferQueue[babuzapb.BatchMessage](128, func(messages []babuzapb.BatchMessage) {
+		step: queue.NewSwapBufferQueue[babuzapb.BatchMessage](1024, func(messages []babuzapb.BatchMessage) {
 			for i := 0; i < len(messages); i++ {
 				messages[i].Messages = nil
 			}
@@ -65,6 +66,7 @@ func newReplicaRequestQueue() *replicaRequestQueue {
 				statuses[i].resultCh = nil
 			}
 		}),
+		transferLeader: queue.NewSwapBufferQueue[uint64](8, nil),
 	}
 }
 
@@ -74,6 +76,8 @@ func (pool *replicaRequestQueue) Dispose() {
 	pool.step.Dispose()
 	pool.reportUnreachable.Dispose()
 	pool.reportSnapshotState.Dispose()
+	pool.raftStatus.Dispose()
+	pool.transferLeader.Dispose()
 }
 
 type replica struct {
@@ -188,6 +192,14 @@ func (r *replica) EnqueueRaftStatus(resultCh chan raft.Status) error {
 		return errors.Wrapf(err, "GroupID[%d] enqueue raft status error", r.raftGroup.GroupID)
 	}
 	r.scheduler.EnqueueState(stateRaftStatus, r.raftGroup.GroupID)
+	return nil
+}
+
+func (r *replica) EnqueueTransferLeader(transfereeID uint64) error {
+	if err := r.requestQueue.transferLeader.Put(transfereeID); err != nil {
+		return errors.Wrapf(err, "GroupID[%d] enqueue transfer leader error", r.raftGroup.GroupID)
+	}
+	r.scheduler.EnqueueState(stateRaftTransferLeader, r.raftGroup.GroupID)
 	return nil
 }
 

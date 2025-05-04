@@ -291,9 +291,13 @@ func (r *Raft) TransferLeader(ctx context.Context, transferee uint64) TransferLe
 	if toPeer.RaftPeerAttr.IsLearner {
 		return NewErrorResult(ErrLearnerCanNotSwitchLeadership)
 	}
-	r.raftNode.TransferLeadership(ctx, r.config.LocalPeerID, transferee)
-	return NewTransferLeaderResult(ctx, transferee, r.closer, time.Second,
-		r.getLeaderId)
+	leaderID := r.status.CloneSoftState().Lead
+	if leaderID != raft.None {
+		r.raftNode.TransferLeadership(ctx, leaderID, transferee)
+		return NewTransferLeaderResult(ctx, transferee, r.closer, time.Second,
+			r.getLeaderId)
+	}
+	return NewErrorResult(ErrNoLeader)
 }
 
 func (r *Raft) Propose(ctx context.Context, session ClientSession, log []byte) ProposedResult {

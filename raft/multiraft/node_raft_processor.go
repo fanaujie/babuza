@@ -60,6 +60,15 @@ func (n *Node) ProcessRaftStatus(groupID ibabuza.RaftGroupID) {
 	}
 }
 
+func (n *Node) ProcessRaftTransferLeader(groupID ibabuza.RaftGroupID) {
+	n.replicaSet.mu.RLock()
+	r, ok := n.replicaSet.replica[groupID]
+	n.replicaSet.mu.RUnlock()
+	if ok {
+		r.ProcessTransferLeader()
+	}
+}
+
 func (n *Node) ApplyConfChange(groupID uint64, cc raftpb.ConfChangeI) (*raftpb.ConfState, error) {
 	gid := ibabuza.RaftGroupID(groupID)
 	n.replicaSet.mu.RLock()

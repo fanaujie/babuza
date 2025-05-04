@@ -9,13 +9,14 @@ import (
 )
 
 const (
-	stateQueue        = 1
-	stateTick         = 2
-	stateProposal     = 4
-	stateConfigChange = 8
-	stateStep         = 16
-	stateReady        = 32
-	stateRaftStatus   = 64
+	stateQueue              = 1
+	stateTick               = 2
+	stateProposal           = 4
+	stateConfigChange       = 8
+	stateStep               = 16
+	stateReady              = 32
+	stateRaftStatus         = 64
+	stateRaftTransferLeader = 128
 )
 
 type internalState struct {
@@ -164,6 +165,10 @@ func (s *raftScheduler) worker(shardID, workderID int, sh *sharder) {
 		}
 		if oldState.state&stateRaftStatus == stateRaftStatus {
 			s.raftProcessor.ProcessRaftStatus(groupID)
+		}
+
+		if oldState.state&stateRaftTransferLeader == stateRaftTransferLeader {
+			s.raftProcessor.ProcessRaftTransferLeader(groupID)
 		}
 		sh.mu.Lock()
 		newState, _ := sh.groupState[groupID]

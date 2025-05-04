@@ -77,6 +77,10 @@ func (d *transportProcessor) ReportSnapshot(groupID ibabuza.RaftGroupID, nodeID 
 	}
 }
 
+func (d *transportProcessor) TransferLeader(groupID ibabuza.RaftGroupID, fromID, transfereeID uint64) {
+
+}
+
 func (d *transportProcessor) CreateSnapshotReader(groupID ibabuza.RaftGroupID, snapshotIndex uint64) (ibabuza.SnapshotReader, error) {
 
 	return nil, nil

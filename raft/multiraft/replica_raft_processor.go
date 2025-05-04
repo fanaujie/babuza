@@ -214,6 +214,22 @@ func (r *replica) ProcessRaftStatus() {
 	}
 }
 
+func (r *replica) ProcessTransferLeader() {
+	if r.requestQueue.transferLeader.Len() == 0 {
+		return
+	}
+	items, err := r.requestQueue.transferLeader.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting transfer leader: %v", r.cluster.ClusterID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	for _, item := range items.Data {
+		r.rawNode.TransferLeader(item)
+	}
+}
+
 func (r *replica) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
 	for _, entry := range committedEntries {
 		if entry.Type == raftpb.EntryConfChange {
