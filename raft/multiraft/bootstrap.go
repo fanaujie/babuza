@@ -184,7 +184,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			logger: logger,
 			closer: syncutil.NewCloser(),
 		}
-		n.replicaSet.replica[groupID] = r
+		n.replicaSet.Store(groupID, r)
 	}
 	return n, nil
 }
@@ -198,6 +198,7 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 		logger:         logger,
 		closer:         syncutil.NewCloser(),
 		replicaEventCh: make(chan replicaEvent, 8),
+		replicaSet:     &sync.Map{},
 	}
 	scheduler := newScheduler(config.NodeID, schedulerConfig{
 		shardNum:       config.SchedulerShardNum,
@@ -206,7 +207,6 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 		maxTicks:       config.SchedulerMaxTicks,
 	}, n, logger)
 	n.scheduler = scheduler
-	n.replicaSet.replica = make(map[ibabuza.RaftGroupID]*replica)
 	return n
 }
 

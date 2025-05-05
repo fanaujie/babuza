@@ -7,58 +7,45 @@ import (
 )
 
 func (n *Node) ProcessTick(groupID ibabuza.RaftGroupID) {
-	n.replicaSet.mu.RLock()
-	r, ok := n.replicaSet.replica[groupID]
-	n.replicaSet.mu.RUnlock()
+	r, ok := n.replicaSet.Load(groupID)
 	if ok {
-		r.ProcessTick()
+		r.(*replica).ProcessTick()
 	}
 }
 
 func (n *Node) ProcessReady(groupID ibabuza.RaftGroupID) {
-	n.replicaSet.mu.RLock()
-	r, ok := n.replicaSet.replica[groupID]
-	n.replicaSet.mu.RUnlock()
+	r, ok := n.replicaSet.Load(groupID)
 	if ok {
-		r.ProcessReady()
+		r.(*replica).ProcessReady()
 	}
 }
 
 func (n *Node) ProcessStep(groupID ibabuza.RaftGroupID) {
-	n.replicaSet.mu.RLock()
-	r, ok := n.replicaSet.replica[groupID]
-	n.replicaSet.mu.RUnlock()
+	r, ok := n.replicaSet.Load(groupID)
 	if ok {
-		r.ProcessStep()
+		r.(*replica).ProcessStep()
 	}
 }
 
 func (n *Node) ProcessProposal(groupID ibabuza.RaftGroupID) {
-	n.replicaSet.mu.RLock()
-	r, ok := n.replicaSet.replica[groupID]
-	n.replicaSet.mu.RUnlock()
+	r, ok := n.replicaSet.Load(groupID)
 	if ok {
-		r.ProcessProposal()
+		r.(*replica).ProcessProposal()
 	}
 }
 
 func (n *Node) ProcessConfigChange(groupID ibabuza.RaftGroupID) {
-	n.replicaSet.mu.RLock()
-	r, ok := n.replicaSet.replica[groupID]
-	n.replicaSet.mu.RUnlock()
+	r, ok := n.replicaSet.Load(groupID)
 	if ok {
-		r.ProcessConfigChange()
+		r.(*replica).ProcessConfigChange()
 	}
 }
 
 func (n *Node) ApplyConfChange(groupID uint64, cc raftpb.ConfChangeI) (*raftpb.ConfState, error) {
-	gid := ibabuza.RaftGroupID(groupID)
-	n.replicaSet.mu.RLock()
-	r, ok := n.replicaSet.replica[gid]
-	n.replicaSet.mu.RUnlock()
+	r, ok := n.replicaSet.Load(ibabuza.RaftGroupID(groupID))
 	// mu already locked
 	if ok {
-		return r.mu.rawNode.ApplyConfChange(cc), nil
+		return r.(*replica).mu.rawNode.ApplyConfChange(cc), nil
 	}
 	return nil, fmt.Errorf("node[%d] groupID[%d] not found", n.config.NodeID, groupID)
 }

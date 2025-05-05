@@ -23,10 +23,7 @@ type Node struct {
 	scheduler      Scheduler
 	replicaEventCh chan replicaEvent
 	closer         *syncutil.Closer
-	replicaSet     struct {
-		mu      sync.RWMutex
-		replica map[ibabuza.RaftGroupID]*replica
-	}
+	replicaSet     *sync.Map
 }
 
 func (n *Node) Start() error {
@@ -38,11 +35,13 @@ func (n *Node) Start() error {
 	}
 	defer func() {
 		if err != nil {
+			n.closer.Close()
 			_ = n.trans.Stop()
 			n.scheduler.Stop()
-			for _, r := range n.replicaSet.replica {
-				r.Stop()
-			}
+			n.replicaSet.Range(func(key, value interface{}) bool {
+				value.(*replica).Stop()
+				return true
+			})
 		}
 	}()
 	if err = n.trans.Start(); err != nil {
@@ -53,12 +52,13 @@ func (n *Node) Start() error {
 		err = errors.Errorf("Node[%d] raftScheduler start error: %v", n.config.NodeID, err)
 		return err
 	}
-	for _, r := range n.replicaSet.replica {
-		if err = r.Start(); err != nil {
+	n.replicaSet.Range(func(key, value interface{}) bool {
+		if err = value.(*replica).Start(); err != nil {
 			err = errors.Errorf("Node[%d] replica start error: %v", n.config.NodeID, err)
-			return err
+			return false
 		}
-	}
+		return true
+	})
 	n.closer.Run(func() {
 		n.replicaRaftTick()
 	})
@@ -72,36 +72,34 @@ func (n *Node) Stop() {
 	n.trans.Stop()
 	n.closer.Close()
 	n.scheduler.Stop()
-	n.replicaSet.mu.Lock()
-	defer n.replicaSet.mu.Unlock()
-	for _, r := range n.replicaSet.replica {
+	n.replicaSet.Range(func(key, value interface{}) bool {
+		r := value.(*replica)
 		r.Stop()
-	}
+		return true
+	})
 	n.storage.Close()
-	n.replicaSet.replica = make(map[ibabuza.RaftGroupID]*replica)
+	n.replicaSet = nil
 }
 
 func (n *Node) CreateRaftGroup(groupID ibabuza.RaftGroupID, peersConfig *babuza.PeersConfiguration, join bool) error {
-	n.replicaSet.mu.Lock()
-	defer n.replicaSet.mu.Unlock()
-	if _, ok := n.replicaSet.replica[groupID]; ok {
+	if _, ok := n.replicaSet.Load(groupID); ok {
 		return errors.Errorf("Node[%d] raft group %d already exists", n.config.NodeID, groupID)
 	}
 	r, err := bootstrapReplicaWithConfiguration(n, groupID, peersConfig, join)
 	if err != nil {
 		return errors.Errorf("Node[%d] failed to bootstrap new replica(raft group id=%d): %v", n.config.NodeID, groupID, err)
 	}
-	n.replicaSet.replica[groupID] = r
+	n.replicaSet.Store(groupID, r)
 	return r.Start()
 }
 
 func (n *Node) GetGroupIDs() []ibabuza.RaftGroupID {
-	n.replicaSet.mu.RLock()
-	defer n.replicaSet.mu.RUnlock()
-	groupIDs := make([]ibabuza.RaftGroupID, 0, len(n.replicaSet.replica))
-	for groupID := range n.replicaSet.replica {
+	groupIDs := make([]ibabuza.RaftGroupID, 0)
+	n.replicaSet.Range(func(key, value any) bool {
+		groupID := key.(ibabuza.RaftGroupID)
 		groupIDs = append(groupIDs, groupID)
-	}
+		return true
+	})
 	if len(groupIDs) > 1 {
 		sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
 	}
@@ -109,9 +107,7 @@ func (n *Node) GetGroupIDs() []ibabuza.RaftGroupID {
 }
 
 func (n *Node) HasGroupID(groupID ibabuza.RaftGroupID) bool {
-	n.replicaSet.mu.RLock()
-	defer n.replicaSet.mu.RUnlock()
-	_, ok := n.replicaSet.replica[groupID]
+	_, ok := n.replicaSet.Load(groupID)
 	return ok
 }
 
@@ -271,11 +267,9 @@ func (n *Node) Status(groupID ibabuza.RaftGroupID) (babuza.Status, error) {
 }
 
 func (n *Node) getReplica(groupID ibabuza.RaftGroupID) (*replica, error) {
-	n.replicaSet.mu.RLock()
-	defer n.replicaSet.mu.RUnlock()
-	r, ok := n.replicaSet.replica[groupID]
+	r, ok := n.replicaSet.Load(groupID)
 	if !ok {
 		return nil, errors.Errorf("Node[%d] raft group %d not found", n.config.NodeID, groupID)
 	}
-	return r, nil
+	return r.(*replica), nil
 }

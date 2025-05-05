@@ -845,11 +845,11 @@ func TestSnapshot(t *testing.T) {
 	time.Sleep(time.Second)
 	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 100))
 	for _, n := range nm.GetAllNodes() {
-		n.replicaSet.mu.RLock()
-		for _, r := range n.replicaSet.replica {
+		n.replicaSet.Range(func(key, value interface{}) bool {
+			r := value.(*replica)
 			assert.Equal(t, cConfig.SnapshotCount, r.status.GetSnapshotIndex())
-		}
-		n.replicaSet.mu.RUnlock()
+			return true
+		})
 	}
 
 	//node3 join group1
@@ -863,11 +863,11 @@ func TestSnapshot(t *testing.T) {
 	//wait for node3 to join group1 and apply the command
 	time.Sleep(time.Second * 3)
 	for _, n := range nm.GetAllNodes() {
-		n.replicaSet.mu.RLock()
-		for _, r := range n.replicaSet.replica {
+		n.replicaSet.Range(func(key, value interface{}) bool {
+			r := value.(*replica)
 			assert.Equal(t, cConfig.SnapshotCount, r.status.GetSnapshotIndex())
-		}
-		n.replicaSet.mu.RUnlock()
+			return true
+		})
 	}
 	groupIDs = node3.GetGroupIDs()
 	assert.Equal(t, 1, len(groupIDs))
@@ -889,11 +889,11 @@ func TestSnapshot(t *testing.T) {
 
 	time.Sleep(time.Second)
 	for _, n := range nm.GetAllNodes() {
-		n.replicaSet.mu.RLock()
-		for _, r := range n.replicaSet.replica {
+		n.replicaSet.Range(func(key, value interface{}) bool {
+			r := value.(*replica)
 			assert.Equal(t, cConfig.SnapshotCount, r.status.GetSnapshotIndex())
-		}
-		n.replicaSet.mu.RUnlock()
+			return true
+		})
 	}
 	lastGroup1LeaderID, err = nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)

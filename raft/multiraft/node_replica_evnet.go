@@ -25,11 +25,10 @@ func (n *Node) replicaRaftTick() {
 		case <-n.closer.CloseCh():
 			return
 		case <-ticker.C:
-			n.replicaSet.mu.RLock()
-			for k, _ := range n.replicaSet.replica {
-				groupIDs = append(groupIDs, k)
-			}
-			n.replicaSet.mu.RUnlock()
+			n.replicaSet.Range(func(key, value any) bool {
+				groupIDs = append(groupIDs, key.(ibabuza.RaftGroupID))
+				return true
+			})
 			if len(groupIDs) > 0 {
 				n.scheduler.EnqueueBatchState(stateTick, groupIDs)
 			}
@@ -49,13 +48,12 @@ func (n *Node) replicaListener() {
 		case event := <-n.replicaEventCh:
 			switch event.event {
 			case eventRemovePeer:
-				n.replicaSet.mu.Lock()
-				if r, ok := n.replicaSet.replica[event.groupID]; ok {
-					r.Stop()
-					delete(n.replicaSet.replica, event.groupID)
+				r, ok := n.replicaSet.Load(event.groupID)
+				if ok {
+					r.(*replica).Stop()
+					n.replicaSet.Delete(event.groupID)
 					n.logger.Infof("Node[%d] remove replica group %d", n.config.NodeID, event.groupID)
 				}
-				n.replicaSet.mu.Unlock()
 			}
 		}
 	}
