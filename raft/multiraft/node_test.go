@@ -165,13 +165,29 @@ func (c *ComponentFactory) CreateSessionManager() ibabuza.SessionManager {
 	return session.NewNoOpManager(c.logger)
 }
 
-func createNodeManager(t *testing.T, rootDir string, configuration *babuza.PeersConfiguration) (*NodeManager, error) {
+type customConfig struct {
+	EnableWalNoSync     bool
+	SnapshotCount       uint64
+	RaftConfig          babuza.RaftConfig
+	LearnerReadyPercent float64
+}
+
+func defaultCustomConfig() customConfig {
+	return customConfig{
+		EnableWalNoSync:     false,
+		SnapshotCount:       10000,
+		RaftConfig:          babuza.DefaultRaftConfig(),
+		LearnerReadyPercent: 0.95,
+	}
+}
+
+func createNodeManager(cConfig customConfig, rootDir string, configuration *babuza.PeersConfiguration) (*NodeManager, error) {
 	if err := configuration.Validate(); err != nil {
 		return nil, err
 	}
 	nm := NewNodeManager()
 	if err := configuration.Visit(func(attribute babuzapb.RaftPeerAttribute) error {
-		node, err := createNode(100, attribute.Id, attribute.RaftListenAddr,
+		node, err := createNode(100, attribute.Id, cConfig, attribute.RaftListenAddr,
 			filepath.Join(rootDir, fmt.Sprintf("%d", attribute.Id)))
 		if err != nil {
 			return err
@@ -183,8 +199,12 @@ func createNodeManager(t *testing.T, rootDir string, configuration *babuza.Peers
 	return nm, nil
 }
 
-func createNode(clusterID uint64, nodeID uint64, nodeRaftListenAddr string, rootDir string) (*Node, error) {
+func createNode(clusterID uint64, nodeID uint64, cConfig customConfig, nodeRaftListenAddr string, rootDir string) (*Node, error) {
 	config := DefaultNodeConfig(clusterID, nodeID, rootDir, nodeRaftListenAddr)
+	config.EnableWalNoSync = cConfig.EnableWalNoSync
+	config.SnapshotCount = cConfig.SnapshotCount
+	config.RaftConfig = cConfig.RaftConfig
+	config.LearnerReadyPercent = cConfig.LearnerReadyPercent
 	z, _ := zap.NewProduction(zap.AddCallerSkip(1))
 	log := logger.NewRaftLogger(z.Sugar())
 	walMgr := lsmtwal.NewMultiRaftBadgerWalManager(lsmtwal.MultiRaftConfig{
@@ -263,7 +283,7 @@ func TestBootstrap(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(t, rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -344,7 +364,7 @@ func TestRecover(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(t, rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -420,7 +440,7 @@ func TestRecover(t *testing.T) {
 	}
 	nm.Clear()
 
-	nm, err = createNodeManager(t, rootDir, peersConfig)
+	nm, err = createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
 	assert.NoError(t, err)
 	for _, n := range nm.GetAllNodes() {
 		assert.NoError(t, n.Start())
@@ -443,7 +463,7 @@ func TestJoinVotingGroup(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(t, rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -517,7 +537,7 @@ func TestRemoveVotingGroup(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(t, rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -597,7 +617,7 @@ func TestJoinLearnerAndPromoteLearner(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", true)) // node3 設為 learner
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(t, rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -686,7 +706,7 @@ func TestTransferLeader(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(t, rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -764,4 +784,119 @@ func TestTransferLeader(t *testing.T) {
 	group2LeaderID2, err := nm.CheckSameLeader(raftGroup2)
 	assert.NoError(t, err)
 	assert.Equal(t, group2Transferee, group2LeaderID2)
+}
+
+func TestSnapshot(t *testing.T) {
+	peersConfig := babuza.NewPeersConfiguration()
+	assert.NoError(t, peersConfig.AddPeer(1, "localhost:14201", false))
+	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
+	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
+	rootDir := t.TempDir()
+	cConfig := defaultCustomConfig()
+	cConfig.SnapshotCount = 50
+	nm, err := createNodeManager(cConfig, rootDir, peersConfig)
+	assert.NoError(t, err)
+	assert.NotNil(t, nm)
+	assert.Equal(t, 3, len(nm.GetAllNodes()))
+	node1, err := nm.GetNode(1)
+	assert.NoError(t, err)
+	node2, err := nm.GetNode(2)
+	assert.NoError(t, err)
+	node3, err := nm.GetNode(3)
+	assert.NoError(t, err)
+	assert.NoError(t, node1.Start())
+	assert.NoError(t, node2.Start())
+	assert.NoError(t, node3.Start())
+	defer func() {
+		node1.Stop()
+		node2.Stop()
+		node3.Stop()
+	}()
+	raftGroup1 := ibabuza.RaftGroupID(10)
+	group1PeersConfig := peersConfig.Clone()
+	group1PeersConfig.RemovePeer(3)
+	assert.NoError(t, node1.CreateRaftGroup(raftGroup1, group1PeersConfig, false))
+	assert.NoError(t, node2.CreateRaftGroup(raftGroup1, group1PeersConfig, false))
+	groupIDs := node1.GetGroupIDs()
+	assert.Equal(t, 1, len(groupIDs))
+	assert.Equal(t, raftGroup1, groupIDs[0])
+	groupIDs = node2.GetGroupIDs()
+	assert.Equal(t, 1, len(groupIDs))
+	assert.Equal(t, raftGroup1, groupIDs[0])
+	//wait for leader election
+	time.Sleep(time.Second * 3)
+	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
+	assert.NoError(t, err)
+	t.Logf("group1 leader: %d", group1LeaderID)
+
+	group1LeaderNode, err := nm.GetNode(group1LeaderID)
+	assert.NoError(t, err)
+
+	result, err := proposeCommand(group1LeaderNode, raftGroup1, CounterCommand{Operation: Reset, Value: 50})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(50), result.Value)
+	// trigger snapshot
+	for i := uint64(0); i < cConfig.SnapshotCount; i++ {
+		result, err = proposeCommand(group1LeaderNode, raftGroup1, CounterCommand{Operation: Increment, Value: 1})
+		assert.NoError(t, err)
+		assert.Equal(t, int64(51+i), result.Value)
+	}
+	// wait for the command to be applied
+	time.Sleep(time.Second)
+	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 100))
+	for _, n := range nm.GetAllNodes() {
+		n.replicaSet.mu.RLock()
+		for _, r := range n.replicaSet.replica {
+			assert.Equal(t, cConfig.SnapshotCount, r.status.GetSnapshotIndex())
+		}
+		n.replicaSet.mu.RUnlock()
+	}
+
+	//node3 join group1
+	peer3, _ := peersConfig.GetPeer(3)
+	res := group1LeaderNode.AddVotingPeer(context.Background(), raftGroup1, babuza.ClientSession{}, peer3)
+	ar := res.WaitForApplyResult()
+	res.Release()
+	assert.Nil(t, ar.Error)
+	assert.NoError(t, node3.CreateRaftGroup(raftGroup1, peersConfig, true))
+
+	//wait for node3 to join group1 and apply the command
+	time.Sleep(time.Second * 3)
+	for _, n := range nm.GetAllNodes() {
+		n.replicaSet.mu.RLock()
+		for _, r := range n.replicaSet.replica {
+			assert.Equal(t, cConfig.SnapshotCount, r.status.GetSnapshotIndex())
+		}
+		n.replicaSet.mu.RUnlock()
+	}
+	groupIDs = node3.GetGroupIDs()
+	assert.Equal(t, 1, len(groupIDs))
+	assert.Equal(t, raftGroup1, groupIDs[0])
+	lastGroup1LeaderID, err := nm.CheckSameLeader(raftGroup1)
+	assert.NoError(t, err)
+	assert.Equal(t, group1LeaderID, lastGroup1LeaderID)
+	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 100))
+
+	//restart node3 from snapshot
+	node3.Stop()
+	assert.NoError(t, nm.Remove(3))
+
+	node3, err = createNode(100, peer3.Id, cConfig, peer3.RaftListenAddr,
+		filepath.Join(rootDir, fmt.Sprintf("%d", peer3.Id)))
+	assert.NoError(t, err)
+	assert.NoError(t, node3.Start())
+	assert.NoError(t, nm.Add(node3))
+
+	time.Sleep(time.Second)
+	for _, n := range nm.GetAllNodes() {
+		n.replicaSet.mu.RLock()
+		for _, r := range n.replicaSet.replica {
+			assert.Equal(t, cConfig.SnapshotCount, r.status.GetSnapshotIndex())
+		}
+		n.replicaSet.mu.RUnlock()
+	}
+	lastGroup1LeaderID, err = nm.CheckSameLeader(raftGroup1)
+	assert.NoError(t, err)
+	assert.Equal(t, group1LeaderID, lastGroup1LeaderID)
+	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 100))
 }

@@ -34,9 +34,9 @@ type NodeConfig struct {
 	JobQueueSize int64
 }
 
-func DefaultNodeConfig(ClusterId, nodeID uint64, nodeHostDir string, raftListenAddr string) NodeConfig {
+func DefaultNodeConfig(ClusterID, nodeID uint64, nodeHostDir string, raftListenAddr string) NodeConfig {
 	return NodeConfig{
-		ClusterID:               ClusterId,
+		ClusterID:               ClusterID,
 		NodeID:                  nodeID,
 		NodeHostDir:             nodeHostDir,
 		RaftListenAddress:       raftListenAddr,

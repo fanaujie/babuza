@@ -100,7 +100,7 @@ type Raft struct {
 	shutdownCh                chan struct{}
 	removeSelfCh              chan struct{}
 	leaderCh                  chan bool
-	receivedSnapshotNsgCh     chan babuzapb.SnapshotMessage
+	receivedSnapshotMsgCh     chan babuzapb.SnapshotMessage
 	closeRaftOnce             sync.Once
 	linearizeReqNotifier      *syncutil.ErrNotifier
 	firstCommitInTermNotifier *syncutil.Notifier
@@ -133,7 +133,7 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		shutdownCh:                make(chan struct{}),
 		removeSelfCh:              make(chan struct{}),
 		leaderCh:                  make(chan bool, 1),
-		receivedSnapshotNsgCh:     make(chan babuzapb.SnapshotMessage, 8),
+		receivedSnapshotMsgCh:     make(chan babuzapb.SnapshotMessage, 8),
 		linearizeReqNotifier:      syncutil.NewErrNotifier(),
 		firstCommitInTermNotifier: syncutil.NewNotifier(),
 		leaderChangeNotifier:      syncutil.NewNotifier(),
