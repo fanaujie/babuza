@@ -13,6 +13,7 @@ import (
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -159,7 +160,6 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			session:                   replicaSession,
 			storage:                   replicaStorage,
 			appliedFacade:             appliedFacade,
-			rawNode:                   rawNode,
 			idGenerator:               idgenerator.New(replicaCluster.LocalPeerID(), uint64(time.Now().Nanosecond())),
 			resultReplier:             resultReplier,
 			completionReplier:         replier.NewCompletion(),
@@ -171,8 +171,18 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			scheduler:                 n.scheduler,
 			applyJobQueue:             newJobQueue(groupID, n.config.JobQueueSize, n.logger),
 			requestQueue:              newReplicaRequestQueue(),
-			logger:                    logger,
-			closer:                    syncutil.NewCloser(),
+			mu: struct {
+				lock           sync.Mutex
+				rawNode        *raft.RawNode
+				unreachable    map[uint64]struct{}
+				snapshotStatus map[uint64]raft.SnapshotStatus
+			}{
+				rawNode:        rawNode,
+				unreachable:    make(map[uint64]struct{}),
+				snapshotStatus: make(map[uint64]raft.SnapshotStatus),
+			},
+			logger: logger,
+			closer: syncutil.NewCloser(),
 		}
 		n.replicaSet.replica[groupID] = r
 	}
@@ -302,7 +312,6 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		session:                   replicaSession,
 		storage:                   replicaStorage,
 		appliedFacade:             appliedFacade,
-		rawNode:                   rawNode,
 		idGenerator:               idgenerator.New(replicaCluster.LocalPeerID(), uint64(time.Now().Nanosecond())),
 		resultReplier:             resultReplier,
 		completionReplier:         replier.NewCompletion(),
@@ -314,8 +323,18 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		scheduler:                 node.scheduler,
 		applyJobQueue:             newJobQueue(groupID, node.config.JobQueueSize, node.logger),
 		requestQueue:              newReplicaRequestQueue(),
-		logger:                    node.logger,
-		closer:                    syncutil.NewCloser(),
+		mu: struct {
+			lock           sync.Mutex
+			rawNode        *raft.RawNode
+			unreachable    map[uint64]struct{}
+			snapshotStatus map[uint64]raft.SnapshotStatus
+		}{
+			rawNode:        rawNode,
+			unreachable:    make(map[uint64]struct{}),
+			snapshotStatus: make(map[uint64]raft.SnapshotStatus),
+		},
+		logger: node.logger,
+		closer: syncutil.NewCloser(),
 	}
 	return r, nil
 }

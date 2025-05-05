@@ -219,9 +219,7 @@ func (n *Node) TransferLeader(ctx context.Context, groupID ibabuza.RaftGroupID, 
 	}
 	leaderID := r.status.CloneSoftState().Lead
 	if leaderID != raft.None {
-		if err = r.EnqueueTransferLeader(transferee); err != nil {
-			return babuza.NewErrorResult(err)
-		}
+		r.TransferLeader(transferee)
 		return babuza.NewTransferLeaderResult(ctx, transferee, r.closer, time.Second,
 			func() uint64 {
 				return r.status.CloneSoftState().Lead

@@ -10,12 +10,24 @@ import (
 )
 
 func (r *replica) ProcessTick() {
-	r.rawNode.Tick()
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	r.mu.rawNode.Tick()
 }
 
 func (r *replica) ProcessReady() {
-	if r.rawNode.HasReady() {
-		rd := r.rawNode.Ready()
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	for nodeID, _ := range r.mu.unreachable {
+		r.mu.rawNode.ReportUnreachable(nodeID)
+		delete(r.mu.unreachable, nodeID)
+	}
+	for nodeID, snapshotStatus := range r.mu.snapshotStatus {
+		r.mu.rawNode.ReportSnapshot(nodeID, snapshotStatus)
+		delete(r.mu.snapshotStatus, nodeID)
+	}
+	if r.mu.rawNode.HasReady() {
+		rd := r.mu.rawNode.Ready()
 		if rd.SoftState != nil {
 			r.updateLeadership(*rd.SoftState)
 		}
@@ -80,49 +92,11 @@ func (r *replica) ProcessReady() {
 		if !isLeader {
 			r.sendRaftMessage(rd.Messages)
 		}
-		r.rawNode.Advance(rd)
+		r.mu.rawNode.Advance(rd)
 	}
 }
 
 func (r *replica) ProcessStep() {
-	r.processStepQueue()
-	r.processReportUnreachableQueue()
-	r.processReportSnapshotStateQueue()
-}
-
-func (r *replica) processReportSnapshotStateQueue() {
-	if r.requestQueue.reportSnapshotState.Len() == 0 {
-		return
-	}
-	items, err := r.requestQueue.reportSnapshotState.Get()
-	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting report snapshot state: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
-		return
-	}
-	defer items.Release()
-	for _, item := range items.Data {
-		r.rawNode.ReportSnapshot(item.NodeID, item.Status)
-	}
-}
-
-func (r *replica) processReportUnreachableQueue() {
-	if r.requestQueue.reportUnreachable.Len() == 0 {
-		return
-	}
-	items, err := r.requestQueue.reportUnreachable.Get()
-	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting report unreachable: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
-		return
-	}
-	defer items.Release()
-	for _, item := range items.Data {
-		r.rawNode.ReportUnreachable(item.NodeID)
-	}
-}
-
-func (r *replica) processStepQueue() {
 	if r.requestQueue.step.Len() == 0 {
 		return
 	}
@@ -133,9 +107,11 @@ func (r *replica) processStepQueue() {
 		return
 	}
 	defer items.Release()
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
 	for _, m := range items.Data {
 		for _, msg := range m.Messages {
-			if err = r.rawNode.Step(msg); err != nil {
+			if err = r.mu.rawNode.Step(msg); err != nil {
 				r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.ClusterID(),
 					r.cluster.LocalPeerID(), err)
 			}
@@ -154,8 +130,10 @@ func (r *replica) ProcessProposal() {
 		return
 	}
 	defer items.Release()
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
 	for _, item := range items.Data {
-		if err = r.rawNode.Propose(item.data); err != nil {
+		if err = r.mu.rawNode.Propose(item.data); err != nil {
 			if errors.Is(err, raft.ErrProposalDropped) {
 				err = babuza.ErrNotLeader
 			} else if errors.Is(err, raft.ErrStopped) {
@@ -182,8 +160,10 @@ func (r *replica) ProcessConfigChange() {
 		return
 	}
 	defer items.Release()
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
 	for _, item := range items.Data {
-		if err = r.rawNode.ProposeConfChange(item.confChange); err != nil {
+		if err = r.mu.rawNode.ProposeConfChange(item.confChange); err != nil {
 			if errors.Is(err, raft.ErrProposalDropped) {
 				err = babuza.ErrNotLeader
 			} else if errors.Is(err, raft.ErrStopped) {
@@ -195,38 +175,6 @@ func (r *replica) ProcessConfigChange() {
 			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.ClusterID(),
 				r.cluster.LocalPeerID(), err)
 		}
-	}
-}
-
-func (r *replica) ProcessRaftStatus() {
-	if r.requestQueue.raftStatus.Len() == 0 {
-		return
-	}
-	items, err := r.requestQueue.raftStatus.Get()
-	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting raft status: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
-		return
-	}
-	defer items.Release()
-	for _, item := range items.Data {
-		item.resultCh <- r.rawNode.Status()
-	}
-}
-
-func (r *replica) ProcessTransferLeader() {
-	if r.requestQueue.transferLeader.Len() == 0 {
-		return
-	}
-	items, err := r.requestQueue.transferLeader.Get()
-	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting transfer leader: %v", r.cluster.ClusterID(),
-			r.cluster.LocalPeerID(), err)
-		return
-	}
-	defer items.Release()
-	for _, item := range items.Data {
-		r.rawNode.TransferLeader(item)
 	}
 }
 

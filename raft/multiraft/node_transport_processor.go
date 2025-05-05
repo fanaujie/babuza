@@ -62,7 +62,7 @@ func (d *transportProcessor) ReportUnreachable(groupID ibabuza.RaftGroupID, node
 		d.logger.Errorf("Node[%d] ReportUnreachable groupID[%d] get replica error: %v", d.config.NodeID, groupID, err)
 		return
 	}
-	if err = r.EnqueueReportUnreachable(nodeID); err != nil {
+	if err = r.ReportUnreachable(nodeID); err != nil {
 		d.logger.Errorf("Node[%d] ReportUnreachable groupID[%d] enqueue unreachable error: %v", d.config.NodeID, groupID, err)
 	}
 
@@ -73,7 +73,7 @@ func (d *transportProcessor) ReportSnapshot(groupID ibabuza.RaftGroupID, nodeID 
 		d.logger.Errorf("Node[%d] ReportSnapshot groupID[%d] get replica error: %v", d.config.NodeID, groupID, err)
 		return
 	}
-	if err = r.EnqueueReportSnapshot(nodeID, status); err != nil {
+	if err = r.ReportSnapshot(nodeID, status); err != nil {
 		d.logger.Errorf("Node[%d] ReportSnapshot groupID[%d] enqueue snapshot error: %v", d.config.NodeID, groupID, err)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
+	"sync"
 )
 
 type RaftGroup struct {
@@ -37,13 +38,9 @@ type raftStatus struct {
 }
 
 type replicaRequestQueue struct {
-	proposal            *queue.SwapBufferQueue[*proposalRequest]
-	configChange        *queue.SwapBufferQueue[configChangeRequest]
-	step                *queue.SwapBufferQueue[babuzapb.BatchMessage]
-	reportUnreachable   *queue.SwapBufferQueue[reportUnreachable]
-	reportSnapshotState *queue.SwapBufferQueue[reportSnapshotStatus]
-	raftStatus          *queue.SwapBufferQueue[raftStatus]
-	transferLeader      *queue.SwapBufferQueue[uint64]
+	proposal     *queue.SwapBufferQueue[*proposalRequest]
+	configChange *queue.SwapBufferQueue[configChangeRequest]
+	step         *queue.SwapBufferQueue[babuzapb.BatchMessage]
 }
 
 func newReplicaRequestQueue() *replicaRequestQueue {
@@ -59,14 +56,6 @@ func newReplicaRequestQueue() *replicaRequestQueue {
 				messages[i].Messages = nil
 			}
 		}),
-		reportUnreachable:   queue.NewSwapBufferQueue[reportUnreachable](8, nil),
-		reportSnapshotState: queue.NewSwapBufferQueue[reportSnapshotStatus](8, nil),
-		raftStatus: queue.NewSwapBufferQueue[raftStatus](8, func(statuses []raftStatus) {
-			for i := 0; i < len(statuses); i++ {
-				statuses[i].resultCh = nil
-			}
-		}),
-		transferLeader: queue.NewSwapBufferQueue[uint64](8, nil),
 	}
 }
 
@@ -74,10 +63,6 @@ func (pool *replicaRequestQueue) Dispose() {
 	pool.proposal.Dispose()
 	pool.configChange.Dispose()
 	pool.step.Dispose()
-	pool.reportUnreachable.Dispose()
-	pool.reportSnapshotState.Dispose()
-	pool.raftStatus.Dispose()
-	pool.transferLeader.Dispose()
 }
 
 type replica struct {
@@ -89,7 +74,6 @@ type replica struct {
 	session                   ibabuza.SessionManager
 	storage                   babuza.RaftStorage
 	appliedFacade             babuza.InternalAppliedFacade
-	rawNode                   *raft.RawNode
 	idGenerator               babuza.InternalIdGenerator
 	resultReplier             babuza.InternalResultReplier
 	completionReplier         babuza.InternalCompletionReplier
@@ -101,8 +85,16 @@ type replica struct {
 	scheduler                 Scheduler
 	applyJobQueue             JobQueue
 	requestQueue              *replicaRequestQueue
-	logger                    ibabuza.Logger
-	closer                    *syncutil.Closer
+	mu                        struct {
+		lock           sync.Mutex
+		rawNode        *raft.RawNode
+		unreachable    map[uint64]struct{}
+		snapshotStatus map[uint64]raft.SnapshotStatus
+	}
+	unreachable map[uint64]struct{}
+
+	logger ibabuza.Logger
+	closer *syncutil.Closer
 }
 
 func (r *replica) Status() ibabuza.Status {
@@ -169,43 +161,33 @@ func (r *replica) EnqueueStep(batchMsg babuzapb.BatchMessage) error {
 	return nil
 }
 
-func (r *replica) EnqueueReportUnreachable(nodeID uint64) error {
-	if err := r.requestQueue.reportUnreachable.Put(reportUnreachable{
-		NodeID: nodeID,
-	}); err != nil {
-		return errors.Wrapf(err, "GroupID[%d] enqueue report unreachable error", r.raftGroup.GroupID)
+func (r *replica) ReportUnreachable(nodeID uint64) error {
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	if _, ok := r.mu.unreachable[nodeID]; ok {
+		return nil
 	}
-	r.scheduler.EnqueueState(stateStep, r.raftGroup.GroupID)
+	r.mu.unreachable[nodeID] = struct{}{}
 	return nil
 }
 
-func (r *replica) EnqueueReportSnapshot(nodeID uint64, status raft.SnapshotStatus) error {
-	if err := r.requestQueue.reportSnapshotState.Put(reportSnapshotStatus{
-		NodeID: nodeID,
-		Status: status,
-	}); err != nil {
-		return errors.Wrapf(err, "GroupID[%d] enqueue report snapshot error", r.raftGroup.GroupID)
-	}
-	r.scheduler.EnqueueState(stateStep, r.raftGroup.GroupID)
+func (r *replica) ReportSnapshot(nodeID uint64, status raft.SnapshotStatus) error {
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	r.mu.snapshotStatus[nodeID] = status
 	return nil
 }
 
-func (r *replica) EnqueueRaftStatus(resultCh chan raft.Status) error {
-	if err := r.requestQueue.raftStatus.Put(raftStatus{
-		resultCh: resultCh,
-	}); err != nil {
-		return errors.Wrapf(err, "GroupID[%d] enqueue raft status error", r.raftGroup.GroupID)
-	}
-	r.scheduler.EnqueueState(stateRaftStatus, r.raftGroup.GroupID)
-	return nil
+func (r *replica) RaftStatus() raft.Status {
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	return r.mu.rawNode.Status()
 }
 
-func (r *replica) EnqueueTransferLeader(transfereeID uint64) error {
-	if err := r.requestQueue.transferLeader.Put(transfereeID); err != nil {
-		return errors.Wrapf(err, "GroupID[%d] enqueue transfer leader error", r.raftGroup.GroupID)
-	}
-	r.scheduler.EnqueueState(stateRaftTransferLeader, r.raftGroup.GroupID)
-	return nil
+func (r *replica) TransferLeader(transfereeID uint64) {
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	r.mu.rawNode.TransferLeader(transfereeID)
 }
 
 func (r *replica) ClusterConfiguration() babuza.ClusterConfiguration {
@@ -217,37 +199,27 @@ func (r *replica) ClusterConfiguration() babuza.ClusterConfiguration {
 }
 
 func (r *replica) learnerReady(ctx context.Context, learnerId uint64) error {
-	resultCh := make(chan raft.Status, 1)
-	if err := r.EnqueueRaftStatus(resultCh); err != nil {
-		return errors.Wrapf(err, "GroupID[%d] enqueue raft status error", r.raftGroup.GroupID)
+	rs := r.RaftStatus()
+	if rs.Progress == nil {
+		return babuza.ErrNotLeader
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-r.closer.CloseCh():
-		return babuza.ErrStopped
-	case rs := <-resultCh:
-		if rs.Progress == nil {
-			return babuza.ErrNotLeader
+	var learnerMatch uint64
+	found := false
+	ClusterID := rs.ID
+	for peerID, progress := range rs.Progress {
+		if learnerId == peerID {
+			learnerMatch = progress.Match
+			found = true
+			break
 		}
-		var learnerMatch uint64
-		found := false
-		ClusterID := rs.ID
-		for peerID, progress := range rs.Progress {
-			if learnerId == peerID {
-				learnerMatch = progress.Match
-				found = true
-				break
-			}
-		}
-		if found {
-			leaderMatch := rs.Progress[ClusterID].Match
-			if float64(learnerMatch) < float64(leaderMatch)*r.config.LearnerReadyPercent {
-				return babuza.ErrLearnerNotReady
-			}
-		}
-		return nil
 	}
+	if found {
+		leaderMatch := rs.Progress[ClusterID].Match
+		if float64(learnerMatch) < float64(leaderMatch)*r.config.LearnerReadyPercent {
+			return babuza.ErrLearnerNotReady
+		}
+	}
+	return nil
 }
 
 func (r *replica) processReceivedSnapshotMessage() {
