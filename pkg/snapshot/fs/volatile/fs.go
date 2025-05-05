@@ -33,6 +33,8 @@ func (b *bytesFile) Close() error {
 	return nil
 }
 
+var _ api.SnapshotFileSystem = (*SnapshotFS)(nil)
+
 type SnapshotFS struct {
 	files map[string]*bytesFile
 	dirs  map[string]struct{}
@@ -40,7 +42,7 @@ type SnapshotFS struct {
 	mu    *sync.RWMutex
 }
 
-func NewFileSystem() api.SnapshotFileSystem {
+func NewFileSystem() *SnapshotFS {
 	return &SnapshotFS{
 		files: make(map[string]*bytesFile),
 		dirs:  make(map[string]struct{}),
@@ -299,4 +301,8 @@ func (fs *SnapshotFS) RemoveFilePath(path string) error {
 
 func (fs *SnapshotFS) PathHelper() api.PathHelper {
 	return fs.ph
+}
+
+func (fs *SnapshotFS) Close() error {
+	return nil
 }

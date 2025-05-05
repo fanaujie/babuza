@@ -11,14 +11,14 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"time"
 )
 
 const (
-	prefixLength = 16
-	keyHardState = 1
-	keySnapshot  = 2
-	keyEntry     = 3
-	keyMetadata  = 4
+	keyHardState = uint64(1)
+	keySnapshot  = uint64(2)
+	keyEntry     = uint64(3)
+	keyMetadata  = uint64(4)
 )
 
 type keyPrefix struct {
@@ -33,6 +33,7 @@ type BadgerWalManager struct {
 	logger    ibabuza.Logger
 	db        *badger.DB
 	keyPrefix *keyPrefix
+	stopCh    chan struct{}
 }
 
 type Config struct {
@@ -42,36 +43,66 @@ type Config struct {
 
 func newKeyPrefix(groupID ibabuza.RaftGroupID) *keyPrefix {
 	createKey := func(typeID uint64) []byte {
-		key := make([]byte, prefixLength)
+		if groupID == 0 {
+			key := make([]byte, 8)
+			binary.BigEndian.PutUint64(key, typeID)
+			return key
+		}
+		key := make([]byte, 16)
 		binary.BigEndian.PutUint64(key[:8], uint64(groupID))
 		binary.BigEndian.PutUint64(key[8:], typeID)
 		return key
 	}
 	createReverseKey := func(typeID uint64) []byte {
-		key := make([]byte, prefixLength)
+		if groupID == 0 {
+			key := make([]byte, 8)
+			binary.BigEndian.PutUint64(key, typeID)
+			return key
+		}
+		key := make([]byte, 16)
 		binary.BigEndian.PutUint64(key[:8], typeID)
 		binary.BigEndian.PutUint64(key[8:], uint64(groupID))
 		return key
 	}
 
 	return &keyPrefix{
-		hardState:       createKey(uint64(keyHardState)),
-		snapshot:        createKey(uint64(keySnapshot)),
-		entry:           createKey(uint64(keyEntry)),
-		metadata:        createKey(uint64(keyMetadata)),
-		reverseMetadata: createReverseKey(uint64(keyMetadata)),
+		hardState:       createKey(keyHardState),
+		snapshot:        createKey(keySnapshot),
+		entry:           createKey(keyEntry),
+		metadata:        createKey(keyMetadata),
+		reverseMetadata: createReverseKey(keyMetadata),
 	}
 }
 
+var _ ibabuza.WalManager = (*BadgerWalManager)(nil)
+
 func NewBadgerWalManager(config Config, logger ibabuza.Logger) *BadgerWalManager {
+	stopCh := make(chan struct{})
 	db, err := badger.Open(badger.DefaultOptions(config.WalDir).WithInMemory(config.InMemory))
 	if err != nil {
 		logger.Panicf("failed to open badger database: %v", err)
 	}
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+			again:
+				err := db.RunValueLogGC(0.7)
+				if err == nil {
+					goto again
+				}
+			}
+		}
+	}()
 	return &BadgerWalManager{
 		logger:    logger,
 		db:        db,
 		keyPrefix: newKeyPrefix(0),
+		stopCh:    stopCh,
 	}
 }
 
@@ -274,4 +305,9 @@ func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[s
 		}
 		return nil
 	})
+}
+
+func (m *BadgerWalManager) Close() error {
+	close(m.stopCh)
+	return m.db.Close()
 }

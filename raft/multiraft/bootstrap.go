@@ -21,9 +21,9 @@ const (
 )
 
 type ComponentsFactory interface {
-	CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID, log ibabuza.Logger) (ibabuza.BaseStateMachine, error)
-	CreateCluster(log ibabuza.Logger) ibabuza.Cluster
-	CreateSessionManager(log ibabuza.Logger) ibabuza.SessionManager
+	CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, error)
+	CreateCluster() ibabuza.Cluster
+	CreateSessionManager() ibabuza.SessionManager
 }
 
 func BootstrapOrRecoverNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
@@ -63,7 +63,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 	n := newNode(config, trans, storage, factory, logger)
 
 	for _, groupID := range restartGroupIDs {
-		replicaCluster := factory.CreateCluster(logger)
+		replicaCluster := factory.CreateCluster()
 		replicaStatus := status.New()
 		walSnapshots, err := storage.FindSnapshotFromWal(groupID)
 		if err != nil {
@@ -99,7 +99,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			return nil, err
 		}
 		//create session
-		replicaSession := factory.CreateSessionManager(logger)
+		replicaSession := factory.CreateSessionManager()
 		if err = replicaSession.SetResponseSerializer(applyResultSerializer); err != nil {
 			return nil, err
 		}
@@ -202,12 +202,12 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, configuration *babuza.PeersConfiguration,
 	joinExistingRaftGroup bool) (*replica, error) {
 
-	replicaCluster := node.factory.CreateCluster(node.logger)
+	replicaCluster := node.factory.CreateCluster()
 	replicaCluster.SetClusterID(uint64(groupID))      // clusterID is the same as group id
 	replicaCluster.SetLocalPeerID(node.config.NodeID) // localPeerID is the same as node id
 	replicaStatus := status.New()
 
-	replicaSession := node.factory.CreateSessionManager(node.logger)
+	replicaSession := node.factory.CreateSessionManager()
 
 	responseSerializer, err := node.storage.CreateStateMachine(groupID)
 	if err != nil {

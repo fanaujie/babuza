@@ -15,8 +15,10 @@ import (
 
 type BootstrapRaftCluster struct {
 	cluster          ibabuza.Cluster
-	storage          Storage
+	storage          RaftStorage
 	node             raft.Node
+	walManager       ibabuza.WalManager
+	snapshotManager  ibabuza.SnapshotManager
 	sessionMgr       ibabuza.SessionManager
 	trans            ibabuza.Transport
 	status           ibabuza.Status
@@ -70,6 +72,8 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig PeersConfigurat
 		cluster:          cluster,
 		storage:          storage,
 		node:             node,
+		walManager:       walManager,
+		snapshotManager:  snapshotManager,
 		sessionMgr:       sessions,
 		trans:            trans,
 		status:           raftStatus,

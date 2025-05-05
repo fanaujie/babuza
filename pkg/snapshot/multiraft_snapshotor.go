@@ -4,6 +4,8 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/durable"
+	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"path/filepath"
@@ -83,6 +85,17 @@ func (m *MultiRaftSnapshotManager) Purge(groupID ibabuza.RaftGroupID, snapshot r
 }
 
 func (m *MultiRaftSnapshotManager) GetGroupSnapshot(groupID ibabuza.RaftGroupID) ibabuza.SnapshotManager {
+
+	snapshotDir := m.getGroupSnapshotDir(groupID)
+	_, ok := m.fs.(*durable.SnapshotFS)
+	if ok {
+		if !fileutil.Exist(snapshotDir) {
+			if err := fileutil.CreateDirAndTouch(snapshotDir); err != nil {
+				m.logger.Panicf("failed to create snapshot dir %s: %v", snapshotDir, err)
+			}
+		}
+
+	}
 	return m.getOrCreateSnapshotor(groupID)
 }
 

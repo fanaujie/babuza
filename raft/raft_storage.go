@@ -20,7 +20,7 @@ type raftStorage struct {
 
 func NewRaftStorage(snapshotor ibabuza.SnapshotManager, wal ibabuza.Wal,
 	entryStorage ibabuza.EntryStorage, stateMachine ibabuza.BaseStateMachine,
-	bsmInfo *BasedStateMachineInfo) Storage {
+	bsmInfo *BasedStateMachineInfo) RaftStorage {
 	return &raftStorage{
 		snapshotor:   snapshotor,
 		wal:          wal,
@@ -210,14 +210,6 @@ func (s *raftStorage) EntryStorageInfo() (lastIndex uint64, lastTerm uint64, sna
 		return 0, 0, raftpb.Snapshot{}, err
 	}
 	return
-}
-
-func (s *raftStorage) Close() error {
-	me := multierror.New()
-	me.Append(s.stateMachine.Close())
-	me.Append(s.wal.Close())
-	me.Append(s.snapshotor.Close())
-	return me.Get()
 }
 
 func (s *raftStorage) GetStateMachineAppliedIndex() uint64 {

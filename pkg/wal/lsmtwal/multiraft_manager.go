@@ -18,6 +18,7 @@ type MultiRaftBadgerWalManager struct {
 	logger      ibabuza.Logger
 	db          *badger.DB
 	prefixCache *keyPrefixCache
+	stopCh      chan struct{}
 }
 
 type GroupEntryDataReader struct {
@@ -40,15 +41,16 @@ func NewMultiRaftBadgerWalManager(config MultiRaftConfig, logger ibabuza.Logger)
 	if err != nil {
 		logger.Panicf("failed to open badger database: %v", err)
 	}
-
+	stopCh := make(chan struct{})
 	manager := &MultiRaftBadgerWalManager{
 		logger:      logger,
 		db:          db,
 		prefixCache: newKeyPrefixCache(config.KeyPrefixCacheSize),
+		stopCh:      stopCh,
 	}
 
 	// Start a background goroutine to run value log GC periodically
-	stopCh := make(chan struct{})
+
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -308,4 +310,9 @@ func (m *MultiRaftBadgerWalManager) ReadEntriesData(groupID ibabuza.RaftGroupID,
 
 		return nil
 	})
+}
+
+func (m *MultiRaftBadgerWalManager) Close() error {
+	close(m.stopCh)
+	return m.db.Close()
 }

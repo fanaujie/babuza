@@ -135,7 +135,7 @@ func (s *bootstrapStorage) GetApplyResultSerializer() ibabuza.ResponseSerializer
 	return nil
 }
 
-func (s *bootstrapStorage) GetRaftStorage() (Storage, error) {
+func (s *bootstrapStorage) GetRaftStorage() (RaftStorage, error) {
 	if s.wal == nil {
 		return nil, errors.New("storage: wal is nil")
 	}

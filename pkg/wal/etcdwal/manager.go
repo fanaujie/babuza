@@ -18,8 +18,11 @@ import (
 
 type WalManager struct {
 	walDir string
+	wal    *wal.WAL
 	logger *zap.Logger
 }
+
+var _ ibabuza.WalManager = (*WalManager)(nil)
 
 func NewWalManager(walDir string, logger *zap.Logger) *WalManager {
 	return &WalManager{
@@ -42,6 +45,7 @@ func (e *WalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.EntryStor
 		return nil, nil, err
 	}
 	wrapper := WalWrapper{WAL: w}
+	e.wal = w
 	return raft.NewMemoryStorage(), &wrapper, nil
 }
 
@@ -90,6 +94,7 @@ func (e *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool
 	if err = m.Append(result.GetEntries()); err != nil {
 		return nil, nil, nil, err
 	}
+	e.wal = w
 	return m, NewWalWrapper(w), result, nil
 }
 
@@ -133,4 +138,11 @@ func (e *WalManager) PurgeWals(purgeCfg ibabuza.WalPurgeConfig) {
 			}
 		}()
 	}
+}
+
+func (e *WalManager) Close() error {
+	if e.wal != nil {
+		return e.wal.Close()
+	}
+	return nil
 }

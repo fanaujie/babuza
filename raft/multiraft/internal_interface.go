@@ -44,5 +44,6 @@ type BootstrapStorage interface {
 	CreateStateMachine(groupID ibabuza.RaftGroupID) (ibabuza.ResponseSerializer, error)
 	OpenStateMachine(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot) (ibabuza.ResponseSerializer, error)
 	SetWalNoFSync(groupID ibabuza.RaftGroupID) error
-	GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuza.Storage, error)
+	GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuza.RaftStorage, error)
+	Close() error
 }

@@ -6,39 +6,20 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/lsmtwal/storage"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
-	"time"
 )
 
 type BadgerWal struct {
 	db        *badger.DB
 	es        *storage.EntryStorage
 	noFsync   bool
-	stopCh    chan struct{}
 	keyPrefix *keyPrefix
 }
 
 func NewBadgerWal(db *badger.DB, es *storage.EntryStorage, keyPrefix *keyPrefix) *BadgerWal {
-	stopCh := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stopCh:
-				return
-			case <-ticker.C:
-			again:
-				err := db.RunValueLogGC(0.7)
-				if err == nil {
-					goto again
-				}
-			}
-		}
-	}()
+
 	return &BadgerWal{
 		db:        db,
 		es:        es,
-		stopCh:    stopCh,
 		keyPrefix: keyPrefix,
 	}
 }
@@ -153,7 +134,6 @@ func (w *BadgerWal) Sync() error {
 }
 
 func (w *BadgerWal) Close() error {
-	close(w.stopCh)
 	return nil
 }
 

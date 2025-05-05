@@ -60,7 +60,7 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
 
-		ar := res.WaitForResult()
+		ar := res.WaitForApplyResult()
 		assert.Nil(t, ar.Error)
 		assert.Equal(t, uint64(100), ar.LogIndex)
 		assert.Equal(t, uint64(1000), ar.Response.(uint64))
@@ -78,7 +78,7 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		closer.Close()
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
-		ar := res.WaitForResult()
+		ar := res.WaitForApplyResult()
 		assert.Equal(t, ErrStopped, ar.Error)
 	})
 
@@ -100,7 +100,7 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		}
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
-		ar := res.WaitForResult()
+		ar := res.WaitForApplyResult()
 		assert.Equal(t, ErrNotLeader, ar.Error)
 	})
 }

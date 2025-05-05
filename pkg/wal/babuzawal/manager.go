@@ -81,7 +81,9 @@ func SetOptsWithWalDisableEntryIndex(d bool) SetOptions {
 	}
 }
 
-func NewWalManager(walDir string, logger ibabuza.Logger, setOptions ...SetOptions) ibabuza.WalManager {
+var _ ibabuza.WalManager = (*WalManager)(nil)
+
+func NewWalManager(walDir string, logger ibabuza.Logger, setOptions ...SetOptions) *WalManager {
 	opts := defaultOptions()
 	for _, s := range setOptions {
 		s(&opts)
@@ -113,3 +115,7 @@ func (w *WalManager) HasExistingWals() (bool, error) {
 }
 
 func (w *WalManager) PurgeWals(purgeCfg ibabuza.WalPurgeConfig) {}
+
+func (w *WalManager) Close() error {
+	return nil
+}

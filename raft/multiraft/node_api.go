@@ -77,6 +77,7 @@ func (n *Node) Stop() {
 	for _, r := range n.replicaSet.replica {
 		r.Stop()
 	}
+	n.storage.Close()
 	n.replicaSet.replica = make(map[ibabuza.RaftGroupID]*replica)
 }
 

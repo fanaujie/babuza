@@ -26,10 +26,10 @@ type BootstrapStorage interface {
 	OpenStateMachine(snapshot *raftpb.Snapshot) error
 	GetEntryStorage() (ibabuza.EntryStorage, error)
 	GetApplyResultSerializer() ibabuza.ResponseSerializer
-	GetRaftStorage() (Storage, error)
+	GetRaftStorage() (RaftStorage, error)
 }
 
-type Storage interface {
+type RaftStorage interface {
 	Save(hs raftpb.HardState, entries []raftpb.Entry, snapshot raftpb.Snapshot) error
 	CompactAndReleaseSnapshot(index uint64, snapshot raftpb.Snapshot) error
 	ApplyAndReleaseSnapshot(snapshot raftpb.Snapshot) error
@@ -47,7 +47,6 @@ type Storage interface {
 	SupportConcurrentSnapshot() bool
 	CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error)
 	GetStateMachine() ibabuza.BaseStateMachine
-	Close() error
 }
 
 type InternalIdGenerator interface {

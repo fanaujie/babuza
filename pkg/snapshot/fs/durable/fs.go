@@ -15,7 +15,9 @@ type SnapshotFS struct {
 	ph api.PathHelper
 }
 
-func NewSnapshotFS() api.SnapshotFileSystem {
+var _ api.SnapshotFileSystem = (*SnapshotFS)(nil)
+
+func NewSnapshotFS() *SnapshotFS {
 	return &SnapshotFS{
 		ph: api.NewPathHelper("temp-writer", "temp-receiver", "snapshot"),
 	}
@@ -207,4 +209,8 @@ func (fs *SnapshotFS) RemoveFilePath(path string) error {
 
 func (fs *SnapshotFS) PathHelper() api.PathHelper {
 	return fs.ph
+}
+
+func (fs *SnapshotFS) Close() error {
+	return nil
 }

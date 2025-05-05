@@ -38,7 +38,9 @@ type Config struct {
 	Prefix          string
 }
 
-func NewMinioSnapshotFS(config Config) (api.SnapshotFileSystem, error) {
+var _ api.SnapshotFileSystem = (*MinIOSnapshotFS)(nil)
+
+func NewMinioSnapshotFS(config Config) (*MinIOSnapshotFS, error) {
 	client, err := minio.New(config.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(config.AccessKeyID, config.SecretAccessKey, ""),
 		Secure: config.UseSSL,
@@ -398,4 +400,8 @@ func (fs *MinIOSnapshotFS) RemoveFilePath(path string) error {
 
 func (fs *MinIOSnapshotFS) PathHelper() api.PathHelper {
 	return fs.ph
+}
+
+func (fs *MinIOSnapshotFS) Close() error {
+	return nil
 }

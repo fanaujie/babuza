@@ -94,3 +94,8 @@ func (m *MultiRaftWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {
 func (m *MultiRaftWalManager) PurgeWals(config ibabuza.WalPurgeConfig) {
 
 }
+
+func (m *MultiRaftWalManager) Close() error {
+	// No resources to close in this implementation
+	return nil
+}

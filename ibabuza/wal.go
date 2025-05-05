@@ -37,6 +37,7 @@ type WalManager interface {
 		Wal, ReplayWalResult, error)
 	HasExistingWals() (bool, error)
 	PurgeWals(WalPurgeConfig)
+	Close() error
 }
 
 type EntryStorage interface {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -12,7 +13,7 @@ import (
 )
 
 type stateMachineFactory interface {
-	CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID, log ibabuza.Logger) (ibabuza.BaseStateMachine, error)
+	CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, error)
 }
 
 type raftStateMachineWrapper struct {
@@ -173,7 +174,7 @@ func (s *bootstrapStorage) SetWalNoFSync(groupID ibabuza.RaftGroupID) error {
 	return errors.Errorf("wal not found for groupID %v", groupID)
 }
 
-func (s *bootstrapStorage) GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuza.Storage, error) {
+func (s *bootstrapStorage) GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuza.RaftStorage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	snapshotManager := s.snapshotManager.GetGroupSnapshot(groupID)
@@ -196,8 +197,15 @@ func (s *bootstrapStorage) GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuz
 	return babuza.NewRaftStorage(snapshotManager, wal, entryStorage, wrapper.stateMachine, wrapper.bsmInfo), nil
 }
 
+func (s *bootstrapStorage) Close() error {
+	m := multierror.New()
+	m.Append(s.walManager.Close())
+	m.Append(s.snapshotManager.Close())
+	return m.Get()
+}
+
 func (s *bootstrapStorage) createStateMachineInternal(groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, *babuza.BasedStateMachineInfo, ibabuza.ResponseSerializer, error) {
-	stateMachine, err := s.stateMachineFactory.CreateStateMachine(s.stateMachineRootDir, groupID, s.logger)
+	stateMachine, err := s.stateMachineFactory.CreateStateMachine(s.stateMachineRootDir, groupID)
 	if err != nil {
 		return nil, nil, nil, err
 	}

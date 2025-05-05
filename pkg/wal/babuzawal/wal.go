@@ -304,8 +304,3 @@ func (w *Wal) tailLogFileDesc() iwal.LogFileDesc {
 	}
 	return f
 }
-
-func makeBrokenFile(fm iwal.LogFileDesc) error {
-
-	return nil
-}

@@ -80,6 +80,8 @@ func (s Status) IsLeader() bool {
 type Raft struct {
 	config                    BabuzaConfig
 	cluster                   ibabuza.Cluster
+	walManager                ibabuza.WalManager
+	snapshotManager           ibabuza.SnapshotManager
 	sessionMgr                ibabuza.SessionManager
 	idGenerator               InternalIdGenerator
 	resultReplier             InternalResultReplier
@@ -87,7 +89,7 @@ type Raft struct {
 	raftNode                  raft.Node
 	status                    ibabuza.Status
 	trans                     ibabuza.Transport
-	storage                   Storage
+	storage                   RaftStorage
 	logger                    ibabuza.Logger
 	metricsCollector          ibabuza.MetricsCollector
 	appliedFacade             InternalAppliedFacade
@@ -112,6 +114,8 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 	r := &Raft{
 		config:                    cfg,
 		cluster:                   bootstrap.cluster,
+		walManager:                bootstrap.walManager,
+		snapshotManager:           bootstrap.snapshotManager,
 		sessionMgr:                bootstrap.sessionMgr,
 		idGenerator:               idgenerator.New(cfg.LocalPeerID, uint64(time.Now().Nanosecond())),
 		resultReplier:             replier.NewResult[ibabuza.ApplyResult](),
@@ -439,6 +443,8 @@ func (r *Raft) stop() {
 		r.raftNode.Stop()
 		r.trans.Stop()
 		r.closer.Close()
-		r.storage.Close()
+		r.walManager.Close()
+		r.snapshotManager.Close()
+		r.storage.GetStateMachine().Close()
 	})
 }

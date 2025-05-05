@@ -87,7 +87,7 @@ type replica struct {
 	transport                 ibabuza.MultiRaftTransport
 	status                    ibabuza.Status
 	session                   ibabuza.SessionManager
-	storage                   babuza.Storage
+	storage                   babuza.RaftStorage
 	appliedFacade             babuza.InternalAppliedFacade
 	rawNode                   *raft.RawNode
 	idGenerator               babuza.InternalIdGenerator
@@ -116,6 +116,7 @@ func (r *replica) Stop() {
 	r.closer.Close()
 	r.requestQueue.Dispose()
 	r.applyJobQueue.Stop()
+	r.storage.GetStateMachine().Close()
 }
 
 func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {

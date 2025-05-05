@@ -44,6 +44,7 @@ type MultiRaftWalManager interface {
 		Wal, ReplayWalResult, error)
 	HasExistingWals() ([]RaftGroupID, error)
 	PurgeWals(WalPurgeConfig)
+	Close() error
 }
 
 type MultiRaftSnapshotManager interface {
