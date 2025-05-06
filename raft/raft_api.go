@@ -29,6 +29,7 @@ type ClientSession struct {
 type ClusterConfiguration struct {
 	ClusterID uint64
 	LeaderID  uint64
+	GroupID   uint64
 	Peers     []babuzapb.Peer
 }
 
@@ -60,6 +61,7 @@ type Status struct {
 	State              RaftState
 	ClusterID          uint64
 	LocalPeerID        uint64
+	GroupID            uint64
 	LeaderID           uint64
 	RaftTerm           uint64
 	RaftCommittedIndex uint64

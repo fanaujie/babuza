@@ -256,6 +256,7 @@ func (n *Node) Status(groupID ibabuza.RaftGroupID) (babuza.Status, error) {
 		ClusterID:          r.cluster.ClusterID(),
 		LocalPeerID:        r.cluster.LocalPeerID(),
 		LeaderID:           leaderID,
+		GroupID:            uint64(r.cluster.GroupID()),
 		RaftTerm:           r.status.GetHardStateTerm(),
 		RaftCommittedIndex: r.status.GetCommittedIndex(),
 		RaftAppliedIndex:   r.status.GetAppliedIndex(),

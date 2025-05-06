@@ -268,7 +268,8 @@ func (p *MultiRaftPeerImpl) sendSnapshotMessageLoop(snapMsg babuzapb.MultiRaftMe
 	}
 
 	m := babuzapb.SnapshotMessage{
-		ClusterID: snapMsg.GroupID,
+		ClusterID: snapMsg.ClusterID,
+		GroupID:   snapMsg.GroupID,
 		From:      snapMsg.Message.From,
 		To:        snapMsg.Message.To,
 		Term:      snapMsg.Message.Snapshot.Metadata.Term,
@@ -349,7 +350,8 @@ func (p *MultiRaftPeerImpl) groupMessagesByGroupID(messages []babuzapb.MultiRaft
 
 	for groupID, msgs := range groupMap {
 		outputResult = append(outputResult, babuzapb.BatchMessage{
-			ClusterID: groupID,
+			ClusterID: messages[0].ClusterID,
+			GroupID:   groupID,
 			Messages:  msgs,
 		})
 	}

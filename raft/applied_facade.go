@@ -37,6 +37,7 @@ type AppliedReplier interface {
 
 type AppliedCluster interface {
 	ClusterID() uint64
+	GroupID() ibabuza.RaftGroupID
 	LocalPeerID() uint64
 	Add(babuzapb.RaftPeerAttribute) error
 	Update(babuzapb.RaftPeerAttribute) error
@@ -211,10 +212,10 @@ func (a *appliedFacadeImpl) parseConfChangeEntry(entry raftpb.Entry) (raftpb.Con
 func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babuzapb.ConfChangeRequest) (*raftpb.ConfState, bool, error) {
 	if err := a.clusterValidateAndApply(cc.Type, confReq); err != nil {
 		cc.NodeID = raft.None
-		_, _ = a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
+		_, _ = a.raftNode.ApplyConfChange(uint64(a.cluster.GroupID()), cc)
 		return nil, false, err
 	}
-	applyResult, err := a.raftNode.ApplyConfChange(a.cluster.ClusterID(), cc)
+	applyResult, err := a.raftNode.ApplyConfChange(uint64(a.cluster.GroupID()), cc)
 	if err != nil {
 		return nil, false, err
 	}

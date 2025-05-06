@@ -44,7 +44,6 @@ func TestRaft_PubAppService_FindLeader(t *testing.T) {
 
 func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-
 		closer := syncutil.NewCloser()
 		r := &Raft{
 			raftNode:         newMockRaftNode(),
@@ -53,13 +52,12 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 			status:           status.New(),
 			closer:           closer,
 		}
+		res := r.proposalPubAppService(context.Background(), 1, nil)
+		defer res.Release()
 		r.resultReplier.SendResult(1, ibabuza.ApplyResult{
 			LogIndex: uint64(100),
 			Response: uint64(1000),
 		})
-		res := r.proposalPubAppService(context.Background(), 1, nil)
-		defer res.Release()
-
 		ar := res.WaitForApplyResult()
 		assert.Nil(t, ar.Error)
 		assert.Equal(t, uint64(100), ar.LogIndex)

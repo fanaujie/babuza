@@ -11,12 +11,14 @@ type ClusterRestoreSnapshot interface {
 
 type Cluster interface {
 	SetClusterID(clusterID uint64)
+	SetGroupID(groupID RaftGroupID)
 	SetLocalPeerID(localPeerID uint64)
 	Peer(peerID uint64) (babuzapb.Peer, error)
 	Snapshot(io.Writer) error
 	Restore(io.Reader) error
 	Peers() []babuzapb.Peer
 	ClusterID() uint64
+	GroupID() RaftGroupID
 	LocalPeerID() uint64
 	Add(babuzapb.RaftPeerAttribute) error
 	Update(babuzapb.RaftPeerAttribute) error

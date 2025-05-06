@@ -197,14 +197,15 @@ func startNode(cfg BabuzaConfig, configuration PeersConfiguration, raftNode ibab
 		}
 	}
 	if cfg.Join {
-		client, err := trans.CreateTransportClient()
-		if err != nil {
-			return nil, err
-		}
 		if err = func() error {
+			client, err := trans.CreateTransportClient()
+			if err != nil {
+				return err
+			}
+			defer client.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 			defer cancel()
-			return configuration.MatchRemoteCluster(ctx, cfg.ClusterID, cfg.LocalPeerID, client)
+			return configuration.MatchRemoteCluster(ctx, cfg.ClusterID, cfg.LocalPeerID, 0, client)
 		}(); err != nil {
 			return nil, err
 		}

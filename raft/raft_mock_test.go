@@ -150,6 +150,8 @@ func (m *mockCluster) SetClusterID(clusterID uint64) {
 func (m *mockCluster) SetLocalPeerID(localPeerID uint64) {
 }
 
+func (m *mockCluster) SetGroupID(groupID ibabuza.RaftGroupID) {}
+
 func (m *mockCluster) Peer(peerID uint64) (babuzapb.Peer, error) {
 	return babuzapb.Peer{}, nil
 }
@@ -173,6 +175,8 @@ func (m *mockCluster) ClusterID() uint64 {
 func (m *mockCluster) LocalPeerID() uint64 {
 	return 0
 }
+
+func (m *mockCluster) GroupID() ibabuza.RaftGroupID { return 0 }
 
 func (m *mockCluster) Add(attribute babuzapb.RaftPeerAttribute) error {
 	return nil
@@ -497,73 +501,3 @@ func newTestRaft(nodeId uint64) *Raft {
 		closer:                    syncutil.NewCloser(),
 	}
 }
-
-type KvStoreInput struct {
-	Command uint64 // 0 => get, 1 => set, 2 => append, 3=>delete
-	Key     string
-	Value   string
-}
-
-type KvStoreOutput struct {
-	Value string
-}
-
-//
-//var KvStoreModel = porcupine.Model{
-//	Partition: func(history []porcupine.Operation) [][]porcupine.Operation {
-//		m := make(map[string][]porcupine.Operation)
-//		for _, v := range history {
-//			key := v.Input.(KvStoreInput).Key
-//			m[key] = append(m[key], v)
-//		}
-//		keys := make([]string, 0, len(m))
-//		for k := range m {
-//			keys = append(keys, k)
-//		}
-//		sort.Strings(keys)
-//		ret := make([][]porcupine.Operation, 0, len(keys))
-//		for _, k := range keys {
-//			ret = append(ret, m[k])
-//		}
-//		return ret
-//	},
-//	Init: func() interface{} {
-//		return ""
-//	},
-//	Step: func(state, input, output interface{}) (bool, interface{}) {
-//		kvInput := input.(KvStoreInput)
-//		kvOutput := output.(KvStoreOutput)
-//		st := state.(string)
-//		switch kvInput.Command {
-//		case 0:
-//			return kvOutput.Value == st, state
-//		case 1:
-//			return true, kvInput.Value
-//		case 2:
-//			return true, st + kvInput.Value
-//		case 3:
-//			return true, ""
-//		default:
-//			panic("porcupine.Model: not support command of kvstore")
-//		}
-//	},
-//	Equal: func(state1, state2 interface{}) bool {
-//		return state1 == state2
-//	},
-//	DescribeOperation: func(input, output interface{}) string {
-//		kvInput := input.(KvStoreInput)
-//		kvOutput := output.(KvStoreOutput)
-//		switch kvInput.Command {
-//		case 0:
-//			return fmt.Sprintf("get('%s') -> '%s'", kvInput.Key, kvOutput.Value)
-//		case 1:
-//			return fmt.Sprintf("put('%s', '%s')", kvInput.Key, kvInput.Value)
-//		case 2:
-//			return fmt.Sprintf("append('%s', '%s')", kvInput.Key, kvInput.Value)
-//		case 3:
-//			return fmt.Sprintf("delete('%s')", kvInput.Key)
-//		default:
-//			return "<invalid>"
-//		}
-//	},
-//}

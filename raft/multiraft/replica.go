@@ -194,6 +194,7 @@ func (r *replica) ClusterConfiguration() babuza.ClusterConfiguration {
 	return babuza.ClusterConfiguration{
 		ClusterID: r.cluster.ClusterID(),
 		LeaderID:  r.status.CloneSoftState().Lead,
+		GroupID:   uint64(r.cluster.GroupID()),
 		Peers:     r.cluster.Peers(),
 	}
 }

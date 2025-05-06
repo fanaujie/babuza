@@ -96,6 +96,7 @@ message ConfChangeRequest {
 }
 
 message WalMetadata {
-  uint64  clusterID = 1;
+  uint64  clusterID   = 1;
   uint64  localPeerID = 2;
+  uint64  groupID     = 3;
 }

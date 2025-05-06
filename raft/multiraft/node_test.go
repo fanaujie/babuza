@@ -28,15 +28,15 @@ import (
 	"time"
 )
 
-const CounterSnapshotTag = "counter-state-machine"
-
 type CounterOperationType string
 
 const (
-	Increment CounterOperationType = "increment"
-	Decrement CounterOperationType = "decrement"
-	Reset     CounterOperationType = "reset"
-	GetValue  CounterOperationType = "get"
+	ClusterID          uint64               = 10000
+	CounterSnapshotTag                      = "counter-state-machine"
+	Increment          CounterOperationType = "increment"
+	Decrement          CounterOperationType = "decrement"
+	Reset              CounterOperationType = "reset"
+	GetValue           CounterOperationType = "get"
 )
 
 type CounterCommand struct {
@@ -187,7 +187,7 @@ func createNodeManager(cConfig customConfig, rootDir string, configuration *babu
 	}
 	nm := NewNodeManager()
 	if err := configuration.Visit(func(attribute babuzapb.RaftPeerAttribute) error {
-		node, err := createNode(100, attribute.Id, cConfig, attribute.RaftListenAddr,
+		node, err := createNode(ClusterID, attribute.Id, cConfig, attribute.RaftListenAddr,
 			filepath.Join(rootDir, fmt.Sprintf("%d", attribute.Id)))
 		if err != nil {
 			return err
@@ -323,7 +323,7 @@ func TestBootstrap(t *testing.T) {
 	assert.Equal(t, 1, len(groupIDs))
 	assert.Equal(t, raftGroup2, groupIDs[0])
 	//wait for leader election
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("group1 leader: %d", group1LeaderID)
@@ -404,7 +404,7 @@ func TestRecover(t *testing.T) {
 	assert.Equal(t, 1, len(groupIDs))
 	assert.Equal(t, raftGroup2, groupIDs[0])
 	//wait for leader election
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("group1 leader: %d", group1LeaderID)
@@ -446,7 +446,7 @@ func TestRecover(t *testing.T) {
 		assert.NoError(t, n.Start())
 	}
 	// wait for leader election
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 	group1LeaderID, err = nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("rastart group1 leader: %d", group1LeaderID)
@@ -493,7 +493,7 @@ func TestJoinVotingGroup(t *testing.T) {
 	assert.Equal(t, 1, len(groupIDs))
 	assert.Equal(t, raftGroup1, groupIDs[0])
 	//wait for leader election
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("group1 leader: %d", group1LeaderID)
@@ -521,7 +521,7 @@ func TestJoinVotingGroup(t *testing.T) {
 	assert.NoError(t, node3.CreateRaftGroup(raftGroup1, peersConfig, true))
 
 	//wait for node3 to join group1 and apply the command
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 	groupIDs = node3.GetGroupIDs()
 	assert.Equal(t, 1, len(groupIDs))
 	assert.Equal(t, raftGroup1, groupIDs[0])
@@ -570,7 +570,7 @@ func TestRemoveVotingGroup(t *testing.T) {
 	assert.Equal(t, 1, len(groupIDs))
 	assert.Equal(t, raftGroup1, groupIDs[0])
 	//wait for leader election
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("group1 leader: %d", group1LeaderID)
@@ -646,7 +646,8 @@ func TestJoinLearnerAndPromoteLearner(t *testing.T) {
 	groupIDs = node2.GetGroupIDs()
 	assert.Equal(t, 1, len(groupIDs))
 	assert.Equal(t, raftGroup1, groupIDs[0])
-	time.Sleep(time.Second * 3)
+	//wait for leader election
+	time.Sleep(time.Second * 5)
 	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("group1 leader: %d", group1LeaderID)
@@ -734,7 +735,7 @@ func TestTransferLeader(t *testing.T) {
 	assert.NoError(t, node3.CreateRaftGroup(raftGroup2, peersConfig, false))
 
 	//wait for leader election
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("group1 leader: %d", group1LeaderID)
@@ -824,7 +825,7 @@ func TestSnapshot(t *testing.T) {
 	assert.Equal(t, 1, len(groupIDs))
 	assert.Equal(t, raftGroup1, groupIDs[0])
 	//wait for leader election
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("group1 leader: %d", group1LeaderID)
@@ -861,7 +862,7 @@ func TestSnapshot(t *testing.T) {
 	assert.NoError(t, node3.CreateRaftGroup(raftGroup1, peersConfig, true))
 
 	//wait for node3 to join group1 and apply the command
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second)
 	for _, n := range nm.GetAllNodes() {
 		n.replicaSet.Range(func(key, value interface{}) bool {
 			r := value.(*replica)
@@ -881,7 +882,7 @@ func TestSnapshot(t *testing.T) {
 	node3.Stop()
 	assert.NoError(t, nm.Remove(3))
 
-	node3, err = createNode(100, peer3.Id, cConfig, peer3.RaftListenAddr,
+	node3, err = createNode(ClusterID, peer3.Id, cConfig, peer3.RaftListenAddr,
 		filepath.Join(rootDir, fmt.Sprintf("%d", peer3.Id)))
 	assert.NoError(t, err)
 	assert.NoError(t, node3.Start())

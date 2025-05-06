@@ -123,13 +123,12 @@ func (c *PeersConfiguration) Visit(visitor func(babuzapb.RaftPeerAttribute) erro
 }
 
 func (c *PeersConfiguration) MatchRemoteCluster(remoteCtx context.Context, clusterID, fromID uint64,
-	client ibabuza.TransportClient) error {
+	groupID ibabuza.RaftGroupID, client ibabuza.TransportClient) error {
 	req := babuzapb.GetClusterPeersRequest{
 		ClusterID: clusterID,
+		GroupID:   uint64(groupID),
 		From:      fromID,
 	}
-	defer client.Close()
-
 	for _, raftPeerAttr := range c.RaftPeersAttribute() {
 		if raftPeerAttr.Id == fromID {
 			continue

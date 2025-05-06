@@ -18,7 +18,8 @@ option (gogoproto.goproto_sizecache_all) = false;
 
 message BatchMessage {
   uint64  clusterID = 1;
-  repeated raftpb.Message  messages = 2 [(gogoproto.nullable) = false];
+  uint64  groupID = 2;
+  repeated raftpb.Message  messages = 3 [(gogoproto.nullable) = false];
 }
 
 message SnapshotChunkMessage {
@@ -32,13 +33,14 @@ message SnapshotChunkMessage {
 
 message SnapshotMessage {
   uint64    clusterID     = 1;
-  uint64    from          = 2;
-  uint64    to            = 3;
-  uint64    term          = 4;
-  uint64    index         = 5;
-  babuza.SnapshotMetadata metadata      = 6 [(gogoproto.nullable) = false];
-  SnapshotChunkMessage    chunkMessage  = 7 [(gogoproto.nullable) = false];
-  raftpb.Message          finishMessage = 8 [(gogoproto.nullable) = false];
+  uint64    groupID       = 2;
+  uint64    from          = 4;
+  uint64    to            = 5;
+  uint64    term          = 6;
+  uint64    index         = 7;
+  babuza.SnapshotMetadata metadata      = 8 [(gogoproto.nullable) = false];
+  SnapshotChunkMessage    chunkMessage  = 9 [(gogoproto.nullable) = false];
+  raftpb.Message          finishMessage = 10 [(gogoproto.nullable) = false];
 }
 
 enum RpcStatus {
@@ -49,8 +51,9 @@ enum RpcStatus {
 
 message GetClusterPeersRequest {
   uint64  clusterID = 1;
-  uint64  from      = 2;
-  uint64  to        = 3;
+  uint64  groupID   = 2;
+  uint64  from      = 3;
+  uint64  to        = 4;
 }
 
 message GetClusterPeersResponse {
@@ -61,10 +64,11 @@ message GetClusterPeersResponse {
 
 message PublishApplicationServiceRequest {
   uint64  clusterID        = 1;
-  uint64  from             = 2;
-  uint64  to               = 3;
-  uint64  proposalReplyID  = 4;
-  repeated string appServiceAddresses  = 5;
+  uint64  groupID          = 2;
+  uint64  from             = 3;
+  uint64  to               = 4;
+  uint64  proposalReplyID  = 5;
+  repeated string appServiceAddresses  = 6;
 }
 
 message PublishApplicationServiceResponse {
@@ -74,6 +78,7 @@ message PublishApplicationServiceResponse {
 
 
 message MultiRaftMessage {
-  uint64  groupID = 1;
-  raftpb.Message  message = 2 [(gogoproto.nullable) = false];
+  uint64  clusterID = 1;
+  uint64  groupID = 2;
+  raftpb.Message  message = 3 [(gogoproto.nullable) = false];
 }

@@ -43,7 +43,7 @@ func (r *replica) ProcessReady() {
 		if waitWALSync {
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
 				r.logger.Panicf("groupID[%d] raft[id=%d] save hard state, entries and snapshot failed: %v",
-					r.cluster.ClusterID(), r.cluster.LocalPeerID(), err)
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 		}
 
@@ -56,7 +56,7 @@ func (r *replica) ProcessReady() {
 				r.doApplyJob(applyData)
 			}); err != nil {
 				r.logger.Panicf("groupID[%d] raft[id=%d]: error putting apply job: %v",
-					r.cluster.ClusterID(), r.cluster.LocalPeerID(), err)
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 		}
 		if isLeader {
@@ -66,25 +66,25 @@ func (r *replica) ProcessReady() {
 		if !waitWALSync {
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
 				r.logger.Panicf("groupID[%d] raft[id=%d] save hard state, entries and snapshot failed: %v",
-					r.cluster.ClusterID(), r.cluster.LocalPeerID(), err)
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 		}
 
 		if !emptySnapshot {
 			if err := r.storage.ApplyAndReleaseSnapshot(rd.Snapshot); err != nil {
-				r.logger.Panicf("groupID[%d] raft[id=%d]: apply snapshot failed: %v", r.cluster.ClusterID(),
+				r.logger.Panicf("groupID[%d] raft[id=%d]: apply snapshot failed: %v", r.cluster.GroupID(),
 					r.cluster.LocalPeerID(), err)
 			}
 		}
 		if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
-			r.logger.Panicf("groupID[%d] raft[id=%d]: append entries failed: %v", r.cluster.ClusterID(),
+			r.logger.Panicf("groupID[%d] raft[id=%d]: append entries failed: %v", r.cluster.GroupID(),
 				r.cluster.LocalPeerID(), err)
 		}
 		// The applyConfChangeEntry must be handled here to ensure the leader sends out messages (e.g., removing a follower) first.
 		// This guarantees that the follower receives the message before the configuration change is actually applied.
 		if r.applyConfChangeEntry(rd.CommittedEntries) {
 			r.replicaEventCh <- replicaEvent{
-				groupID: ibabuza.RaftGroupID(r.cluster.ClusterID()),
+				groupID: r.cluster.GroupID(),
 				event:   eventRemovePeer,
 			}
 			return
@@ -102,7 +102,7 @@ func (r *replica) ProcessStep() {
 	}
 	items, err := r.requestQueue.step.Get()
 	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting step: %v", r.cluster.ClusterID(),
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting step: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 		return
 	}
@@ -112,7 +112,7 @@ func (r *replica) ProcessStep() {
 	for _, m := range items.Data {
 		for _, msg := range m.Messages {
 			if err = r.mu.rawNode.Step(msg); err != nil {
-				r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.ClusterID(),
+				r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.GroupID(),
 					r.cluster.LocalPeerID(), err)
 			}
 		}
@@ -125,7 +125,7 @@ func (r *replica) ProcessProposal() {
 	}
 	items, err := r.requestQueue.proposal.Get()
 	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting proposals: %v", r.cluster.ClusterID(),
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting proposals: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 		return
 	}
@@ -142,7 +142,7 @@ func (r *replica) ProcessProposal() {
 			r.resultReplier.SendResult(item.replyID, ibabuza.ApplyResult{
 				Error: err,
 			})
-			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.ClusterID(),
+			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.GroupID(),
 				r.cluster.LocalPeerID(), err)
 		}
 		poolReleaseProposal(item)
@@ -155,7 +155,7 @@ func (r *replica) ProcessConfigChange() {
 	}
 	items, err := r.requestQueue.configChange.Get()
 	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting config change: %v", r.cluster.ClusterID(),
+		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting config change: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 		return
 	}
@@ -172,7 +172,7 @@ func (r *replica) ProcessConfigChange() {
 			r.resultReplier.SendResult(item.replyID, ibabuza.ApplyResult{
 				Error: err,
 			})
-			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.ClusterID(),
+			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.GroupID(),
 				r.cluster.LocalPeerID(), err)
 		}
 	}
@@ -211,28 +211,32 @@ func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
 				optimiseAppendEntryResp = true
 			} else {
 				r.transport.Send(babuzapb.MultiRaftMessage{
-					GroupID: r.cluster.ClusterID(),
-					Message: *m,
+					ClusterID: r.cluster.ClusterID(),
+					GroupID:   uint64(r.cluster.GroupID()),
+					Message:   *m,
 				})
 			}
 		case raftpb.MsgSnap:
 			m.Snapshot.Metadata.ConfState = r.status.CloneConfState()
 			r.transport.SendSnapshot(babuzapb.MultiRaftMessage{
-				GroupID: r.cluster.ClusterID(),
-				Message: *m,
+				ClusterID: r.cluster.ClusterID(),
+				GroupID:   uint64(r.cluster.GroupID()),
+				Message:   *m,
 			})
 		default:
 			r.transport.Send(babuzapb.MultiRaftMessage{
-				GroupID: r.cluster.ClusterID(),
-				Message: *m,
+				ClusterID: r.cluster.ClusterID(),
+				GroupID:   uint64(r.cluster.GroupID()),
+				Message:   *m,
 			})
 		}
 	}
 	if optimiseAppendEntryResp {
 		r.transport.Send(
 			babuzapb.MultiRaftMessage{
-				GroupID: r.cluster.ClusterID(),
-				Message: msgs[lastAppRespMsgIndex],
+				ClusterID: r.cluster.ClusterID(),
+				GroupID:   uint64(r.cluster.GroupID()),
+				Message:   msgs[lastAppRespMsgIndex],
 			})
 	}
 }

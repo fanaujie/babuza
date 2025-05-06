@@ -17,6 +17,7 @@ const (
 
 type Cluster struct {
 	clusterID   uint64
+	groupID     ibabuza.RaftGroupID
 	localPeerID uint64
 	store       pb.Store
 	logger      ibabuza.Logger
@@ -39,6 +40,12 @@ func (c *Cluster) SetClusterID(clusterID uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.clusterID = clusterID
+}
+
+func (c *Cluster) SetGroupID(groupID ibabuza.RaftGroupID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.groupID = groupID
 }
 
 func (c *Cluster) SetLocalPeerID(localPeerID uint64) {
@@ -71,6 +78,9 @@ func (c *Cluster) Snapshot(w io.Writer) error {
 	if err = fileutil.FileWriteUint64(w, buf, c.clusterID); err != nil {
 		return err
 	}
+	if err = fileutil.FileWriteUint64(w, buf, uint64(c.groupID)); err != nil {
+		return err
+	}
 	// skip localPeerID
 	if err = fileutil.FileWriteUint64(w, buf, uint64(len(storeData))); err != nil {
 		return err
@@ -89,12 +99,18 @@ func (c *Cluster) Restore(r io.Reader) error {
 		return err
 	}
 	if ver != storeVersion {
-		return fmt.Errorf("Cluster: mismatch store version. expected (version=%d) real(version=%d)", storeVersion, ver)
+		return fmt.Errorf("cluster: mismatch store version. expected (version=%d) real(version=%d)", storeVersion, ver)
 	}
 	c.clusterID, err = fileutil.FileReadUint64(r, buf)
 	if err != nil {
 		return err
 	}
+	groupID, err := fileutil.FileReadUint64(r, buf)
+	if err != nil {
+		return err
+	}
+	c.groupID = ibabuza.RaftGroupID(groupID)
+
 	// skip localPeerID
 	dataSize, err := fileutil.FileReadUint64(r, buf)
 	if err != nil {
@@ -129,6 +145,12 @@ func (c *Cluster) ClusterID() uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.clusterID
+}
+
+func (c *Cluster) GroupID() ibabuza.RaftGroupID {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.groupID
 }
 
 func (c *Cluster) LocalPeerID() uint64 {

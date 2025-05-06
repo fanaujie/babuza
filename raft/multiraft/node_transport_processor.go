@@ -13,10 +13,15 @@ type transportProcessor struct {
 //TODO: verify message
 
 func (d *transportProcessor) ProcessBatchMessage(batchMsg babuzapb.BatchMessage) {
-	groupID := ibabuza.RaftGroupID(batchMsg.ClusterID)
+	groupID := ibabuza.RaftGroupID(batchMsg.GroupID)
 	r, err := d.getReplica(groupID)
 	if err != nil {
 		d.logger.Errorf("Node[%d] ProcessBatchMessage groupID[%d] get replica error: %v", d.config.NodeID, groupID, err)
+		return
+	}
+	if batchMsg.ClusterID != r.cluster.ClusterID() {
+		d.logger.Errorf("Node[%d] ProcessBatchMessage groupID[%d] cluster id %d not match %d",
+			d.config.NodeID, groupID, batchMsg.ClusterID, r.cluster.ClusterID())
 		return
 	}
 	if err = r.EnqueueStep(batchMsg); err != nil {
@@ -25,20 +30,33 @@ func (d *transportProcessor) ProcessBatchMessage(batchMsg babuzapb.BatchMessage)
 }
 
 func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage) {
-	groupID := ibabuza.RaftGroupID(msg.ClusterID)
+	groupID := ibabuza.RaftGroupID(msg.GroupID)
 	r, err := d.Node.getReplica(groupID)
 	if err != nil {
 		d.logger.Errorf("Node[%d] ProcessSnapshotMessage groupID[%d] get replica error: %v",
 			d.config.NodeID, groupID, err)
 		return
 	}
+	if msg.ClusterID != r.cluster.ClusterID() {
+		d.logger.Errorf("Node[%d] ProcessSnapshotMessage groupID[%d] cluster id %d not match %d",
+			d.config.NodeID, groupID, msg.ClusterID, r.cluster.ClusterID())
+		return
+	}
 	r.receivedSnapshotMsgCh <- msg
 }
 
 func (d *transportProcessor) GetClusterPeer(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	groupID := ibabuza.RaftGroupID(req.ClusterID)
+	groupID := ibabuza.RaftGroupID(req.GroupID)
 	r, err := d.getReplica(groupID)
 	if err == nil {
+		if req.ClusterID != r.cluster.ClusterID() {
+			d.logger.Errorf("Node[%d] GetClusterPeer groupID[%d] cluster id %d not match %d",
+				d.config.NodeID, groupID, req.ClusterID, r.cluster.ClusterID())
+			return babuzapb.GetClusterPeersResponse{
+				Status:  babuzapb.FAILED,
+				Message: "cluster id not match",
+			}
+		}
 		return babuzapb.GetClusterPeersResponse{
 			Status:  babuzapb.SUCCESS,
 			Message: "success",
