@@ -260,8 +260,12 @@ func (p *MultiRaftPeerImpl) sendSnapshotMessageLoop(snapMsg babuzapb.MultiRaftMe
 		case <-p.closer.CloseCh():
 			return ErrMultiRaftPeerStopped
 		default:
-			if sErr := p.transportClient.SendSnapshotMessage(msg); sErr != nil {
+			res, sErr := p.transportClient.SendSnapshotMessage(msg)
+			if sErr != nil {
 				return sErr
+			}
+			if res.Status != babuzapb.SUCCESS {
+				return errors.New(res.Message)
 			}
 		}
 		return nil
@@ -278,6 +282,7 @@ func (p *MultiRaftPeerImpl) sendSnapshotMessageLoop(snapMsg babuzapb.MultiRaftMe
 	crcTable := crc32.MakeTable(crc32.Castagnoli)
 
 	mt := snapFileReader.Metadata()
+	m.Type = babuzapb.SnapshotMessageType_Metadata
 	m.Metadata = mt
 	if err := sendSnapshotMsg(m); err != nil {
 		return err
@@ -287,6 +292,7 @@ func (p *MultiRaftPeerImpl) sendSnapshotMessageLoop(snapMsg babuzapb.MultiRaftMe
 	m.Metadata = babuzapb.SnapshotMetadata{}
 	chunkBuf := make([]byte, p.snapshotChunkSize)
 	if err := snapFileReader.ForEachFile(func(reader io.Reader, metadata babuzapb.SnapshotFileDesc) error {
+		m.Type = babuzapb.SnapshotMessageType_Chunk
 		m.ChunkMessage.FileTag = metadata.Tag
 		m.ChunkMessage.FileType = metadata.FileType
 		return p.sendSnapshotMsgWithChunk(reader, metadata.FileSize, m, chunkBuf, crcTable)
@@ -294,8 +300,8 @@ func (p *MultiRaftPeerImpl) sendSnapshotMessageLoop(snapMsg babuzapb.MultiRaftMe
 		return err
 	}
 
-	// 发送完成消息
 	m.ChunkMessage = babuzapb.SnapshotChunkMessage{}
+	m.Type = babuzapb.SnapshotMessageType_Finish
 	m.FinishMessage = snapMsg.Message
 	if err := sendSnapshotMsg(m); err != nil {
 		return err
@@ -332,8 +338,12 @@ func (p *MultiRaftPeerImpl) sendSnapshotMsgWithChunk(reader io.Reader, fileSize 
 				if err = p.chunkRateLimiter.Wait(context.Background()); err != nil {
 					return err
 				}
-				if err = p.transportClient.SendSnapshotMessage(msg); err != nil {
-					return err
+				res, sErr := p.transportClient.SendSnapshotMessage(msg)
+				if sErr != nil {
+					return sErr
+				}
+				if res.Status != babuzapb.SUCCESS {
+					return errors.New(res.Message)
 				}
 				p.breaker.Success()
 			}

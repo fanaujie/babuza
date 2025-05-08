@@ -124,20 +124,20 @@ func (r *MockPeerRaftReport) Reset() {
 // MockFailedClient implements ibabuza.TransportClient for testing failure scenarios
 type MockFailedClient struct{}
 
-func (c *MockFailedClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	return babuzapb.GetClusterPeersResponse{}
+func (c *MockFailedClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
+	return babuzapb.GetClusterPeersResponse{}, nil
 }
 
-func (c *MockFailedClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
-	return babuzapb.PublishApplicationServiceResponse{}
+func (c *MockFailedClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
+	return babuzapb.PublishApplicationServiceResponse{}, nil
 }
 
 func (c *MockFailedClient) SendBatchMessage(batch babuzapb.BatchMessage) error {
 	return errors.New("failed to send batch message")
 }
 
-func (c *MockFailedClient) SendSnapshotMessage(msg babuzapb.SnapshotMessage) error {
-	return errors.New("failed to send snapshot message")
+func (c *MockFailedClient) SendSnapshotMessage(msg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
+	return babuzapb.SnapshotMessageResponse{}, errors.New("failed to send snapshot message")
 }
 
 func (c *MockFailedClient) Close() error {
@@ -165,19 +165,22 @@ func (c *MockSuccessClient) SendBatchMessage(batch babuzapb.BatchMessage) error 
 	return nil
 }
 
-func (c *MockSuccessClient) SendSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+func (c *MockSuccessClient) SendSnapshotMessage(msg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.sentSnapMessages = append(c.sentSnapMessages, msg)
-	return nil
+	return babuzapb.SnapshotMessageResponse{
+		Status:  babuzapb.SUCCESS,
+		Message: "success",
+	}, nil
 }
 
-func (c *MockSuccessClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	return babuzapb.GetClusterPeersResponse{}
+func (c *MockSuccessClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
+	return babuzapb.GetClusterPeersResponse{}, nil
 }
 
-func (c *MockSuccessClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
-	return babuzapb.PublishApplicationServiceResponse{}
+func (c *MockSuccessClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
+	return babuzapb.PublishApplicationServiceResponse{}, nil
 }
 
 func (c *MockSuccessClient) Close() error {
@@ -194,6 +197,17 @@ func (c *MockSuccessClient) GetSentSnapMessages() []babuzapb.SnapshotMessage {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.sentSnapMessages
+}
+
+type MockStatusFailClient struct {
+	MockSuccessClient
+}
+
+func (c *MockStatusFailClient) SendSnapshotMessage(msg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
+	return babuzapb.SnapshotMessageResponse{
+		Status:  babuzapb.FAILED,
+		Message: "mock failure",
+	}, nil
 }
 
 // MockTransportClientFactory implements TransportClientFactory for testing
@@ -649,6 +663,40 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		assert.True(t, report.IsUnreachableReported(peerID), "Should report peer as unreachable")
 
 		// Check if breaker was marked as failed
+		assert.False(t, breaker.Ready(), "Breaker should be marked as not ready")
+	})
+
+	t.Run("status fail from server", func(t *testing.T) {
+		report := NewMockPeerRaftReport()
+		memLimiter := NewMockMemoryLimiter(4096)
+		chunkLimiter := NewMockRateLimiter()
+		breaker := NewMockBreaker()
+		transportClient := &MockStatusFailClient{}
+		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+
+		defer peer.Stop()
+
+		snapReader := NewMockSnapshotFileReader(1, 100)
+		snapMsg := raftpb.Message{
+			Type:  raftpb.MsgSnap,
+			To:    peerID,
+			From:  1,
+			Index: 100,
+			Snapshot: raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 100,
+					Term:  1,
+				},
+			},
+		}
+
+		peer.SendSnapshot(snapMsg, snapReader)
+		time.Sleep(time.Second)
+
+		status, exists := report.GetSnapshotStatus(peerID)
+		assert.True(t, exists, "Snapshot report should exist")
+		assert.Equal(t, raft.SnapshotFailure, status, "Should report snapshot failure")
+		assert.True(t, report.IsUnreachableReported(peerID), "Should report peer as unreachable")
 		assert.False(t, breaker.Ready(), "Breaker should be marked as not ready")
 	})
 }

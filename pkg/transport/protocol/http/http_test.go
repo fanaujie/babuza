@@ -104,7 +104,7 @@ func (m *mockTransportRaft) ProcessBatchMessage(message babuzapb.BatchMessage) {
 
 }
 
-func (m *mockTransportRaft) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) {
+func (m *mockTransportRaft) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
 	m.mu.Lock()
 	n := m.nodesMsg[message.From]
 	n.snapshotMsg[message.Index] = message
@@ -114,6 +114,10 @@ func (m *mockTransportRaft) ProcessSnapshotMessage(message babuzapb.SnapshotMess
 		m.notifyNodeDoneCh <- n
 	}
 	m.mu.Unlock()
+	return babuzapb.SnapshotMessageResponse{
+		Status:  babuzapb.SUCCESS,
+		Message: "success",
+	}
 
 }
 func (m *mockTransportRaft) GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
@@ -229,7 +233,8 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 			if tm.batchMsg != nil {
 				assert.Nil(t, client.SendBatchMessage(*tm.batchMsg), identify)
 			} else if tm.snapMsg != nil {
-				assert.Nil(t, client.SendSnapshotMessage(*tm.snapMsg), identify)
+				_, err = client.SendSnapshotMessage(*tm.snapMsg)
+				assert.Nil(t, err, identify)
 			}
 
 			res := babuzapb.GetClusterPeersResponse{
@@ -251,7 +256,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				},
 			}
 			mr.clusterRes = res
-			getRes := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterID: 100})
+			getRes, _ := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterID: 100})
 			assert.Equal(t, res, getRes)
 		}
 		nodeDoneMsg := <-mr.notifyNodeDoneCh
@@ -349,7 +354,8 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 					if tm.batchMsg != nil {
 						assert.Nil(t, client.SendBatchMessage(*tm.batchMsg), identify)
 					} else if tm.snapMsg != nil {
-						assert.Nil(t, client.SendSnapshotMessage(*tm.snapMsg), identify)
+						_, err = client.SendSnapshotMessage(*tm.snapMsg)
+						assert.Nil(t, err, identify)
 					}
 				}
 			}(allTms[n])

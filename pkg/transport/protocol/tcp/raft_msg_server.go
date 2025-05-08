@@ -131,14 +131,18 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 		}
 		s.raft.ProcessBatchMessage(s.batchMsg)
 		s.batchMsg.Messages = nil
-	case frame.SnapshotMsgType:
+	case frame.SnapshotMsgReqType:
 		if err := s.snapshotMsg.Unmarshal(msgBuf); err != nil {
 			return err
 		}
-		s.raft.ProcessSnapshotMessage(s.snapshotMsg)
+		res := s.raft.ProcessSnapshotMessage(s.snapshotMsg)
 		s.snapshotMsg.Metadata = babuzapb.SnapshotMetadata{}
 		s.snapshotMsg.ChunkMessage = babuzapb.SnapshotChunkMessage{}
 		s.snapshotMsg.FinishMessage = raftpb.Message{}
+		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
+			return err
+		}
+		return s.frameConn.SendFrame(frame.SnapshotMsgResType, &res)
 	case frame.ClusterPeersReqType:
 		if err := s.getClusterPeersReq.Unmarshal(msgBuf); err != nil {
 			return err

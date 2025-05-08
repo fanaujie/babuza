@@ -13,7 +13,7 @@ service RaftTransport {
   rpc SendBatchMessage(raft.BatchMessage) returns (google.protobuf.Empty);
   
   // SendSnapshotMessage sends a snapshot message
-  rpc SendSnapshotMessage(raft.SnapshotMessage) returns (google.protobuf.Empty);
+  rpc SendSnapshotMessage(raft.SnapshotMessage) returns (raft.SnapshotMessageResponse);
   
   // GetClusterPeers gets information about peers in the cluster
   rpc GetClusterPeers(raft.GetClusterPeersRequest) returns (raft.GetClusterPeersResponse);
@@ -28,7 +28,7 @@ service MultiRaftTransport {
   rpc SendBatchMessage(stream raft.BatchMessage) returns (stream google.protobuf.Empty);
 
   // SendSnapshotMessage sends a snapshot message
-  rpc SendSnapshotMessage(raft.SnapshotMessage) returns (google.protobuf.Empty);
+  rpc SendSnapshotMessage(raft.SnapshotMessage) returns (raft.SnapshotMessageResponse);
 
   // GetClusterPeers gets information about peers in the cluster
   rpc GetClusterPeers(raft.GetClusterPeersRequest) returns (raft.GetClusterPeersResponse);

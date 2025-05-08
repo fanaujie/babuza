@@ -15,11 +15,6 @@ type MockMultiRaftPeer struct {
 	id uint64
 }
 
-func (m *MockMultiRaftPeer) UpdatePeer() {
-	//TODO implement me
-	panic("implement me")
-}
-
 func (m *MockMultiRaftPeer) SendRaftMessage(msg babuzapb.MultiRaftMessage) error {
 	args := m.Called(msg)
 	return args.Error(0)
@@ -29,15 +24,11 @@ func (m *MockMultiRaftPeer) SendSnapshot(msg babuzapb.MultiRaftMessage, snapRead
 	m.Called(msg, snapReader)
 }
 
-func (m *MockMultiRaftPeer) UpdateRaftReport(report ibabuza.RaftStatusReporter) {
+func (m *MockMultiRaftPeer) UpdateRaftReport(report ibabuza.MultiRaftStatusReporter) {
 	m.Called(report)
 }
 
 func (m *MockMultiRaftPeer) Stop() {
-	m.Called()
-}
-
-func (m *MockMultiRaftPeer) Run() {
 	m.Called()
 }
 

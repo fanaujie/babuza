@@ -140,36 +140,45 @@ func (s *raftStorage) RestoreFromSnapshot(snapShotIndex uint64, restoreStateMach
 	}
 	return session.Restore(sessionReader)
 }
-
-func (s *raftStorage) ReceiveSnapshotMessage(msg babuzapb.SnapshotMessage) (bool, error) {
+func (s *raftStorage) MetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error {
 	if msg.Metadata.Files != nil {
 		if s.snapshotReceiver != nil {
 			if err := s.snapshotReceiver.DeleteDir(); err != nil {
-				return false, err
+				return err
 			}
 		}
 		snapshotReceiver, err := s.snapshotor.CreateAtomicSnapshotReceiver(msg.Metadata)
 		if err != nil {
-			return false, err
+			return err
 		}
 		s.snapshotReceiver = snapshotReceiver
-		return false, nil
+		return nil
 	}
+	return fmt.Errorf("storage: received metadata message but snapshot metadata is nil (index=%d)", msg.Index)
+}
+
+func (s *raftStorage) ChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error {
 	if s.snapshotReceiver == nil {
-		return false, fmt.Errorf("storage: received chunk message but snapshot receiver is nil (index=%d)", msg.Index)
+		return fmt.Errorf("storage: received chunk message but snapshot receiver is nil (index=%d)", msg.Index)
 	}
 	if msg.ChunkMessage.ContinueCrc32 != 0 {
-		if err := s.snapshotReceiver.SaveChunk(msg.Index, msg.ChunkMessage); err != nil {
-			return false, err
-		}
-		return false, nil
-	} else if msg.FinishMessage.To != 0 {
-		if err := s.snapshotReceiver.Commit(msg.Index); err != nil {
-			return false, err
-		}
-		return true, nil
+		return s.snapshotReceiver.SaveChunk(msg.Index, msg.ChunkMessage)
 	}
-	return false, fmt.Errorf("storage: unexpected snapshot message")
+	return fmt.Errorf("storage: received chunk message but invalid (continueCrc32=0 index=%d)", msg.Index)
+}
+
+func (s *raftStorage) FinishSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+	if msg.FinishMessage.To != 0 {
+		var err error
+		defer func() {
+			if err == nil {
+				s.snapshotReceiver = nil
+			}
+		}()
+		err = s.snapshotReceiver.Commit(msg.Index)
+		return err
+	}
+	return fmt.Errorf("storage: received finish message but invalid (to=0 index=%d)", msg.Index)
 }
 
 func (s *raftStorage) CompactAndReleaseSnapshot(index uint64, snapshot raftpb.Snapshot) error {

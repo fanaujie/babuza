@@ -39,8 +39,9 @@ type RaftStorage interface {
 		cluster ibabuza.Cluster, sessionMgr ibabuza.SessionManager) (StorageSnapshotContext, error)
 	SaveStateMachineSnapshot(ctx StorageSnapshotContext) (babuzapb.SnapshotMetadata, error)
 	RestoreFromSnapshot(snapShotIndex uint64, restoreStateMachine bool, cluster ibabuza.Cluster, session ibabuza.SessionManager) error
-	ReceiveSnapshotMessage(msg babuzapb.SnapshotMessage) (bool, error)
-
+	MetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error
+	FinishSnapshotMessage(msg babuzapb.SnapshotMessage) error
+	ChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error
 	GetStateMachineAppliedIndex() uint64
 	SetStateMachineAppliedIndex(index uint64)
 	Apply(e ibabuza.Entry) ibabuza.ApplyResult

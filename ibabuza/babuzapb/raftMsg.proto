@@ -15,6 +15,12 @@ option (gogoproto.goproto_unkeyed_all) = false;
 option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
+enum RpcStatus {
+  SUCCESS = 0;
+  REJECTED = 1;
+  FAILED = 2;
+}
+
 
 message BatchMessage {
   uint64  clusterID = 1;
@@ -31,23 +37,30 @@ message SnapshotChunkMessage {
   bool                    lastChunk  = 6;
 }
 
+enum SnapshotMessageType {
+  SnapshotMessageType_None      = 0;
+  SnapshotMessageType_Metadata  = 1;
+  SnapshotMessageType_Chunk     = 2;
+  SnapshotMessageType_Finish    = 3;
+}
+
 message SnapshotMessage {
-  uint64    clusterID     = 1;
-  uint64    groupID       = 2;
-  uint64    from          = 4;
-  uint64    to            = 5;
-  uint64    term          = 6;
-  uint64    index         = 7;
-  babuza.SnapshotMetadata metadata      = 8 [(gogoproto.nullable) = false];
-  SnapshotChunkMessage    chunkMessage  = 9 [(gogoproto.nullable) = false];
-  raftpb.Message          finishMessage = 10 [(gogoproto.nullable) = false];
+  uint64    clusterID       = 1;
+  uint64    groupID         = 2;
+  uint64    from            = 4;
+  uint64    to              = 5;
+  uint64    term            = 6;
+  uint64    index           = 7;
+  SnapshotMessageType type  = 8;
+  babuza.SnapshotMetadata metadata      = 9 [(gogoproto.nullable) = false];
+  SnapshotChunkMessage    chunkMessage  = 10 [(gogoproto.nullable) = false];
+  raftpb.Message          finishMessage = 11 [(gogoproto.nullable) = false];
 }
 
-enum RpcStatus {
-  SUCCESS = 0;
-  FAILED = 1;
+message SnapshotMessageResponse {
+  RpcStatus status = 1;
+  string   message = 2;
 }
-
 
 message GetClusterPeersRequest {
   uint64  clusterID = 1;

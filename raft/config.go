@@ -138,11 +138,11 @@ func (c *PeersConfiguration) MatchRemoteCluster(remoteCtx context.Context, clust
 			return remoteCtx.Err()
 		default:
 		}
-		res := func(to uint64) babuzapb.GetClusterPeersResponse {
+		res, err := func(to uint64) (babuzapb.GetClusterPeersResponse, error) {
 			req.To = to
 			return client.GetClusterPeers(req)
 		}(raftPeerAttr.Id)
-		if res.Status == babuzapb.FAILED {
+		if err != nil || res.Status != babuzapb.SUCCESS {
 			continue
 		}
 		if !c.equal(res.Peers) {

@@ -43,23 +43,25 @@ func newMockMultiRaftProcessor() *mockMultiRaftProcessor {
 }
 
 func (mr *mockMultiRaftProcessor) ProcessBatchMessage(message babuzapb.BatchMessage) {
-	mr.receivedMsg[message.ClusterID] = message
+	mr.mu.Lock()
+	defer mr.mu.Unlock()
+	mr.receivedMsg[message.GroupID] = message
 }
 
-func (mr *mockMultiRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) {
+func (mr *mockMultiRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
 	mr.receivedSnapMsg[message.Index] = message
 
 	// Store snapshot data for validation
-	if message.FinishMessage.To != 0 {
+	if message.Type == babuzapb.SnapshotMessageType_Finish {
 		mr.finishMsg = raftpb.Message{
 			Type:     raftpb.MsgSnap,
 			From:     message.From,
 			To:       message.To,
 			Snapshot: message.FinishMessage.Snapshot,
 		}
-	} else if message.ChunkMessage.ContinueCrc32 != 0 {
+	} else if message.Type == babuzapb.SnapshotMessageType_Chunk {
 		if _, ok := mr.snapshotFileData[message.ChunkMessage.FileTag]; !ok {
 			mr.snapshotFileData[message.ChunkMessage.FileTag] = make([]byte, 0)
 		}
@@ -67,8 +69,12 @@ func (mr *mockMultiRaftProcessor) ProcessSnapshotMessage(message babuzapb.Snapsh
 			mr.snapshotFileData[message.ChunkMessage.FileTag],
 			message.ChunkMessage.Data...,
 		)
-	} else if message.Metadata.Files != nil {
+	} else if message.Type == babuzapb.SnapshotMessageType_Metadata {
 		mr.metadata = message.Metadata
+	}
+	return babuzapb.SnapshotMessageResponse{
+		Status:  babuzapb.SUCCESS,
+		Message: "Success",
 	}
 }
 
@@ -236,7 +242,8 @@ func TestMultiRaftTransport_Send(t *testing.T) {
 
 	// Create a MultiRaftMessage to send
 	msg1To2 := babuzapb.MultiRaftMessage{
-		GroupID: 101,
+		ClusterID: 1,
+		GroupID:   101,
 		Message: raftpb.Message{
 			Type:  raftpb.MsgApp,
 			To:    2,
@@ -253,13 +260,15 @@ func TestMultiRaftTransport_Send(t *testing.T) {
 	trans2RecMsg, ok := mockRaft2.receivedMsg[101]
 	mockRaft2.mu.Unlock()
 	assert.True(t, ok, "Message should be received")
-	assert.Equal(t, msg1To2.GroupID, trans2RecMsg.ClusterID)
+	assert.Equal(t, msg1To2.ClusterID, trans2RecMsg.ClusterID)
+	assert.Equal(t, msg1To2.GroupID, trans2RecMsg.GroupID)
 	assert.Equal(t, msg1To2.Message, trans2RecMsg.Messages[0])
 
 	// Test sending from node 2 to node 1
 	trans2.AddPeer(1, "localhost:14200")
 	msg2To1 := babuzapb.MultiRaftMessage{
-		GroupID: 102,
+		ClusterID: 1,
+		GroupID:   102,
 		Message: raftpb.Message{
 			Type:  raftpb.MsgApp,
 			To:    1,
@@ -276,7 +285,8 @@ func TestMultiRaftTransport_Send(t *testing.T) {
 	trans1RecMsg, ok := mockRaft1.receivedMsg[102]
 	mockRaft1.mu.Unlock()
 	assert.True(t, ok, "Message should be received")
-	assert.Equal(t, msg2To1.GroupID, trans1RecMsg.ClusterID)
+	assert.Equal(t, msg2To1.ClusterID, trans1RecMsg.ClusterID)
+	assert.Equal(t, msg2To1.GroupID, trans1RecMsg.GroupID)
 	assert.Equal(t, msg2To1.Message, trans1RecMsg.Messages[0])
 }
 

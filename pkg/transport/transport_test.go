@@ -57,20 +57,20 @@ func (mr *mockRaftProcessor) ProcessBatchMessage(message babuzapb.BatchMessage) 
 	}
 }
 
-func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) {
+func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
 	mr.receivedSnapMsg[message.Index] = message
 
 	// Store snapshot data for validation
-	if message.FinishMessage.To != 0 {
+	if message.Type == babuzapb.SnapshotMessageType_Finish {
 		mr.finishMsg = raftpb.Message{
 			Type:     raftpb.MsgSnap,
 			From:     message.From,
 			To:       message.To,
 			Snapshot: message.FinishMessage.Snapshot,
 		}
-	} else if message.ChunkMessage.ContinueCrc32 != 0 {
+	} else if message.Type == babuzapb.SnapshotMessageType_Chunk {
 		if _, ok := mr.snapshotFileData[message.ChunkMessage.FileTag]; !ok {
 			mr.snapshotFileData[message.ChunkMessage.FileTag] = make([]byte, 0)
 		}
@@ -78,8 +78,12 @@ func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMes
 			mr.snapshotFileData[message.ChunkMessage.FileTag],
 			message.ChunkMessage.Data...,
 		)
-	} else if message.Metadata.Files != nil {
+	} else if message.Type == babuzapb.SnapshotMessageType_Metadata {
 		mr.metadata = message.Metadata
+	}
+	return babuzapb.SnapshotMessageResponse{
+		Status:  babuzapb.SUCCESS,
+		Message: "Success",
 	}
 }
 
@@ -228,7 +232,7 @@ func newTestTransport(t *testing.T, transType int, nodeId uint64, listenAddress 
 			FileSize: 24,
 		},
 	})
-	
+
 	switch transType {
 	case transportTypeTcp:
 		tranProtocol = protocol.NewTcp(networkio.NewTcpPhysicalIO(), &logger.Mock{},

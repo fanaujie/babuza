@@ -8,7 +8,7 @@ import (
 
 type RaftMessageHandler interface {
 	ProcessBatchMessage(babuzapb.BatchMessage)
-	ProcessSnapshotMessage(babuzapb.SnapshotMessage)
+	ProcessSnapshotMessage(babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse
 	GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse
 	PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse
 }
@@ -53,9 +53,9 @@ type TransportServer interface {
 
 type TransportClient interface {
 	SendBatchMessage(babuzapb.BatchMessage) error
-	SendSnapshotMessage(babuzapb.SnapshotMessage) error
-	GetClusterPeers(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse
-	PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse
+	SendSnapshotMessage(babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error)
+	GetClusterPeers(babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error)
+	PublishApplicationService(babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error)
 	Close() error
 }
 

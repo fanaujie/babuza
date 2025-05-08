@@ -45,7 +45,7 @@ func TestWriterAndReader(t *testing.T) {
 		},
 		{
 			name:    "zero length message",
-			msgType: SnapshotMsgType,
+			msgType: SnapshotMsgReqType,
 			msgData: []byte{},
 			bufSize: 100,
 		},
@@ -149,7 +149,7 @@ func TestCorruptedMessage(t *testing.T) {
 func TestMessageTypes(t *testing.T) {
 	messageTypes := []MessageType{
 		BatchMsgType,
-		SnapshotMsgType,
+		SnapshotMsgReqType,
 		ClusterPeersReqType,
 		ClusterPeersResType,
 		PubAppServiceReqType,

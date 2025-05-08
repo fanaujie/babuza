@@ -102,9 +102,6 @@ func (r *replica) Status() ibabuza.Status {
 }
 
 func (r *replica) Start() error {
-	r.closer.Run(func() {
-		r.processReceivedSnapshotMessage()
-	})
 	return r.applyJobQueue.Start()
 }
 
@@ -221,30 +218,4 @@ func (r *replica) learnerReady(ctx context.Context, learnerId uint64) error {
 		}
 	}
 	return nil
-}
-
-func (r *replica) processReceivedSnapshotMessage() {
-	for {
-		select {
-		case <-r.closer.CloseCh():
-			return
-		case msg := <-r.receivedSnapshotMsgCh:
-			if bFinish, err := r.storage.ReceiveSnapshotMessage(msg); err != nil {
-				r.logger.Warningf("Node[%d] raft[id=%d] failed to receiveSnapshotMessage. err(%s)",
-					r.cluster.LocalPeerID(), msg.ClusterID, err.Error())
-			} else if bFinish {
-				r.logger.Infof("Node[%d] raft[id=%d] received finish snapshot message (snapshot index=%d)",
-					r.cluster.LocalPeerID(), msg.ClusterID, msg.Index)
-				if err = r.EnqueueStep(babuzapb.BatchMessage{
-					ClusterID: msg.ClusterID,
-					Messages: []raftpb.Message{
-						msg.FinishMessage,
-					},
-				}); err != nil {
-					r.logger.Errorf("Node[%d] raft[id=%d] step err(%s)",
-						r.cluster.LocalPeerID(), msg.ClusterID, err.Error())
-				}
-			}
-		}
-	}
 }

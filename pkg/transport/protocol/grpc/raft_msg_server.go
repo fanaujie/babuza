@@ -80,9 +80,9 @@ func (r *RaftMsgServer) SendBatchMessage(ctx context.Context, msg *babuzapb.Batc
 	return &emptypb.Empty{}, nil
 }
 
-func (r *RaftMsgServer) SendSnapshotMessage(ctx context.Context, msg *babuzapb.SnapshotMessage) (*emptypb.Empty, error) {
-	r.raft.ProcessSnapshotMessage(*msg)
-	return &emptypb.Empty{}, nil
+func (r *RaftMsgServer) SendSnapshotMessage(ctx context.Context, msg *babuzapb.SnapshotMessage) (*babuzapb.SnapshotMessageResponse, error) {
+	res := r.raft.ProcessSnapshotMessage(*msg)
+	return &res, nil
 }
 
 func (r *RaftMsgServer) GetClusterPeers(ctx context.Context, req *babuzapb.GetClusterPeersRequest) (*babuzapb.GetClusterPeersResponse, error) {

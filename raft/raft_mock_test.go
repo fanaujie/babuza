@@ -468,14 +468,14 @@ type mockPubTransClient struct {
 
 func (c *mockPubTransClient) SendBatchMessage(babuzapb.BatchMessage) error       { return nil }
 func (c *mockPubTransClient) SendSnapshotMessage(babuzapb.SnapshotMessage) error { return nil }
-func (c *mockPubTransClient) GetClusterPeers(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	return babuzapb.GetClusterPeersResponse{}
+func (c *mockPubTransClient) GetClusterPeers(babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
+	return babuzapb.GetClusterPeersResponse{}, nil
 }
-func (c *mockPubTransClient) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+func (c *mockPubTransClient) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
 	return babuzapb.PublishApplicationServiceResponse{
 		Status:  c.status,
 		Message: c.errMsg,
-	}
+	}, nil
 }
 func (c *mockPubTransClient) Close() error { return nil }
 

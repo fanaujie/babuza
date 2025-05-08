@@ -122,10 +122,10 @@ func (r *MultiRaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) er
 	return nil
 }
 
-func (r *MultiRaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) error {
+func (r *MultiRaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
 	conn, err := r.getConnection(snapMsg.To)
 	if err != nil {
-		return err
+		return babuzapb.SnapshotMessageResponse{}, err
 	}
 	defer func() {
 		r.returnPool(conn, err)
@@ -135,22 +135,18 @@ func (r *MultiRaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessag
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.GrpcDeadline)
 	defer cancel()
 
-	_, err = client.SendSnapshotMessage(ctx, &snapMsg)
-	if err != nil {
-		return fmt.Errorf("failed to send snapshot message: %w", err)
-	}
-
-	return nil
+	res, err := client.SendSnapshotMessage(ctx, &snapMsg)
+	return *res, err
 }
 
-func (r *MultiRaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+func (r *MultiRaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
 	var res babuzapb.GetClusterPeersResponse
 
 	conn, err := r.getConnection(request.To)
 	if err != nil {
 		res.Status = babuzapb.FAILED
 		res.Message = err.Error()
-		return res
+		return res, nil
 	}
 	defer func() {
 		r.returnPool(conn, err)
@@ -164,15 +160,15 @@ func (r *MultiRaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersReq
 	if err != nil {
 		res.Status = babuzapb.FAILED
 		res.Message = err.Error()
-		return res
+		return res, nil
 	}
 
-	return *response
+	return *response, nil
 }
 
-func (r *MultiRaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+func (r *MultiRaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
 	// No implementation needed
-	return babuzapb.PublishApplicationServiceResponse{}
+	return babuzapb.PublishApplicationServiceResponse{}, nil
 }
 
 func (r *MultiRaftMsgClient) Close() error {

@@ -93,9 +93,9 @@ func (r *MultiRaftMsgServer) SendBatchMessage(stream pb.MultiRaftTransport_SendB
 	}
 }
 
-func (r *MultiRaftMsgServer) SendSnapshotMessage(ctx context.Context, msg *babuzapb.SnapshotMessage) (*emptypb.Empty, error) {
-	r.raft.ProcessSnapshotMessage(*msg)
-	return &emptypb.Empty{}, nil
+func (r *MultiRaftMsgServer) SendSnapshotMessage(ctx context.Context, msg *babuzapb.SnapshotMessage) (*babuzapb.SnapshotMessageResponse, error) {
+	res := r.raft.ProcessSnapshotMessage(*msg)
+	return &res, nil
 }
 
 func (r *MultiRaftMsgServer) GetClusterPeers(ctx context.Context, req *babuzapb.GetClusterPeersRequest) (*babuzapb.GetClusterPeersResponse, error) {

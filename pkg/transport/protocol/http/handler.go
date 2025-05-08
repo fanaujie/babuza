@@ -39,8 +39,8 @@ func (h *handler) snapshotMessageFunc(w http.ResponseWriter, req *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.raft.ProcessSnapshotMessage(snapMsg)
-	w.WriteHeader(http.StatusOK)
+	res := h.raft.ProcessSnapshotMessage(snapMsg)
+	writeProtoMessage[*babuzapb.SnapshotMessageResponse](w, &res)
 }
 
 func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
@@ -80,22 +80,11 @@ func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	res := h.raft.GetClusterPeer(babuzapb.GetClusterPeersRequest{
-		ClusterID: uint64(clusterID),
-		From:      uint64(fromId),
-		To:        uint64(toId),
+		ClusterID: clusterID,
+		From:      fromId,
+		To:        toId,
 	})
-	msgSize := res.Size()
-	byteSlice := allocator.Acquire(msgSize)
-	defer allocator.Release(byteSlice)
-	n, err := res.MarshalTo(byteSlice.Buffer)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if _, err = w.Write(byteSlice.Buffer[:n]); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	writeProtoMessage[*babuzapb.GetClusterPeersResponse](w, &res)
 }
 
 // TODO: add test case
@@ -112,16 +101,24 @@ func (h *handler) publishApplicationServiceFunc(w http.ResponseWriter, req *http
 		return
 	}
 	res := h.raft.PublishApplicationService(appServiceUrlReq)
-	var byteSlice *allocator.ByteSlice
-	byteSlice = allocator.Acquire(int(res.Size()))
+	writeProtoMessage[*babuzapb.PublishApplicationServiceResponse](w, &res)
+}
+
+func writeProtoMessage[T interface {
+	Size() int
+	MarshalTo([]byte) (int, error)
+}](w http.ResponseWriter, res T) {
+	msgSize := res.Size()
+	byteSlice := allocator.Acquire(msgSize)
 	defer allocator.Release(byteSlice)
-	buf := byteSlice.Buffer[:res.Size()]
-	_, err := res.MarshalTo(buf)
+
+	n, err := res.MarshalTo(byteSlice.Buffer)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if _, err = w.Write(buf); err != nil {
+
+	if _, err = w.Write(byteSlice.Buffer[:n]); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

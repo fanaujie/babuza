@@ -100,7 +100,7 @@ func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderID, reply
 		return err
 	}
 	defer r.resultReplier.CancelResult(replyID)
-	res := c.PublishApplicationService(babuzapb.PublishApplicationServiceRequest{
+	res, _ := c.PublishApplicationService(babuzapb.PublishApplicationServiceRequest{
 		ClusterID:           r.config.ClusterID,
 		From:                r.config.LocalPeerID,
 		To:                  leaderID,
