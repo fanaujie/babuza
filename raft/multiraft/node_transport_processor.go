@@ -1,6 +1,7 @@
 package multiraft
 
 import (
+	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3"
@@ -13,19 +14,8 @@ type transportProcessor struct {
 
 func (d *transportProcessor) ProcessBatchMessage(batchMsg babuzapb.BatchMessage) {
 	groupID := ibabuza.RaftGroupID(batchMsg.GroupID)
-	r, err := d.getReplica(groupID)
+	r, err := d.validateRequest(groupID, batchMsg.ClusterID, batchMsg.Messages[0].To)
 	if err != nil {
-		d.logger.Errorf("Node[%d] ProcessBatchMessage groupID[%d] get replica error: %v", d.config.NodeID, groupID, err)
-		return
-	}
-	if batchMsg.ClusterID != r.cluster.ClusterID() {
-		d.logger.Warningf("Node[%d] ProcessBatchMessage groupID[%d] cluster id %d not match %d",
-			d.config.NodeID, groupID, batchMsg.ClusterID, r.cluster.ClusterID())
-		return
-	}
-	if batchMsg.Messages[0].To != r.cluster.LocalPeerID() {
-		d.logger.Warningf("Node[%d] ProcessBatchMessage groupID[%d] received batch message with different peer id(%d)",
-			d.config.NodeID, groupID, batchMsg.Messages[0].To)
 		return
 	}
 	if err = r.EnqueueStep(batchMsg); err != nil {
@@ -35,29 +25,11 @@ func (d *transportProcessor) ProcessBatchMessage(batchMsg babuzapb.BatchMessage)
 
 func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
 	groupID := ibabuza.RaftGroupID(msg.GroupID)
-	r, err := d.Node.getReplica(groupID)
+	r, err := d.validateRequest(groupID, msg.ClusterID, msg.To)
 	if err != nil {
-		d.logger.Warningf("Node[%d] ProcessSnapshotMessage groupID[%d] get replica error: %v",
-			d.config.NodeID, groupID, err)
 		return babuzapb.SnapshotMessageResponse{
 			Status:  babuzapb.REJECTED,
-			Message: "Failed to get replica: " + err.Error(),
-		}
-	}
-	if msg.ClusterID != r.cluster.ClusterID() {
-		d.logger.Warningf("Node[%d] ProcessSnapshotMessage groupID[%d] cluster id %d not match %d",
-			d.config.NodeID, groupID, msg.ClusterID, r.cluster.ClusterID())
-		return babuzapb.SnapshotMessageResponse{
-			Status:  babuzapb.REJECTED,
-			Message: "Cluster ID mismatch",
-		}
-	}
-	if msg.To != r.cluster.LocalPeerID() {
-		d.logger.Warningf("Node[%d] ProcessSnapshotMessage groupID[%d] received snapshot message with different peer id(%d)",
-			d.config.NodeID, groupID, msg.To)
-		return babuzapb.SnapshotMessageResponse{
-			Status:  babuzapb.REJECTED,
-			Message: "Peer ID mismatch",
+			Message: err.Error(),
 		}
 	}
 	switch msg.Type {
@@ -119,35 +91,17 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 
 func (d *transportProcessor) GetClusterPeer(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
 	groupID := ibabuza.RaftGroupID(req.GroupID)
-	r, err := d.getReplica(groupID)
-	if err == nil {
-		if req.ClusterID != r.cluster.ClusterID() {
-			d.logger.Warningf("Node[%d] GetClusterPeer groupID[%d] cluster id %d not match %d",
-				d.config.NodeID, groupID, req.ClusterID, r.cluster.ClusterID())
-			return babuzapb.GetClusterPeersResponse{
-				Status:  babuzapb.REJECTED,
-				Message: "cluster id not match",
-			}
-		}
-		if req.To != r.cluster.LocalPeerID() {
-			d.logger.Warningf("Node[%d] GetClusterPeer groupID[%d] received get cluster peer message with different peer id(%d)",
-				d.config.NodeID, groupID, req.To)
-			return babuzapb.GetClusterPeersResponse{
-				Status:  babuzapb.REJECTED,
-				Message: "peer id not match",
-			}
-		}
+	r, err := d.validateRequest(groupID, req.ClusterID, req.To)
+	if err != nil {
 		return babuzapb.GetClusterPeersResponse{
-			Status:  babuzapb.SUCCESS,
-			Message: "success",
-			Peers:   r.cluster.Peers()}
+			Status:  babuzapb.REJECTED,
+			Message: err.Error(),
+		}
 	}
-	d.logger.Warningf("Node[%d] GetClusterPeer groupID[%d] get replica error: %v", d.config.NodeID, groupID, err)
 	return babuzapb.GetClusterPeersResponse{
-		Status:  babuzapb.REJECTED,
-		Message: "group not found",
-	}
-
+		Status:  babuzapb.SUCCESS,
+		Message: "success",
+		Peers:   r.cluster.Peers()}
 }
 
 func (d *transportProcessor) PublishApplicationService(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
@@ -186,4 +140,30 @@ func (d *transportProcessor) CreateSnapshotReader(groupID ibabuza.RaftGroupID, s
 		return nil, err
 	}
 	return snapReader, nil
+}
+
+func (d *transportProcessor) validateRequest(
+	groupID ibabuza.RaftGroupID,
+	clusterID uint64,
+	peerID uint64) (*replica, error) {
+
+	r, err := d.getReplica(groupID)
+	if err != nil {
+		d.logger.Warningf("Node[%d] groupID[%d] get replica error: %v",
+			d.config.NodeID, groupID, err)
+		return nil, err
+	}
+
+	if clusterID != r.cluster.ClusterID() {
+		d.logger.Warningf("Node[%d] groupID[%d] cluster id %d not match %d",
+			d.config.NodeID, groupID, clusterID, r.cluster.ClusterID())
+		return nil, errors.New("cluster id not match")
+	}
+
+	if peerID != r.cluster.LocalPeerID() {
+		d.logger.Warningf("Node[%d] %s groupID[%d] received message with different peer id(%d)",
+			d.config.NodeID, groupID, peerID)
+		return nil, errors.New("peer id not match")
+	}
+	return r, nil
 }

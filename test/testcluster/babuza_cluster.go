@@ -44,7 +44,7 @@ func (a *appController) stop() error {
 	return a.app.Stop()
 }
 
-func (a *appController) wait() error {
+func (a *appController) waitServiceStop() error {
 	return <-a.appStopCh
 }
 
@@ -189,7 +189,7 @@ func (c *BabuzaCluster) Teardown() error {
 	}
 	for _, controller := range c.appControllers {
 		mu.Append(controller.stop())
-		mu.Append(controller.wait())
+		mu.Append(controller.waitServiceStop())
 	}
 	c.appControllers = make(map[uint64]*appController)
 	return mu.Get()
@@ -267,7 +267,7 @@ func (c *BabuzaCluster) RemovePeerFromCluster(wait time.Duration, client Embedde
 		return fmt.Errorf("test cluster: not found app (id=%d)", peerID)
 	}
 	me.Append(controller.stop())
-	me.Append(controller.wait())
+	me.Append(controller.waitServiceStop())
 	delete(c.appControllers, peerID)
 	return me.Get()
 }
@@ -286,7 +286,7 @@ func (c *BabuzaCluster) ShutdownPeer(peerID uint64) error {
 	}
 
 	me.Append(controller.stop())
-	me.Append(controller.wait())
+	me.Append(controller.waitServiceStop())
 	delete(c.appControllers, peerID)
 	return me.Get()
 }
