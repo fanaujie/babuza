@@ -24,8 +24,17 @@ enum RpcStatus {
 
 message BatchMessage {
   uint64  clusterID = 1;
-  uint64  groupID = 2;
-  repeated raftpb.Message  messages = 3 [(gogoproto.nullable) = false];
+  repeated raftpb.Message  messages = 2 [(gogoproto.nullable) = false];
+}
+
+message MultiRaftMessage {
+  uint64  groupID = 1;
+  raftpb.Message  message = 2 [(gogoproto.nullable) = false];
+}
+
+message MultiRaftBatchMessage {
+  uint64  clusterID = 1;
+  repeated MultiRaftMessage  messages = 2 [(gogoproto.nullable) = false];
 }
 
 message SnapshotChunkMessage {
@@ -90,8 +99,3 @@ message PublishApplicationServiceResponse {
 }
 
 
-message MultiRaftMessage {
-  uint64  clusterID = 1;
-  uint64  groupID = 2;
-  raftpb.Message  message = 3 [(gogoproto.nullable) = false];
-}

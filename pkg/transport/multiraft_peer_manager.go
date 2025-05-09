@@ -9,98 +9,80 @@ import (
 )
 
 type MultiRaftManagerImpl struct {
-	peers     map[uint64]peer.MultiRaftPeer
-	addresses map[uint64]string
-	mu        sync.RWMutex
+	peers     sync.Map // map[uint64]peer.MultiRaftPeer
+	addresses sync.Map // map[uint64]string
 }
 
 func NewMultiRaftPeerManager() *MultiRaftManagerImpl {
-	return &MultiRaftManagerImpl{
-		peers:     make(map[uint64]peer.MultiRaftPeer),
-		addresses: make(map[uint64]string),
-	}
+	return &MultiRaftManagerImpl{}
 }
 
-func (m *MultiRaftManagerImpl) GetPeer(id uint64) peer.MultiRaftPeer {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	p, ok := m.peers[id]
+func (m *MultiRaftManagerImpl) GetPeer(id uint64) (peer.MultiRaftPeer, error) {
+	p, ok := m.peers.Load(id)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("peer with id %d not found", id)
 	}
-	return p
+	return p.(peer.MultiRaftPeer), nil
 }
 
 func (m *MultiRaftManagerImpl) AddPeer(peerID uint64, peerAddress string, factory MultiRaftPeerFactory) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	_, ok := m.peers[peerID]
+	_, ok := m.peers.Load(peerID)
 	if ok {
 		return fmt.Errorf("peer with id %d already exists", peerID)
 	}
 	p := factory.CreatePeer(peerID)
-	m.peers[peerID] = p
-	m.addresses[peerID] = peerAddress
-
+	m.peers.Store(peerID, p)
+	m.addresses.Store(peerID, peerAddress)
 	return nil
 }
 
 func (m *MultiRaftManagerImpl) UpdatePeer(peerID uint64, peerAddress string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	_, ok := m.addresses[peerID]
+	_, ok := m.addresses.Load(peerID)
 	if ok {
-		m.addresses[peerID] = peerAddress
+		m.addresses.Store(peerID, peerAddress)
 		return nil
 	}
 	return fmt.Errorf("peer with id %d not found", peerID)
 }
 
 func (m *MultiRaftManagerImpl) RemovePeer(peerID uint64) error {
-	m.mu.Lock()
-	p, ok := m.peers[peerID]
+	p, ok := m.peers.Load(peerID)
 	if !ok {
-		m.mu.Unlock()
 		return fmt.Errorf("peer with id %d not found", peerID)
 	}
-	delete(m.peers, peerID)
-	delete(m.addresses, peerID)
-	m.mu.Unlock()
-	p.Stop()
+	m.peers.Delete(peerID)
+	m.addresses.Delete(peerID)
+	p.(peer.MultiRaftPeer).Stop()
 	return nil
 }
 
 func (m *MultiRaftManagerImpl) RemoveAllPeers() {
-	var peers []peer.MultiRaftPeer
-	m.mu.Lock()
-	for nodeId, p := range m.peers {
-		peers = append(peers, p)
-		delete(m.peers, nodeId)
-	}
-	for id := range m.addresses {
-		delete(m.addresses, id)
-	}
-	m.mu.Unlock()
-	for _, p := range peers {
+	var peersToStop []peer.MultiRaftPeer
+	m.peers.Range(func(key, value interface{}) bool {
+		peersToStop = append(peersToStop, value.(peer.MultiRaftPeer))
+		m.peers.Delete(key)
+		return true
+	})
+	m.addresses.Range(func(key, value interface{}) bool {
+		m.addresses.Delete(key)
+		return true
+	})
+	for _, p := range peersToStop {
 		p.Stop()
 	}
 }
 
 func (m *MultiRaftManagerImpl) ResolvePeerAddress(id uint64) (string, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	addr, ok := m.addresses[id]
+	addr, ok := m.addresses.Load(id)
 	if !ok {
 		return "", fmt.Errorf("peer with id %d not found", id)
 	}
-	return addr, nil
+	return addr.(string), nil
 }
 
 func (m *MultiRaftManagerImpl) UpdatePeerRaftReport(raft ibabuza.MultiRaftStatusReporter) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	for _, p := range m.peers {
-		p.UpdateRaftReport(raft)
-	}
+	m.peers.Range(func(key, value interface{}) bool {
+		value.(peer.MultiRaftPeer).UpdateRaftReport(raft)
+		return true
+	})
 }

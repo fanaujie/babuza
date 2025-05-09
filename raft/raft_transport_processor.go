@@ -12,6 +12,10 @@ type transportProcessor struct {
 	*Raft
 }
 
+func (d *transportProcessor) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
+	// not implemented
+}
+
 func (d *transportProcessor) ProcessBatchMessage(msg babuzapb.BatchMessage) {
 	for i := 0; i < len(msg.Messages); i++ {
 		if err := d.validateRequest(msg.ClusterID, msg.Messages[i].To); err != nil {

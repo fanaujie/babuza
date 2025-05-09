@@ -124,6 +124,10 @@ func (r *MockPeerRaftReport) Reset() {
 // MockFailedClient implements ibabuza.TransportClient for testing failure scenarios
 type MockFailedClient struct{}
 
+func (c *MockFailedClient) SendMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) error {
+	return errors.New("failed to send multi raft message")
+}
+
 func (c *MockFailedClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
 	return babuzapb.GetClusterPeersResponse{}, nil
 }
@@ -149,6 +153,10 @@ type MockSuccessClient struct {
 	sentBatchMessages []babuzapb.BatchMessage
 	sentSnapMessages  []babuzapb.SnapshotMessage
 	mu                sync.Mutex
+}
+
+func (c *MockSuccessClient) SendMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) error {
+	return nil
 }
 
 func NewMockSuccessClient() *MockSuccessClient {

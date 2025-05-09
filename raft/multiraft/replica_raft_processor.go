@@ -109,13 +109,13 @@ func (r *replica) ProcessStep() {
 	defer items.Release()
 	r.mu.lock.Lock()
 	defer r.mu.lock.Unlock()
-	for _, m := range items.Data {
-		for _, msg := range m.Messages {
-			if err = r.mu.rawNode.Step(msg); err != nil {
-				r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.GroupID(),
-					r.cluster.LocalPeerID(), err)
-			}
+	for _, msg := range items.Data {
+
+		if err = r.mu.rawNode.Step(msg); err != nil {
+			r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.GroupID(),
+				r.cluster.LocalPeerID(), err)
 		}
+
 	}
 }
 
@@ -210,34 +210,20 @@ func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
 				lastAppRespMsgIndex = i
 				optimiseAppendEntryResp = true
 			} else {
-				r.transport.Send(babuzapb.MultiRaftMessage{
-					ClusterID: r.cluster.ClusterID(),
-					GroupID:   uint64(r.cluster.GroupID()),
-					Message:   *m,
-				})
+				r.transport.Send(r.cluster.GroupID(), *m)
 			}
 		case raftpb.MsgSnap:
 			m.Snapshot.Metadata.ConfState = r.status.CloneConfState()
 			r.transport.SendSnapshot(babuzapb.MultiRaftMessage{
-				ClusterID: r.cluster.ClusterID(),
-				GroupID:   uint64(r.cluster.GroupID()),
-				Message:   *m,
+				GroupID: uint64(r.cluster.GroupID()),
+				Message: *m,
 			})
 		default:
-			r.transport.Send(babuzapb.MultiRaftMessage{
-				ClusterID: r.cluster.ClusterID(),
-				GroupID:   uint64(r.cluster.GroupID()),
-				Message:   *m,
-			})
+			r.transport.Send(r.cluster.GroupID(), *m)
 		}
 	}
 	if optimiseAppendEntryResp {
-		r.transport.Send(
-			babuzapb.MultiRaftMessage{
-				ClusterID: r.cluster.ClusterID(),
-				GroupID:   uint64(r.cluster.GroupID()),
-				Message:   msgs[lastAppRespMsgIndex],
-			})
+		r.transport.Send(r.cluster.GroupID(), msgs[lastAppRespMsgIndex])
 	}
 }
 

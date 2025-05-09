@@ -23,6 +23,26 @@ var (
 	ErrMultiRaftPeerCorruptedSnapshotFile    = errors.New("MultiRaftPeer: ErrMultiRaftPeerCorruptedSnapshotFile")
 )
 
+var (
+	multiRaftMessage sync.Pool
+)
+
+func GetMultiRaftMessage() *babuzapb.MultiRaftMessage {
+	m := multiRaftMessage.Get()
+	if m == nil {
+		return &babuzapb.MultiRaftMessage{}
+	}
+	return m.(*babuzapb.MultiRaftMessage)
+}
+
+func ReleaseMultiRaftMessage(msg *babuzapb.MultiRaftMessage) {
+	if msg == nil {
+		return
+	}
+	msg.Message = raftpb.Message{}
+	multiRaftMessage.Put(msg)
+}
+
 type MultiRaftPeerConfig struct {
 	LimiterMaxBatchMessageSize int64
 	SnapshotChunkSize          int64
@@ -30,8 +50,9 @@ type MultiRaftPeerConfig struct {
 }
 
 type MultiRaftPeerImpl struct {
-	localPeerID                uint64
-	peerID                     uint64
+	clusterID                  uint64
+	localNodeID                uint64
+	remotePeerID               uint64
 	limiterMaxBatchMessageSize int64
 	snapshotChunkSize          int64
 	raftQueueSize              int64
@@ -41,20 +62,21 @@ type MultiRaftPeerImpl struct {
 	breaker                    breaker.Breaker
 	transportClient            ibabuza.TransportClient
 	logger                     ibabuza.Logger
-	currentMsgCh               chan babuzapb.MultiRaftMessage
-	msgQueueCh                 chan chan babuzapb.MultiRaftMessage
-	msgQueueChPool             chan chan babuzapb.MultiRaftMessage
+	currentMsgCh               chan *babuzapb.MultiRaftMessage
+	msgQueueCh                 chan chan *babuzapb.MultiRaftMessage
+	msgQueueChPool             chan chan *babuzapb.MultiRaftMessage
 	closer                     *syncutil.Closer
 	mu                         sync.RWMutex
 }
 
-func NewMultiRaftPeer(localPeerID, peerID uint64, cfg MultiRaftPeerConfig, raftReport ibabuza.MultiRaftStatusReporter,
+func NewMultiRaftPeer(clusterID, localNodeID, remotePeerID uint64, cfg MultiRaftPeerConfig, raftReport ibabuza.MultiRaftStatusReporter,
 	memoryLimiter limiter.ResourceLimiter, chunkRateLimiter limiter.RateLimiter, breaker breaker.Breaker,
 	transportClient ibabuza.TransportClient, logger ibabuza.Logger) *MultiRaftPeerImpl {
 	closer := syncutil.NewCloser()
 	r := &MultiRaftPeerImpl{
-		localPeerID:                localPeerID,
-		peerID:                     peerID,
+		clusterID:                  clusterID,
+		localNodeID:                localNodeID,
+		remotePeerID:               remotePeerID,
 		limiterMaxBatchMessageSize: cfg.LimiterMaxBatchMessageSize,
 		snapshotChunkSize:          cfg.SnapshotChunkSize,
 		raftQueueSize:              cfg.RaftMsgQueueSize,
@@ -64,8 +86,8 @@ func NewMultiRaftPeer(localPeerID, peerID uint64, cfg MultiRaftPeerConfig, raftR
 		breaker:                    breaker,
 		transportClient:            transportClient,
 		logger:                     logger,
-		msgQueueCh:                 make(chan chan babuzapb.MultiRaftMessage, 1),
-		msgQueueChPool:             make(chan chan babuzapb.MultiRaftMessage, cfg.RaftMsgQueueSize),
+		msgQueueCh:                 make(chan chan *babuzapb.MultiRaftMessage, 1),
+		msgQueueChPool:             make(chan chan *babuzapb.MultiRaftMessage, cfg.RaftMsgQueueSize),
 		closer:                     closer,
 	}
 	closer.Run(func() {
@@ -74,7 +96,7 @@ func NewMultiRaftPeer(localPeerID, peerID uint64, cfg MultiRaftPeerConfig, raftR
 	return r
 }
 
-func (p *MultiRaftPeerImpl) SendRaftMessage(msg babuzapb.MultiRaftMessage) error {
+func (p *MultiRaftPeerImpl) SendRaftMessage(msg *babuzapb.MultiRaftMessage) error {
 	if !p.breaker.Ready() {
 		p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(msg.GroupID), msg.Message.To)
 		return ErrMultiRaftPeerBreakerNotReady
@@ -105,13 +127,13 @@ func (p *MultiRaftPeerImpl) SendSnapshot(snapMsg babuzapb.MultiRaftMessage, snap
 		if err := p.sendSnapshotMessageLoop(snapMsg, snapReader); err != nil {
 			if !errors.Is(err, ErrMultiRaftPeerStopped) {
 				p.breaker.Fail()
-				p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(snapMsg.GroupID), p.peerID)
-				p.raftReport.ReportSnapshot(ibabuza.RaftGroupID(snapMsg.GroupID), p.peerID, raft.SnapshotFailure)
+				p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(snapMsg.GroupID), p.remotePeerID)
+				p.raftReport.ReportSnapshot(ibabuza.RaftGroupID(snapMsg.GroupID), p.remotePeerID, raft.SnapshotFailure)
 			}
-			p.logger.Errorf("Local peer[%d] send snapshot message to peerID=%d error: %v", p.localPeerID, p.peerID, err)
+			p.logger.Errorf("Local peer[%d] send snapshot message to peerID=%d error: %v", p.localNodeID, p.remotePeerID, err)
 			return
 		}
-		p.raftReport.ReportSnapshot(ibabuza.RaftGroupID(snapMsg.GroupID), p.peerID, raft.SnapshotFinish)
+		p.raftReport.ReportSnapshot(ibabuza.RaftGroupID(snapMsg.GroupID), p.remotePeerID, raft.SnapshotFinish)
 	})
 }
 
@@ -124,7 +146,7 @@ func (p *MultiRaftPeerImpl) Stop() {
 	p.closer.Close()
 }
 
-func (p *MultiRaftPeerImpl) getQueue() (chan babuzapb.MultiRaftMessage, error) {
+func (p *MultiRaftPeerImpl) getQueue() (chan *babuzapb.MultiRaftMessage, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	msgCh := p.currentMsgCh
@@ -135,7 +157,7 @@ func (p *MultiRaftPeerImpl) getQueue() (chan babuzapb.MultiRaftMessage, error) {
 			return nil, ErrPeerStopped
 		case msgCh = <-p.msgQueueChPool:
 		default:
-			msgCh = make(chan babuzapb.MultiRaftMessage, p.raftQueueSize)
+			msgCh = make(chan *babuzapb.MultiRaftMessage, p.raftQueueSize)
 		}
 		p.currentMsgCh = msgCh
 		select {
@@ -154,7 +176,7 @@ func (p *MultiRaftPeerImpl) processRaftMessage() {
 			return
 		case msgCh := <-p.msgQueueCh:
 			if err := p.sendRaftMessageLoop(msgCh); err != nil {
-				p.logger.Warningf("Local peer[%d] send multi-raft message to peerID=%d error: %v", p.localPeerID, p.peerID, err)
+				p.logger.Warningf("Local peer[%d] send multi-raft message to peerID=%d error: %v", p.localNodeID, p.remotePeerID, err)
 			}
 			p.mu.Lock()
 			p.currentMsgCh = nil
@@ -173,81 +195,51 @@ func (p *MultiRaftPeerImpl) processRaftMessage() {
 			case p.msgQueueChPool <- msgCh:
 			default:
 				// if the pool is full, drop channel
-				p.logger.Warningf("Local peer[%d] message channel pool is full, drop channel", p.localPeerID)
+				p.logger.Warningf("Local peer[%d] message channel pool is full, drop channel", p.localNodeID)
 			}
 		}
 	}
 }
 
-func (p *MultiRaftPeerImpl) sendRaftMessageLoop(msgCh chan babuzapb.MultiRaftMessage) error {
-	var nextBatch bool
-	var maxBatchSize int64
+func (p *MultiRaftPeerImpl) sendRaftMessageLoop(msgCh chan *babuzapb.MultiRaftMessage) error {
 	msgBuf := make([]babuzapb.MultiRaftMessage, 0, cap(msgCh))
-	groupMsgBuf := make([]babuzapb.BatchMessage, 0, cap(msgCh))
-
 	for {
 		select {
 		case <-p.closer.CloseCh():
 			return ErrMultiRaftPeerStopped
 		case msg := <-msgCh:
-			msgBuf = append(msgBuf, msg)
+			msgBuf = append(msgBuf, *msg)
+			ReleaseMultiRaftMessage(msg)
 			mSize := int64(msg.Size())
-			maxBatchSize += mSize
+			remainSize := p.limiterMaxBatchMessageSize - mSize
 			p.memoryLimiter.Release(mSize)
-			for done := false; !done; {
+			for remainSize > 0 {
 				select {
 				case <-p.closer.CloseCh():
 					return ErrMultiRaftPeerStopped
 				case msg = <-msgCh:
-					msgBuf = append(msgBuf, msg)
+					msgBuf = append(msgBuf, *msg)
+					ReleaseMultiRaftMessage(msg)
 					mSize = int64(msg.Size())
 					p.memoryLimiter.Release(mSize)
-					if maxBatchSize+mSize > p.limiterMaxBatchMessageSize {
-						nextBatch = true
-						done = true
-					} else {
-						maxBatchSize += mSize
-					}
+					remainSize -= mSize
 				default:
-					done = true
+					remainSize = -1
 				}
 			}
-			var firstBatch, secondBatch []babuzapb.MultiRaftMessage
-			if nextBatch {
-				firstBatch = msgBuf[:len(msgBuf)-1]
-				secondBatch = msgBuf[len(msgBuf)-1:]
-			} else {
-				firstBatch = msgBuf
-			}
-			if len(firstBatch) > 0 {
-				groupMsgBuf = p.groupMessagesByGroupID(firstBatch, groupMsgBuf)
-				for _, batchMsg := range groupMsgBuf {
-					if err := p.transportClient.SendBatchMessage(batchMsg); err != nil {
-						p.breaker.Fail()
-						p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(batchMsg.ClusterID),
-							batchMsg.Messages[0].To)
-						return err
-					}
-					p.breaker.Success()
+
+			if err := p.transportClient.SendMultiRaftMessage(babuzapb.MultiRaftBatchMessage{
+				ClusterID: p.clusterID,
+				Messages:  msgBuf,
+			}); err != nil {
+				p.breaker.Fail()
+				for _, m := range msgBuf {
+					p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(m.GroupID), p.remotePeerID)
 				}
-				groupMsgBuf = releaseBatchMessageBuffers(groupMsgBuf)
-				msgBuf = releaseMultiRaftMessageBuffers(firstBatch)
+				return err
 			}
-			if len(secondBatch) > 0 {
-				groupMsgBuf = p.groupMessagesByGroupID(secondBatch, groupMsgBuf)
-				for _, batchMsg := range groupMsgBuf {
-					if err := p.transportClient.SendBatchMessage(batchMsg); err != nil {
-						p.raftReport.ReportUnreachable(ibabuza.RaftGroupID(batchMsg.ClusterID),
-							batchMsg.Messages[0].To)
-						return err
-					}
-					p.breaker.Success()
-				}
-				groupMsgBuf = releaseBatchMessageBuffers(groupMsgBuf)
-				msgBuf = releaseMultiRaftMessageBuffers(secondBatch)
-			}
-			maxBatchSize = 0
-			nextBatch = false
+			p.breaker.Success()
+			msgBuf = releaseMultiRaftMessageBuffers(msgBuf)
 		}
 	}
 }
@@ -272,7 +264,7 @@ func (p *MultiRaftPeerImpl) sendSnapshotMessageLoop(snapMsg babuzapb.MultiRaftMe
 	}
 
 	m := babuzapb.SnapshotMessage{
-		ClusterID: snapMsg.ClusterID,
+		ClusterID: p.clusterID,
 		GroupID:   snapMsg.GroupID,
 		From:      snapMsg.Message.From,
 		To:        snapMsg.Message.To,
@@ -349,21 +341,4 @@ func (p *MultiRaftPeerImpl) sendSnapshotMsgWithChunk(reader io.Reader, fileSize 
 			}
 		}
 	}
-}
-
-func (p *MultiRaftPeerImpl) groupMessagesByGroupID(messages []babuzapb.MultiRaftMessage, outputResult []babuzapb.BatchMessage) []babuzapb.BatchMessage {
-	groupMap := make(map[uint64][]raftpb.Message)
-	for _, msg := range messages {
-		groupID := msg.GroupID
-		groupMap[groupID] = append(groupMap[groupID], msg.Message)
-	}
-
-	for groupID, msgs := range groupMap {
-		outputResult = append(outputResult, babuzapb.BatchMessage{
-			ClusterID: messages[0].ClusterID,
-			GroupID:   groupID,
-			Messages:  msgs,
-		})
-	}
-	return outputResult
 }

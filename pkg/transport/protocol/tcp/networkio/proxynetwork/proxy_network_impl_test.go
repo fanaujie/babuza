@@ -93,9 +93,10 @@ func TestRaftNetwork_EnableDisableProxy(t *testing.T) {
 		for _, tc := range testTLSConfig {
 			p := New()
 			assert.Nil(t, p.AddProxy(ibabuza.ProxyConfig{
-				Id:        1,
-				InAddr:    "127.0.0.1:14200",
-				TLSConfig: tc,
+				Id:                1,
+				InAddr:            "127.0.0.1:14200",
+				InListenTLSConfig: tc.serverTLS,
+				OutDialTLSConfig:  tc.clientTls,
 			}))
 			assert.Nil(t, p.ConnectProxy(1))
 			assert.Nil(t, p.DisconnectProxy(1))

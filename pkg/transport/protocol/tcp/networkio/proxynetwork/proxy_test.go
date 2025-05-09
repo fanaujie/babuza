@@ -10,21 +10,44 @@ import (
 	"time"
 )
 
-var testTLSConfig = []ibabuza.TLSConfig{
+type testCase struct {
+	clientTls ibabuza.TLSConfig
+	serverTLS ibabuza.TLSConfig
+}
+
+var testTLSConfig = []testCase{
 	{},
 	{
-		EnableTLS: true,
-		MutualTLS: false,
-		TLSCert:   "../../../../../../test/fixtures/server.pem",
-		TLSKey:    "../../../../../../test/fixtures/server-key.pem",
-		TLSRootCA: "../../../../../../test/fixtures/root.pem",
+		clientTls: ibabuza.TLSConfig{
+			EnableTLS: true,
+			MutualTLS: false,
+			TLSCert:   "../../../../../../test/fixtures/client.pem",
+			TLSKey:    "../../../../../../test/fixtures/client-key.pem",
+			TLSRootCA: "../../../../../../test/fixtures/root.pem",
+		},
+		serverTLS: ibabuza.TLSConfig{
+			EnableTLS: true,
+			MutualTLS: false,
+			TLSCert:   "../../../../../../test/fixtures/server.pem",
+			TLSKey:    "../../../../../../test/fixtures/server-key.pem",
+			TLSRootCA: "../../../../../../test/fixtures/root.pem",
+		},
 	},
 	{
-		EnableTLS: true,
-		MutualTLS: true,
-		TLSCert:   "../../../../../../test/fixtures/server.pem",
-		TLSKey:    "../../../../../../test/fixtures/server-key.pem",
-		TLSRootCA: "../../../../../../test/fixtures/root.pem",
+		clientTls: ibabuza.TLSConfig{
+			EnableTLS: true,
+			MutualTLS: true,
+			TLSCert:   "../../../../../../test/fixtures/client.pem",
+			TLSKey:    "../../../../../../test/fixtures/client-key.pem",
+			TLSRootCA: "../../../../../../test/fixtures/root.pem",
+		},
+		serverTLS: ibabuza.TLSConfig{
+			EnableTLS: true,
+			MutualTLS: true,
+			TLSCert:   "../../../../../../test/fixtures/server.pem",
+			TLSKey:    "../../../../../../test/fixtures/server-key.pem",
+			TLSRootCA: "../../../../../../test/fixtures/root.pem",
+		},
 	},
 }
 
@@ -36,7 +59,8 @@ func TestProxy_Enable(t *testing.T) {
 
 	for _, tc := range testTLSConfig {
 		func() {
-			pc.TLSConfig = tc
+			pc.InListenTLSConfig = tc.serverTLS
+			pc.OutDialTLSConfig = tc.clientTls
 			p := NewProxy(pc)
 			assert.Nil(t, p.Enable())
 			defer func() {
@@ -129,21 +153,23 @@ func TestProxy_Dial(t *testing.T) {
 	}
 	t.Run("failure: proxy is disable", func(t *testing.T) {
 		for _, tc := range testTLSConfig {
-			pc.TLSConfig = tc
+			pc.InListenTLSConfig = tc.serverTLS
+			pc.OutDialTLSConfig = tc.clientTls
 			p := NewProxy(pc)
 			assert.NotNil(t, p)
-			_, err := netutil.TcpDial(tc, pc.InAddr)
+			_, err := netutil.TcpDial(tc.clientTls, pc.InAddr)
 			assert.Error(t, err)
 		}
 	})
 	t.Run("failure: downstream raft peer does not start to listen", func(t *testing.T) {
 		for index, tc := range testTLSConfig {
-			pc.TLSConfig = tc
-			func() {
+			func(tlsCase testCase) {
+				pc.InListenTLSConfig = tlsCase.serverTLS
+				pc.OutDialTLSConfig = tlsCase.clientTls
 				p := NewProxy(pc)
 				assert.Nil(t, p.Enable())
 				defer p.Disable()
-				conn, err := netutil.TcpDial(tc, pc.InAddr)
+				conn, err := netutil.TcpDial(tlsCase.clientTls, pc.InAddr)
 				if index == 0 {
 					assert.Nil(t, err)
 					assert.Nil(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
@@ -153,20 +179,21 @@ func TestProxy_Dial(t *testing.T) {
 				} else {
 					assert.Error(t, err)
 				}
-			}()
+			}(tc)
 		}
 	})
 	t.Run("success", func(t *testing.T) {
 		for _, tc := range testTLSConfig {
-			pc.TLSConfig = tc
-			func() {
+			func(tlsCase testCase) {
+				pc.InListenTLSConfig = tlsCase.serverTLS
+				pc.OutDialTLSConfig = tlsCase.clientTls
 				p := NewProxy(pc)
 				assert.Nil(t, p.Enable())
 				defer p.Disable()
-				server := newPeerEchoServer(pc.TLSConfig, pc.OutAddr)
+				server := newPeerEchoServer(tlsCase.serverTLS, pc.OutAddr)
 				assert.Nil(t, server.start())
 				defer server.stop()
-				conn, err := netutil.TcpDial(tc, pc.InAddr)
+				conn, err := netutil.TcpDial(tlsCase.clientTls, pc.InAddr)
 				assert.Nil(t, err)
 				wData := []byte{1, 2, 3, 4}
 				rData := make([]byte, len(wData))
@@ -176,20 +203,21 @@ func TestProxy_Dial(t *testing.T) {
 				assert.Nil(t, err)
 				assert.Equal(t, wData, server.receiveData[1])
 				assert.Equal(t, wData, rData)
-			}()
+			}(tc)
 		}
 	})
 	t.Run("concurrency", func(t *testing.T) {
 		for _, tc := range testTLSConfig {
-			pc.TLSConfig = tc
-			func() {
+			func(tlsCase testCase) {
+				pc.InListenTLSConfig = tlsCase.serverTLS
+				pc.OutDialTLSConfig = tlsCase.clientTls
 				p := NewProxy(pc)
 				assert.Nil(t, p.Enable())
 				defer func() {
 					p.listener.Close()
 					p.wg.Wait()
 				}()
-				server := newPeerEchoServer(pc.TLSConfig, pc.OutAddr)
+				server := newPeerEchoServer(tlsCase.serverTLS, pc.OutAddr)
 				assert.Nil(t, server.start())
 				defer server.stop()
 
@@ -198,7 +226,7 @@ func TestProxy_Dial(t *testing.T) {
 				wData := []byte{1, 2, 3, 4}
 				for i := 0; i < clientCount; i++ {
 					go func() {
-						conn, err := netutil.TcpDial(tc, pc.InAddr)
+						conn, err := netutil.TcpDial(tlsCase.clientTls, pc.InAddr)
 						assert.Nil(t, err)
 						rData := make([]byte, len(wData))
 						defer func() {
@@ -214,7 +242,7 @@ func TestProxy_Dial(t *testing.T) {
 				for i := 0; i < clientCount; i++ {
 					assert.Equal(t, wData, <-doneCh)
 				}
-			}()
+			}(tc)
 		}
 	})
 }
@@ -225,17 +253,18 @@ func TestProxy_Disable(t *testing.T) {
 		OutAddr: "127.0.0.1:24200",
 	}
 	for _, tc := range testTLSConfig {
-		pc.TLSConfig = tc
-		func() {
+		func(tlsCase testCase) {
+			pc.InListenTLSConfig = tlsCase.serverTLS
+			pc.OutDialTLSConfig = tlsCase.clientTls
 			p := NewProxy(pc)
 			assert.Nil(t, p.Enable())
 			defer p.Disable()
-			server := newPeerEchoServer(tc, pc.OutAddr)
+			server := newPeerEchoServer(tlsCase.serverTLS, pc.OutAddr)
 			assert.Nil(t, server.start())
 			defer server.stop()
 			dialerCounts := 3
 			for i := 0; i < dialerCounts; i++ {
-				conn, err := netutil.TcpDial(tc, pc.InAddr)
+				conn, err := netutil.TcpDial(tlsCase.clientTls, pc.InAddr)
 				assert.Nil(t, err)
 				assert.NotNil(t, conn)
 				wData := []byte{1, 2, 3, 4}
@@ -249,7 +278,7 @@ func TestProxy_Disable(t *testing.T) {
 			assert.Nil(t, p.Disable())
 			assert.Equal(t, false, p.enable)
 			assert.Nil(t, p.Enable())
-			conn, err := netutil.TcpDial(tc, pc.InAddr)
+			conn, err := netutil.TcpDial(tlsCase.clientTls, pc.InAddr)
 			assert.Nil(t, err)
 			wData := []byte{1, 2, 3, 4}
 			rData := make([]byte, len(wData))
@@ -259,6 +288,6 @@ func TestProxy_Disable(t *testing.T) {
 			assert.Nil(t, err)
 			assert.Equal(t, wData, server.receiveData[4])
 			assert.Equal(t, wData, rData)
-		}()
+		}(tc)
 	}
 }

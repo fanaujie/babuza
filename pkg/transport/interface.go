@@ -24,7 +24,7 @@ type MultiRaftPeerFactory interface {
 }
 
 type MultiRaftPeerManager interface {
-	GetPeer(id uint64) peer.MultiRaftPeer
+	GetPeer(id uint64) (peer.MultiRaftPeer, error)
 	AddPeer(peerID uint64, peerAddress string, factory MultiRaftPeerFactory) error
 	UpdatePeer(peerID uint64, peerAddress string) error
 	RemovePeer(peerID uint64) error

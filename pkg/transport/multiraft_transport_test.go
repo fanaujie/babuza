@@ -21,7 +21,7 @@ import (
 
 // mockMultiRaftProcessor implements the ibabuza.MultiRaftNodeHandler interface for testing
 type mockMultiRaftProcessor struct {
-	receivedMsg      map[uint64]babuzapb.BatchMessage
+	receivedMsg      map[uint64][]raftpb.Message
 	receivedSnapMsg  map[uint64]babuzapb.SnapshotMessage
 	unreachable      map[uint64]struct{}
 	snapshotStatus   map[uint64]raft.SnapshotStatus
@@ -34,7 +34,7 @@ type mockMultiRaftProcessor struct {
 
 func newMockMultiRaftProcessor() *mockMultiRaftProcessor {
 	return &mockMultiRaftProcessor{
-		receivedMsg:      make(map[uint64]babuzapb.BatchMessage),
+		receivedMsg:      make(map[uint64][]raftpb.Message),
 		receivedSnapMsg:  make(map[uint64]babuzapb.SnapshotMessage),
 		unreachable:      make(map[uint64]struct{}),
 		snapshotStatus:   make(map[uint64]raft.SnapshotStatus),
@@ -42,10 +42,16 @@ func newMockMultiRaftProcessor() *mockMultiRaftProcessor {
 	}
 }
 
-func (mr *mockMultiRaftProcessor) ProcessBatchMessage(message babuzapb.BatchMessage) {
+func (mr *mockMultiRaftProcessor) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.receivedMsg[message.GroupID] = message
+	for _, msg := range message.Messages {
+		mr.receivedMsg[msg.GroupID] = append(mr.receivedMsg[msg.GroupID], msg.Message)
+	}
+}
+
+func (mr *mockMultiRaftProcessor) ProcessBatchMessage(message babuzapb.BatchMessage) {
+	// not implemented
 }
 
 func (mr *mockMultiRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
@@ -232,74 +238,67 @@ func TestMultiRaftTransport_Create(t *testing.T) {
 
 // Test sending messages between MultiRaftTransports
 func TestMultiRaftTransport_Send(t *testing.T) {
-	trans1, mockRaft1 := newTestMultiRaftTransport(t, 1, "localhost:14200")
+	node1ListenAddr := "localhost:24200"
+	node2ListenAddr := "localhost:24201"
+	trans1, mockRaft1 := newTestMultiRaftTransport(t, 1, node1ListenAddr)
 	defer trans1.Stop()
-	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, "localhost:14201")
+	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, node2ListenAddr)
 	defer trans2.Stop()
 
 	// Test sending from node 1 to node 2
-	trans1.AddPeer(2, "localhost:14201")
+	trans1.AddPeer(2, node2ListenAddr)
 
 	// Create a MultiRaftMessage to send
-	msg1To2 := babuzapb.MultiRaftMessage{
-		ClusterID: 1,
-		GroupID:   101,
-		Message: raftpb.Message{
-			Type:  raftpb.MsgApp,
-			To:    2,
-			From:  1,
-			Term:  1,
-			Index: 1,
-		},
+	groupID := ibabuza.RaftGroupID(101)
+	msg1To2 := raftpb.Message{
+		Type:  raftpb.MsgApp,
+		To:    2,
+		From:  1,
+		Term:  1,
+		Index: 1,
 	}
-	trans1.Send(msg1To2)
+	trans1.Send(groupID, msg1To2)
 	time.Sleep(time.Second) // Allow message to be delivered
 
 	// Verify message was received
 	mockRaft2.mu.Lock()
-	trans2RecMsg, ok := mockRaft2.receivedMsg[101]
+	trans2RecMsg, ok := mockRaft2.receivedMsg[uint64(groupID)]
 	mockRaft2.mu.Unlock()
 	assert.True(t, ok, "Message should be received")
-	assert.Equal(t, msg1To2.ClusterID, trans2RecMsg.ClusterID)
-	assert.Equal(t, msg1To2.GroupID, trans2RecMsg.GroupID)
-	assert.Equal(t, msg1To2.Message, trans2RecMsg.Messages[0])
+	assert.Equal(t, msg1To2, trans2RecMsg[0])
 
 	// Test sending from node 2 to node 1
-	trans2.AddPeer(1, "localhost:14200")
-	msg2To1 := babuzapb.MultiRaftMessage{
-		ClusterID: 1,
-		GroupID:   102,
-		Message: raftpb.Message{
-			Type:  raftpb.MsgApp,
-			To:    1,
-			From:  2,
-			Term:  2,
-			Index: 2,
-		},
+	trans2.AddPeer(1, node1ListenAddr)
+	groupID = ibabuza.RaftGroupID(102)
+	msg2To1 := raftpb.Message{
+		Type: raftpb.MsgApp,
+		To:   1,
+		From: 2,
+		Term: 2,
 	}
-	trans2.Send(msg2To1)
+	trans2.Send(groupID, msg2To1)
 	time.Sleep(time.Second) // Allow message to be delivered
 
 	// Verify message was received
 	mockRaft1.mu.Lock()
-	trans1RecMsg, ok := mockRaft1.receivedMsg[102]
+	trans1RecMsg, ok := mockRaft1.receivedMsg[uint64(groupID)]
 	mockRaft1.mu.Unlock()
 	assert.True(t, ok, "Message should be received")
-	assert.Equal(t, msg2To1.ClusterID, trans1RecMsg.ClusterID)
-	assert.Equal(t, msg2To1.GroupID, trans1RecMsg.GroupID)
-	assert.Equal(t, msg2To1.Message, trans1RecMsg.Messages[0])
+	assert.Equal(t, msg2To1, trans1RecMsg[0])
 }
 
 // Test sending a snapshot between MultiRaftTransports
 func TestMultiRaftTransport_SendSnapshot(t *testing.T) {
-	trans1, mockRaft1 := newTestMultiRaftTransport(t, 1, "localhost:14200")
+	node1ListenAddr := "localhost:24200"
+	node2ListenAddr := "localhost:24201"
+	trans1, mockRaft1 := newTestMultiRaftTransport(t, 1, node1ListenAddr)
 	defer trans1.Stop()
 
-	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, "localhost:14201")
+	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, node2ListenAddr)
 	defer trans2.Stop()
 
 	// Add peer and prepare for snapshot
-	trans1.AddPeer(2, "localhost:14201")
+	trans1.AddPeer(2, node2ListenAddr)
 
 	// Create and send a snapshot message
 	groupID := uint64(201)
@@ -334,17 +333,20 @@ func TestMultiRaftTransport_SendSnapshot(t *testing.T) {
 
 // Test peer management operations for MultiRaftTransport
 func TestMultiRaftTransport_PeerManagement(t *testing.T) {
-	trans, _ := newTestMultiRaftTransport(t, 1, "localhost:14200")
+	node1ListenAddr := "localhost:24200"
+	node2ListenAddr := "localhost:24201"
+	node3ListenAddr := "localhost:24202"
+	trans, _ := newTestMultiRaftTransport(t, 1, node1ListenAddr)
 	defer trans.Stop()
 
 	// Test adding peers
-	trans.AddPeer(2, "localhost:14201")
-	trans.AddPeer(3, "localhost:14202")
+	trans.AddPeer(2, node2ListenAddr)
+	trans.AddPeer(3, node3ListenAddr)
 
 	// Verify peer was added correctly
 	addr, err := trans.peerMgr.ResolvePeerAddress(2)
 	assert.Nil(t, err, "Should be able to get peer address")
-	assert.Equal(t, "localhost:14201", addr)
+	assert.Equal(t, node2ListenAddr, addr)
 
 	// Test updating peer
 	trans.UpdatePeer(2, "localhost:14203")
@@ -378,17 +380,15 @@ func TestMultiRaftTransport_UnreachablePeer(t *testing.T) {
 	trans1.AddPeer(99, "localhost:99999")
 
 	// Send a message to the unreachable peer
-	msg := babuzapb.MultiRaftMessage{
-		GroupID: 301,
-		Message: raftpb.Message{
-			Type:  raftpb.MsgApp,
-			To:    99,
-			From:  1,
-			Term:  1,
-			Index: 1,
-		},
+	groupID := ibabuza.RaftGroupID(301)
+	msg := raftpb.Message{
+		Type:  raftpb.MsgApp,
+		To:    99,
+		From:  1,
+		Term:  1,
+		Index: 1,
 	}
-	trans1.Send(msg)
+	trans1.Send(groupID, msg)
 
 	// Allow time for unreachable report
 	time.Sleep(time.Second * 2)
@@ -417,26 +417,24 @@ func TestMultiRaftTransport_UpdatePeerAndCommunicate(t *testing.T) {
 	time.Sleep(time.Second) // Allow update to take effect
 
 	// Send a message to the updated peer
-	msg := babuzapb.MultiRaftMessage{
-		GroupID: 401,
-		Message: raftpb.Message{
-			Type:  raftpb.MsgApp,
-			To:    2,
-			From:  1,
-			Term:  1,
-			Index: 1,
-		},
+	groupID := ibabuza.RaftGroupID(401)
+	msg := raftpb.Message{
+		Type:  raftpb.MsgApp,
+		To:    2,
+		From:  1,
+		Term:  1,
+		Index: 1,
 	}
-	trans1.Send(msg)
+	trans1.Send(groupID, msg)
 
 	// Allow time for message to be delivered
 	time.Sleep(time.Second)
 
 	// Verify message was received after the peer update
 	mockRaft2.mu.Lock()
-	trans2RecMsg, ok := mockRaft2.receivedMsg[401]
+	trans2RecMsg, ok := mockRaft2.receivedMsg[uint64(groupID)]
 	mockRaft2.mu.Unlock()
 
 	assert.True(t, ok, "Message should be received after peer update")
-	assert.Equal(t, msg.Message, trans2RecMsg.Messages[0])
+	assert.Equal(t, msg, trans2RecMsg[0])
 }

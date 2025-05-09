@@ -40,16 +40,6 @@ type nodeMsg struct {
 	totalMsgCount   int
 }
 
-func (m *nodeMsg) matchBatchMessage(matchMsgs []raftpb.Message) bool {
-	for _, msg := range matchMsgs {
-		_, ok := m.batchMsg[msg.Index]
-		if !ok {
-			return false
-		}
-	}
-	return true
-}
-
 func (m *nodeMsg) check(t *testing.T, identify string, tms []*testMsg) {
 	for _, tm := range tms {
 		if tm.batchMsg != nil {
@@ -96,6 +86,10 @@ func (m *mockTransportRaft) setupMsgCount(node uint64, msgCount int) {
 		snapshotMsg:   make(map[uint64]babuzapb.SnapshotMessage),
 		totalMsgCount: msgCount,
 	}
+}
+
+func (m *mockTransportRaft) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
+	// not supported
 }
 
 func (m *mockTransportRaft) ProcessBatchMessage(message babuzapb.BatchMessage) {

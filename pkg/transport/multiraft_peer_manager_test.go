@@ -15,7 +15,7 @@ type MockMultiRaftPeer struct {
 	id uint64
 }
 
-func (m *MockMultiRaftPeer) SendRaftMessage(msg babuzapb.MultiRaftMessage) error {
+func (m *MockMultiRaftPeer) SendRaftMessage(msg *babuzapb.MultiRaftMessage) error {
 	args := m.Called(msg)
 	return args.Error(0)
 }
@@ -47,10 +47,6 @@ func TestNewMultiRaftPeerManager(t *testing.T) {
 
 	assert.NotNil(t, manager)
 	assert.IsType(t, &MultiRaftManagerImpl{}, manager)
-
-	managerImpl := manager
-	assert.NotNil(t, managerImpl.peers)
-	assert.NotNil(t, managerImpl.addresses)
 }
 
 func TestMultiRaftManagerImpl_GetPeer(t *testing.T) {
@@ -69,12 +65,12 @@ func TestMultiRaftManagerImpl_GetPeer(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test getting existing peer
-	p := manager.GetPeer(peerID)
+	p, _ := manager.GetPeer(peerID)
 	assert.Equal(t, mockPeer, p)
 
 	// Test getting non-existent peer
-	p = manager.GetPeer(999)
-	assert.Nil(t, p)
+	_, err = manager.GetPeer(999)
+	assert.Error(t, err)
 }
 
 func TestMultiRaftManagerImpl_AddPeer(t *testing.T) {
@@ -93,8 +89,12 @@ func TestMultiRaftManagerImpl_AddPeer(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify the peer was added
-	assert.Equal(t, mockPeer, manager.peers[peerID])
-	assert.Equal(t, peerAddress, manager.addresses[peerID])
+	m, ok := manager.peers.Load(peerID)
+	assert.True(t, ok)
+	assert.Equal(t, mockPeer, m.(*MockMultiRaftPeer))
+	a, ok := manager.addresses.Load(peerID)
+	assert.True(t, ok)
+	assert.Equal(t, peerAddress, a.(string))
 	factory.AssertCalled(t, "CreatePeer", peerID)
 
 	// Test adding duplicate peer
@@ -122,7 +122,9 @@ func TestMultiRaftManagerImpl_UpdatePeer(t *testing.T) {
 	newAddress := "localhost:10002"
 	err = manager.UpdatePeer(peerID, newAddress)
 	assert.NoError(t, err)
-	assert.Equal(t, newAddress, manager.addresses[peerID])
+	a, ok := manager.addresses.Load(peerID)
+	assert.True(t, ok)
+	assert.Equal(t, newAddress, a.(string))
 
 	// Test updating non-existent peer
 	err = manager.UpdatePeer(999, peerAddress)
@@ -152,10 +154,10 @@ func TestMultiRaftManagerImpl_RemovePeer(t *testing.T) {
 
 	// Verify peer stopped and removed
 	mockPeer.AssertCalled(t, "Stop")
-	_, peerExists := manager.peers[peerID]
-	_, addrExists := manager.addresses[peerID]
-	assert.False(t, peerExists)
-	assert.False(t, addrExists)
+	_, ok := manager.peers.Load(peerID)
+	assert.False(t, ok)
+	_, ok = manager.addresses.Load(peerID)
+	assert.False(t, ok)
 
 	// Test removing non-existent peer
 	err = manager.RemovePeer(peerID)
@@ -190,14 +192,12 @@ func TestMultiRaftManagerImpl_RemoveAllPeers(t *testing.T) {
 	for i, p := range mockPeers {
 		p.AssertCalled(t, "Stop")
 		id := peerIDs[i]
-		_, peerExists := manager.peers[id]
-		_, addrExists := manager.addresses[id]
-		assert.False(t, peerExists)
-		assert.False(t, addrExists)
+		_, ok := manager.peers.Load(id)
+		assert.False(t, ok)
+		_, ok = manager.addresses.Load(id)
+		assert.False(t, ok)
 	}
 
-	assert.Empty(t, manager.peers)
-	assert.Empty(t, manager.addresses)
 }
 
 func TestMultiRaftManagerImpl_ResolvePeerAddress(t *testing.T) {

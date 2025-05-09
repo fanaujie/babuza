@@ -5,22 +5,28 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3"
-	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
 type transportProcessor struct {
 	*Node
 }
 
+func (d *transportProcessor) ProcessMultiRaftMessage(batchMsg babuzapb.MultiRaftBatchMessage) {
+	for _, msg := range batchMsg.Messages {
+		groupID := ibabuza.RaftGroupID(msg.GroupID)
+		r, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
+		if err != nil {
+			return
+		}
+		if err = r.EnqueueStep(msg.Message); err != nil {
+			d.logger.Warningf("Node[%d] ProcessBatchMessage groupID[%d] enqueue step error: %v", d.config.NodeID, groupID, err)
+		}
+	}
+
+}
+
 func (d *transportProcessor) ProcessBatchMessage(batchMsg babuzapb.BatchMessage) {
-	groupID := ibabuza.RaftGroupID(batchMsg.GroupID)
-	r, err := d.validateRequest(groupID, batchMsg.ClusterID, batchMsg.Messages[0].To)
-	if err != nil {
-		return
-	}
-	if err = r.EnqueueStep(batchMsg); err != nil {
-		d.logger.Warningf("Node[%d] ProcessBatchMessage groupID[%d] enqueue step error: %v", d.config.NodeID, groupID, err)
-	}
+	// not implemented
 }
 
 func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
@@ -60,13 +66,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 				Message: "Failed to finish snapshot: " + err.Error(),
 			}
 		} else {
-			if err = r.EnqueueStep(babuzapb.BatchMessage{
-				ClusterID: msg.ClusterID,
-				GroupID:   uint64(groupID),
-				Messages: []raftpb.Message{
-					msg.FinishMessage,
-				},
-			}); err != nil {
+			if err = r.EnqueueStep(msg.FinishMessage); err != nil {
 				r.logger.Warningf("Node[%d] groupID[%d] failed to enqueue finish message. err(%s)",
 					r.cluster.LocalPeerID(), msg.GroupID, err.Error())
 				return babuzapb.SnapshotMessageResponse{
@@ -142,11 +142,7 @@ func (d *transportProcessor) CreateSnapshotReader(groupID ibabuza.RaftGroupID, s
 	return snapReader, nil
 }
 
-func (d *transportProcessor) validateRequest(
-	groupID ibabuza.RaftGroupID,
-	clusterID uint64,
-	peerID uint64) (*replica, error) {
-
+func (d *transportProcessor) validateRequest(groupID ibabuza.RaftGroupID, clusterID uint64, peerID uint64) (*replica, error) {
 	r, err := d.getReplica(groupID)
 	if err != nil {
 		d.logger.Warningf("Node[%d] groupID[%d] get replica error: %v",

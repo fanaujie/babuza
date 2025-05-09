@@ -43,6 +43,10 @@ func (r *RaftMsgClient) getUrl(peerID uint64, path string) (*url.URL, error) {
 	return u, nil
 }
 
+func (r *RaftMsgClient) SendMultiRaftMessage(babuzapb.MultiRaftBatchMessage) error {
+	// not supported
+	return nil
+}
 func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	//TODO: retry if failed?
 	if batchMsg.Messages == nil || len(batchMsg.Messages) == 0 {

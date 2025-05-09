@@ -38,6 +38,11 @@ func (r *RaftMsgClient) getConnection(peerID uint64) (*conn.FrameConnection, err
 	return c, nil
 }
 
+func (r *RaftMsgClient) SendMultiRaftMessage(babuzapb.MultiRaftBatchMessage) error {
+	// not supported
+	return nil
+}
+
 func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	if batchMsg.Messages == nil || len(batchMsg.Messages) == 0 {
 		return fmt.Errorf("batch message is empty")

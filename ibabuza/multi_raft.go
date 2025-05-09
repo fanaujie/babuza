@@ -14,7 +14,7 @@ type MultiRaftTransport interface {
 	SetupTransportRaft(MultiRaftNodeHandler) error
 	Start() error
 	Stop() error
-	Send(babuzapb.MultiRaftMessage)
+	Send(RaftGroupID, raftpb.Message)
 	SendSnapshot(babuzapb.MultiRaftMessage)
 	CreateTransportClient() (TransportClient, error)
 	AddPeer(uint64, string)

@@ -320,6 +320,18 @@ type mockStorageMgr struct {
 	entryStorage mockEntryStorage
 }
 
+func (m *mockStorageMgr) MetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+	return nil
+}
+
+func (m *mockStorageMgr) FinishSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+	return nil
+}
+
+func (m *mockStorageMgr) ChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+	return nil
+}
+
 func (m *mockStorageMgr) CompactAndReleaseSnapshot(index uint64, snapshot raftpb.Snapshot) error {
 	m.releaseSnap = snapshot
 	return nil
@@ -364,10 +376,6 @@ func (m *mockStorageMgr) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
 
 func (m *mockStorageMgr) SupportConcurrentSnapshot() bool {
 	return false
-}
-
-func (m *mockStorageMgr) ReceiveSnapshotMessage(msg babuzapb.SnapshotMessage) (bool, error) {
-	return false, nil
 }
 
 func (m *mockStorageMgr) GetEntryStorage() (ibabuza.EntryStorage, error) {
@@ -466,8 +474,15 @@ type mockPubTransClient struct {
 	errMsg string
 }
 
-func (c *mockPubTransClient) SendBatchMessage(babuzapb.BatchMessage) error       { return nil }
-func (c *mockPubTransClient) SendSnapshotMessage(babuzapb.SnapshotMessage) error { return nil }
+func (c *mockPubTransClient) SendMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) error {
+	return nil
+}
+
+func (c *mockPubTransClient) SendSnapshotMessage(message babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
+	return babuzapb.SnapshotMessageResponse{}, nil
+}
+
+func (c *mockPubTransClient) SendBatchMessage(babuzapb.BatchMessage) error { return nil }
 func (c *mockPubTransClient) GetClusterPeers(babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
 	return babuzapb.GetClusterPeersResponse{}, nil
 }

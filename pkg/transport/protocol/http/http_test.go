@@ -71,6 +71,10 @@ type mockTransportRaft struct {
 	mu               sync.Mutex
 }
 
+func (m *mockTransportRaft) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
+	// not supported
+}
+
 func newMockTransportRaft(nodes int) *mockTransportRaft {
 	return &mockTransportRaft{
 		nodesMsg:         make(map[uint64]*nodeMsg),

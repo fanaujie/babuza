@@ -18,7 +18,7 @@ type MultiRaftMsgClient struct {
 	logger   ibabuza.Logger
 
 	streamMu    sync.RWMutex
-	streamCache map[uint64]pb.MultiRaftTransport_SendBatchMessageClient
+	streamCache map[uint64]pb.MultiRaftTransport_SendMultiRaftMessageClient
 	streamConn  map[uint64]*grpc.ClientConn
 }
 
@@ -33,7 +33,7 @@ func NewMultiRaftMsgClient(
 		pool:        pool,
 		cfg:         cfg,
 		logger:      logger,
-		streamCache: make(map[uint64]pb.MultiRaftTransport_SendBatchMessageClient),
+		streamCache: make(map[uint64]pb.MultiRaftTransport_SendMultiRaftMessageClient),
 		streamConn:  make(map[uint64]*grpc.ClientConn),
 	}
 }
@@ -50,7 +50,7 @@ func (r *MultiRaftMsgClient) getConnection(peerID uint64) (*grpc.ClientConn, err
 	return conn, nil
 }
 
-func (r *MultiRaftMsgClient) GetStream(peerID uint64) (pb.MultiRaftTransport_SendBatchMessageClient, error) {
+func (r *MultiRaftMsgClient) GetStream(peerID uint64) (pb.MultiRaftTransport_SendMultiRaftMessageClient, error) {
 	r.streamMu.RLock()
 
 	if stream, ok := r.streamCache[peerID]; ok {
@@ -65,7 +65,7 @@ func (r *MultiRaftMsgClient) GetStream(peerID uint64) (pb.MultiRaftTransport_Sen
 	}
 
 	client := pb.NewMultiRaftTransportClient(conn)
-	stream, err := client.SendBatchMessage(context.TODO())
+	stream, err := client.SendMultiRaftMessage(context.TODO())
 	if err != nil {
 		r.pool.Remove(conn)
 		return nil, fmt.Errorf("failed to create stream: %w", err)
@@ -78,7 +78,7 @@ func (r *MultiRaftMsgClient) GetStream(peerID uint64) (pb.MultiRaftTransport_Sen
 	return stream, nil
 }
 
-func (r *MultiRaftMsgClient) receiveResponses(peerID uint64, stream pb.MultiRaftTransport_SendBatchMessageClient) {
+func (r *MultiRaftMsgClient) receiveResponses(peerID uint64, stream pb.MultiRaftTransport_SendMultiRaftMessageClient) {
 	for {
 		_, err := stream.Recv()
 		if err != nil {
@@ -103,12 +103,12 @@ func (r *MultiRaftMsgClient) closeStream(peerID uint64) {
 
 }
 
-func (r *MultiRaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
+func (r *MultiRaftMsgClient) SendMultiRaftMessage(batchMsg babuzapb.MultiRaftBatchMessage) error {
 	if batchMsg.Messages == nil || len(batchMsg.Messages) == 0 {
 		return fmt.Errorf("batch message is empty")
 	}
 
-	peerID := batchMsg.Messages[0].To
+	peerID := batchMsg.Messages[0].Message.To
 	stream, err := r.GetStream(peerID)
 	if err != nil {
 		return err
@@ -118,7 +118,10 @@ func (r *MultiRaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) er
 		r.closeStream(peerID)
 		return fmt.Errorf("failed to send batch message: %w", err)
 	}
+	return nil
+}
 
+func (r *MultiRaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	return nil
 }
 
@@ -181,7 +184,7 @@ func (r *MultiRaftMsgClient) Close() error {
 	for _, conn := range r.streamConn {
 		r.pool.Put(conn)
 	}
-	r.streamCache = make(map[uint64]pb.MultiRaftTransport_SendBatchMessageClient)
+	r.streamCache = make(map[uint64]pb.MultiRaftTransport_SendMultiRaftMessageClient)
 	return nil
 }
 

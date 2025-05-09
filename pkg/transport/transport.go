@@ -17,9 +17,9 @@ type peerFactory struct {
 func (p *peerFactory) CreatePeer(peerID uint64) peer.Peer {
 	c, err := p.t.protocol.CreateClient(p.t.peerMgr)
 	if err != nil {
-		p.t.logger.Panicf("transport[local id=%d] failed to create client for peerID=%d err=%s", p.t.localPeerID, peerID, err.Error())
+		p.t.logger.Panicf("transport[local id=%d] failed to create client for peerID=%d err=%s", p.t.localNodeID, peerID, err.Error())
 	}
-	return peer.New(p.t.clusterID, p.t.localPeerID, peerID, peer.RaftPeerConfig{
+	return peer.New(p.t.clusterID, p.t.localNodeID, peerID, peer.RaftPeerConfig{
 		LimiterMaxBatchMessageSize: p.t.options.PeerLimiterMaxBatchMessageSize,
 		SnapshotChunkSize:          p.t.options.PeerSnapshotChunkSize,
 		RaftMsgQueueSize:           p.t.options.PeerQueueSize,
@@ -30,7 +30,7 @@ func (p *peerFactory) CreatePeer(peerID uint64) peer.Peer {
 
 type Transport struct {
 	clusterID        uint64
-	localPeerID      uint64
+	localNodeID      uint64
 	options          Options
 	raftProcessor    ibabuza.RaftNodeHandler
 	protocol         ibabuza.TransportProtocol
@@ -80,28 +80,28 @@ func (t *Transport) Stop() error {
 func (t *Transport) Send(msg raftpb.Message) {
 	p := t.peerMgr.GetPeer(msg.To)
 	if p == nil {
-		t.logger.Warningf("transport[local id=%d] not found peerID=%d", t.localPeerID, msg.To)
+		t.logger.Warningf("transport[local id=%d] not found peerID=%d", t.localNodeID, msg.To)
 		return
 	}
 	if err := p.SendRaftMessage(msg); err != nil {
-		t.logger.Warningf("transport[local id=%d] failed to send raft message to [id=%d] err=%s", t.localPeerID, msg.To, err.Error())
+		t.logger.Warningf("transport[local id=%d] failed to send raft message to [id=%d] err=%s", t.localNodeID, msg.To, err.Error())
 	}
 }
 func (t *Transport) SendSnapshot(snapMsg raftpb.Message) {
 	p := t.peerMgr.GetPeer(snapMsg.To)
 	if p == nil {
-		t.logger.Warningf("transport[local id=%d] not found peerID=%d", t.localPeerID, snapMsg.To)
+		t.logger.Warningf("transport[local id=%d] not found peerID=%d", t.localNodeID, snapMsg.To)
 		return
 	}
 	snapReader, err := t.raftProcessor.CreateSnapshotReader(snapMsg.Snapshot.Metadata.Index)
 	if err != nil {
-		t.logger.Panicf("transport[local id=%d] can not create snapshot reader (index=%d)", t.localPeerID, snapMsg.Snapshot.Metadata.Index)
+		t.logger.Panicf("transport[local id=%d] can not create snapshot reader (index=%d)", t.localNodeID, snapMsg.Snapshot.Metadata.Index)
 	}
 	p.SendSnapshot(snapMsg, snapReader)
 }
 
 func (t *Transport) SetupTransportConfig(cfg ibabuza.TransportConfig) error {
-	t.localPeerID = cfg.PeerId
+	t.localNodeID = cfg.PeerId
 	return t.protocol.Setup(cfg)
 }
 
@@ -123,21 +123,21 @@ func (t *Transport) CreateTransportClient() (ibabuza.TransportClient, error) {
 func (t *Transport) AddPeer(peerID uint64, peerAddress string) {
 	err := t.peerMgr.AddPeer(peerID, peerAddress, &peerFactory{t})
 	if err != nil {
-		t.logger.Warningf("transport[local id=%d] failed to add peerID=%d err=%s", t.localPeerID, peerID, err.Error())
+		t.logger.Warningf("transport[local id=%d] failed to add peerID=%d err=%s", t.localNodeID, peerID, err.Error())
 	}
 }
 
 func (t *Transport) UpdatePeer(peerID uint64, peerAddress string) {
 	err := t.peerMgr.UpdatePeer(peerID, peerAddress)
 	if err != nil {
-		t.logger.Warningf("transport[local id=%d] failed to update peerID=%d err=%s", t.localPeerID, peerID, err.Error())
+		t.logger.Warningf("transport[local id=%d] failed to update peerID=%d err=%s", t.localNodeID, peerID, err.Error())
 	}
 }
 
 func (t *Transport) RemovePeer(peerID uint64) {
 	err := t.peerMgr.RemovePeer(peerID)
 	if err != nil {
-		t.logger.Warningf("transport[local id=%d] failed to remove peerID=%d", t.localPeerID, peerID)
+		t.logger.Warningf("transport[local id=%d] failed to remove peerID=%d", t.localNodeID, peerID)
 	}
 }
 

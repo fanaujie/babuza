@@ -74,7 +74,7 @@ func (r *MultiRaftMsgServer) Stop() error {
 	return nil
 }
 
-func (r *MultiRaftMsgServer) SendBatchMessage(stream pb.MultiRaftTransport_SendBatchMessageServer) error {
+func (r *MultiRaftMsgServer) SendMultiRaftMessage(stream pb.MultiRaftTransport_SendMultiRaftMessageServer) error {
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
@@ -84,7 +84,7 @@ func (r *MultiRaftMsgServer) SendBatchMessage(stream pb.MultiRaftTransport_SendB
 			r.logger.Errorf("grpc[multi-raft server]: failed to receive message: %v", err)
 			return err
 		}
-		r.raft.ProcessBatchMessage(*msg)
+		r.raft.ProcessMultiRaftMessage(*msg)
 
 		if err = stream.Send(&emptypb.Empty{}); err != nil {
 			r.logger.Errorf("grpc[multi-raft server]: failed to send response: %v", err)

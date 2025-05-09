@@ -116,6 +116,10 @@ func (m *mockTransportRaft) setupMsgCount(node uint64, msgCount int) {
 	}
 }
 
+func (m *mockTransportRaft) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
+	// not supported
+}
+
 func (m *mockTransportRaft) ProcessBatchMessage(message babuzapb.BatchMessage) {
 	m.mu.Lock()
 	nodeId := message.Messages[0].From

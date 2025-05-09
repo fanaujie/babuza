@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"io"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -25,37 +26,39 @@ func (r multiRaftResolver) ResolvePeerAddress(peerID uint64) (string, error) {
 }
 
 type mockMultiRaftNodeHandler struct {
-	nodesMsg         map[uint64]*nodeMsg
-	notifyNodeDoneCh chan *nodeMsg
+	nodesMsg         map[uint64]*nodeMultiMsg
+	notifyNodeDoneCh chan *nodeMultiMsg
 	clusterRes       babuzapb.GetClusterPeersResponse
 	mu               sync.Mutex
 }
 
 func newMockMultiRaftNodeHandler(nodes int) *mockMultiRaftNodeHandler {
 	return &mockMultiRaftNodeHandler{
-		nodesMsg:         make(map[uint64]*nodeMsg),
-		notifyNodeDoneCh: make(chan *nodeMsg, nodes),
+		nodesMsg:         make(map[uint64]*nodeMultiMsg),
+		notifyNodeDoneCh: make(chan *nodeMultiMsg, nodes),
 	}
 }
 
 func (m *mockMultiRaftNodeHandler) setupMsgCount(node uint64, msgCount int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.nodesMsg[node] = &nodeMsg{
+	m.nodesMsg[node] = &nodeMultiMsg{
 		nodeId:        node,
-		batchMsg:      make(map[uint64]raftpb.Message),
+		batchMsg:      []babuzapb.MultiRaftBatchMessage{},
 		snapshotMsg:   make(map[uint64]babuzapb.SnapshotMessage),
 		totalMsgCount: msgCount,
 	}
 }
 
 func (m *mockMultiRaftNodeHandler) ProcessBatchMessage(message babuzapb.BatchMessage) {
+
+}
+
+func (m *mockMultiRaftNodeHandler) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
 	m.mu.Lock()
-	nodeId := message.Messages[0].From
+	nodeId := message.Messages[0].Message.From
 	n := m.nodesMsg[nodeId]
-	for _, msg := range message.Messages {
-		n.batchMsg[msg.Index] = msg
-	}
+	n.batchMsg = append(n.batchMsg, message)
 	n.receiveMsgCount++
 	if n.receiveMsgCount == n.totalMsgCount {
 		delete(m.nodesMsg, nodeId)
@@ -242,12 +245,12 @@ func TestMultiRaftSingleServerClient_SendAndReceive(t *testing.T) {
 		pool := connpool.NewConnectionPool(creator, defaultPoolCfg)
 		client := NewMultiRaftMsgClient(pool, multiRaftResolver(c.PeerAddress), defaultGrpcCfg, &logger.Mock{})
 
-		tms := genTestMsg(c.totalMsgCount, c.batchRaftMsgCount, 1)
+		tms := genTestMultiMsg(c.totalMsgCount, c.batchRaftMsgCount, 1)
 		mockTransport.setupMsgCount(1, len(tms))
 
 		for index, tm := range tms {
 			if tm.batchMsg != nil {
-				assert.Nil(t, client.SendBatchMessage(*tm.batchMsg), identify)
+				assert.Nil(t, client.SendMultiRaftMessage(*tm.batchMsg), identify)
 			} else if tm.snapMsg != nil {
 				_, err := client.SendSnapshotMessage(*tm.snapMsg)
 				assert.Nil(t, err, identify)
@@ -359,17 +362,17 @@ func TestMultiRaftSingleServerMultiClient_SendAndReceive(t *testing.T) {
 		srv := NewMultiRaftMsgServer(c.TransportConfig, c.NetworkIO, mockTransport, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
 
-		allTms := make(map[int][]*testMsg)
+		allTms := make(map[int][]*testMultiMsg)
 		wg := new(sync.WaitGroup)
 
 		for n := 1; n <= c.clients; n++ {
-			allTms[n] = genTestMsg(c.totalMsgCount, c.batchRaftMsgCount, uint64(n))
+			allTms[n] = genTestMultiMsg(c.totalMsgCount, c.batchRaftMsgCount, uint64(n))
 			mockTransport.setupMsgCount(uint64(n), len(allTms[n]))
 		}
 
 		for n := 1; n <= c.clients; n++ {
 			wg.Add(1)
-			go func(n int, tms []*testMsg) {
+			go func(n int, tms []*testMultiMsg) {
 				defer wg.Done()
 				creator := NewConnectionCreator(c.NetworkIO, c.clientTls, defaultPoolCfg)
 				pool := connpool.NewConnectionPool(creator, defaultPoolCfg)
@@ -378,7 +381,7 @@ func TestMultiRaftSingleServerMultiClient_SendAndReceive(t *testing.T) {
 
 				for _, tm := range tms {
 					if tm.batchMsg != nil {
-						assert.Nil(t, client.SendBatchMessage(*tm.batchMsg), identify)
+						assert.Nil(t, client.SendMultiRaftMessage(*tm.batchMsg), identify)
 					} else if tm.snapMsg != nil {
 						_, err := client.SendSnapshotMessage(*tm.snapMsg)
 						assert.Nil(t, err, identify)
@@ -457,7 +460,7 @@ type mockServerBehavior struct {
 	streamMu         sync.Mutex
 }
 
-func (m *mockServerBehavior) SendBatchMessage(stream pb.MultiRaftTransport_SendBatchMessageServer) error {
+func (m *mockServerBehavior) SendMultiRaftMessage(stream pb.MultiRaftTransport_SendMultiRaftMessageServer) error {
 	m.streamMu.Lock()
 	m.streamCount++
 	m.streamMu.Unlock()
@@ -509,22 +512,26 @@ func TestMultiRaftClient_ErrorHandling(t *testing.T) {
 		pool := connpool.NewConnectionPool(creator, defaultPoolCfg)
 		client := NewMultiRaftMsgClient(pool, multiRaftResolver(local), defaultGrpcCfg, &logger.Mock{})
 
-		msg := babuzapb.BatchMessage{
-			Messages: []raftpb.Message{
+		msg := babuzapb.MultiRaftBatchMessage{
+			ClusterID: 1,
+			Messages: []babuzapb.MultiRaftMessage{
 				{
-					Type: raftpb.MsgApp,
-					To:   2,
-					From: 1,
+					GroupID: 1,
+					Message: raftpb.Message{
+						Type: raftpb.MsgApp,
+						To:   2,
+						From: 1,
+					},
 				},
 			},
 		}
 
-		assert.Nil(t, client.SendBatchMessage(msg))
+		assert.Nil(t, client.SendMultiRaftMessage(msg))
 		mockHandler.terminateStreams = true
 		// The client will not receive any response
 		// because the stream is terminated by the server
 		// The goroutine handling the stream will receive an error and clean up resources
-		assert.Nil(t, client.SendBatchMessage(msg))
+		assert.Nil(t, client.SendMultiRaftMessage(msg))
 
 		//wait for the stream to be removed
 		time.Sleep(time.Second)
@@ -549,23 +556,26 @@ func TestMultiRaftClient_ErrorHandling(t *testing.T) {
 		pool := connpool.NewConnectionPool(failCreator, defaultPoolCfg)
 		client := NewMultiRaftMsgClient(pool, multiRaftResolver(local), defaultGrpcCfg, &logger.Mock{})
 
-		msg := babuzapb.BatchMessage{
-			Messages: []raftpb.Message{
+		msg := babuzapb.MultiRaftBatchMessage{
+			ClusterID: 1,
+			Messages: []babuzapb.MultiRaftMessage{
 				{
-					Type: raftpb.MsgApp,
-					To:   3,
-					From: 1,
+					GroupID: 1,
+					Message: raftpb.Message{
+						Type: raftpb.MsgApp,
+						To:   3,
+						From: 1,
+					},
 				},
 			},
 		}
 
 		failCreator.shouldFail = true
 
-		err := client.SendBatchMessage(msg)
+		err := client.SendMultiRaftMessage(msg)
 		assert.NotNil(t, err)
 		assert.Equal(t, 1, failCreator.failCount, "Connection creation should fail exactly once")
 
-		// 验证流缓存是空的
 		client.streamMu.RLock()
 		streamCacheSize := len(client.streamCache)
 		client.streamMu.RUnlock()
@@ -574,4 +584,74 @@ func TestMultiRaftClient_ErrorHandling(t *testing.T) {
 
 		client.Close()
 	})
+}
+
+type nodeMultiMsg struct {
+	nodeId          uint64
+	batchMsg        []babuzapb.MultiRaftBatchMessage
+	snapshotMsg     map[uint64]babuzapb.SnapshotMessage
+	receiveMsgCount int
+	totalMsgCount   int
+}
+
+func (m *nodeMultiMsg) check(t *testing.T, identify string, tms []*testMultiMsg) {
+	nextIndex := uint64(0)
+	for _, tm := range tms {
+		if tm.batchMsg != nil {
+			assert.EqualValues(t, *tm.batchMsg, m.batchMsg[nextIndex], identify)
+			nextIndex++
+		} else if tm.snapMsg != nil {
+			snapMsg, ok := m.snapshotMsg[tm.snapMsg.Index]
+			assert.Equal(t, true, ok, identify)
+			assert.EqualValues(t, *tm.snapMsg, snapMsg, identify)
+		}
+	}
+}
+
+type testMultiMsg struct {
+	batchMsg *babuzapb.MultiRaftBatchMessage
+	snapMsg  *babuzapb.SnapshotMessage
+}
+
+func genTestMultiMsg(totalMsgs, maxRaftMsgs int, fromNode uint64) []*testMultiMsg {
+	r := make([]*testMultiMsg, totalMsgs)
+	var startIndex uint64 = 1
+	for i := 0; i < totalMsgs; i++ {
+		isBatch := rand.Intn(100)%2 == 0
+		if isBatch {
+			msgs := genMultiRaftMsg(maxRaftMsgs, startIndex, fromNode)
+			startIndex = msgs[len(msgs)-1].Message.Index + 1
+			r[i] = &testMultiMsg{
+				batchMsg: &babuzapb.MultiRaftBatchMessage{
+					ClusterID: 1,
+					Messages:  msgs,
+				},
+			}
+		} else {
+			startIndex += uint64(i)
+			r[i] = &testMultiMsg{
+				snapMsg: &babuzapb.SnapshotMessage{
+					From:  fromNode,
+					To:    1,
+					Index: startIndex,
+				},
+			}
+		}
+	}
+	return r
+}
+
+func genMultiRaftMsg(maxMsgs int, startIndex, fromNode uint64) []babuzapb.MultiRaftMessage {
+	r := make([]babuzapb.MultiRaftMessage, maxMsgs)
+	for i := 0; i < maxMsgs; i++ {
+		r[i] = babuzapb.MultiRaftMessage{
+			GroupID: 1,
+			Message: raftpb.Message{
+				From:  fromNode,
+				To:    1,
+				Index: startIndex + uint64(i),
+			},
+		}
+	}
+	return r
 }

@@ -39,6 +39,10 @@ type mockRaftProcessor struct {
 	mu               sync.Mutex
 }
 
+func (mr *mockRaftProcessor) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
+	// not implemented
+}
+
 func newMockRaftProcessor() *mockRaftProcessor {
 	return &mockRaftProcessor{
 		receivedMsg:      make(map[uint64]raftpb.Message),

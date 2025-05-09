@@ -40,7 +40,7 @@ type raftStatus struct {
 type replicaRequestQueue struct {
 	proposal     *queue.SwapBufferQueue[*proposalRequest]
 	configChange *queue.SwapBufferQueue[configChangeRequest]
-	step         *queue.SwapBufferQueue[babuzapb.BatchMessage]
+	step         *queue.SwapBufferQueue[raftpb.Message]
 }
 
 func newReplicaRequestQueue() *replicaRequestQueue {
@@ -51,9 +51,10 @@ func newReplicaRequestQueue() *replicaRequestQueue {
 				requests[i].confChange.Context = nil
 			}
 		}),
-		step: queue.NewSwapBufferQueue[babuzapb.BatchMessage](1024, func(messages []babuzapb.BatchMessage) {
+		step: queue.NewSwapBufferQueue[raftpb.Message](1024, func(messages []raftpb.Message) {
 			for i := 0; i < len(messages); i++ {
-				messages[i].Messages = nil
+				messages[i].Entries = nil
+				messages[i].Context = nil
 			}
 		}),
 	}
@@ -150,8 +151,8 @@ func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
-func (r *replica) EnqueueStep(batchMsg babuzapb.BatchMessage) error {
-	if err := r.requestQueue.step.Put(batchMsg); err != nil {
+func (r *replica) EnqueueStep(msg raftpb.Message) error {
+	if err := r.requestQueue.step.Put(msg); err != nil {
 		return errors.Wrapf(err, "GroupID[%d] enqueue step error", r.raftGroup.GroupID)
 	}
 	r.scheduler.EnqueueState(stateStep, r.raftGroup.GroupID)

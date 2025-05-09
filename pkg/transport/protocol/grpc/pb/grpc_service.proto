@@ -25,7 +25,7 @@ service RaftTransport {
 
 service MultiRaftTransport {
   // SendBatchMessage sends stream of batch messages
-  rpc SendBatchMessage(stream raft.BatchMessage) returns (stream google.protobuf.Empty);
+  rpc SendMultiRaftMessage(stream raft.MultiRaftBatchMessage) returns (stream google.protobuf.Empty);
 
   // SendSnapshotMessage sends a snapshot message
   rpc SendSnapshotMessage(raft.SnapshotMessage) returns (raft.SnapshotMessageResponse);
