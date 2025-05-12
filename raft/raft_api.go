@@ -27,10 +27,11 @@ type ClientSession struct {
 }
 
 type ClusterConfiguration struct {
-	ClusterID uint64
-	LeaderID  uint64
-	GroupID   uint64
-	Peers     []babuzapb.Peer
+	ClusterID   uint64
+	LeaderID    uint64
+	LocalPeerID uint64
+	GroupID     uint64
+	Peers       []babuzapb.Peer
 }
 
 type RaftState uint32
@@ -381,9 +382,10 @@ func (r *Raft) ApplicationServiceStart(ctx context.Context, appServiceAddresses 
 
 func (r *Raft) ClusterConfiguration() ClusterConfiguration {
 	return ClusterConfiguration{
-		ClusterID: r.cluster.ClusterID(),
-		LeaderID:  r.getLeaderId(),
-		Peers:     r.cluster.Peers(),
+		ClusterID:   r.cluster.ClusterID(),
+		LeaderID:    r.getLeaderId(),
+		LocalPeerID: r.cluster.LocalPeerID(),
+		Peers:       r.cluster.Peers(),
 	}
 }
 

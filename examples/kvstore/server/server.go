@@ -161,8 +161,6 @@ func (s *Server) Start() error {
 				} else {
 					s.logger.Infof("I have lost my leadership")
 				}
-			case <-r.ClusterMemberEventCh():
-				s.logger.Infof("Cluster membership changed")
 			}
 		}
 	})

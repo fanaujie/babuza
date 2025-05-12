@@ -15,6 +15,10 @@ func NewDummyFactory(maxDelay time.Duration) *Factory {
 	}
 }
 
-func (f *Factory) NewClient(config client.Config) (client.Client, error) {
-	return NewDummyClient(f.maxDelay), nil
+func (f *Factory) NewClient(config client.Config) client.Client {
+	return NewDummyClient(f.maxDelay)
+}
+
+func (f *Factory) Close() error {
+	return nil
 }

@@ -163,8 +163,8 @@ func (r *Reporter) report() string {
 
 			avgLat := totalLat / time.Duration(count)
 
-			report = append(report, fmt.Sprintf("  Second %d: %d ops (latency avg : %s, min: %s, max: %s)",
-				sec, count, avgLat, minLat, maxLat))
+			report = append(report, fmt.Sprintf("  Second %d: %d ops (latency min: %s, avg: %s max: %s)",
+				sec, count, minLat, avgLat, maxLat))
 		}
 	}
 

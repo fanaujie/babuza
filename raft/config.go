@@ -2,7 +2,6 @@ package raft
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
@@ -23,7 +22,7 @@ func NewPeersConfiguration() *PeersConfiguration {
 
 func (c *PeersConfiguration) AddPeer(id uint64, raftListenAddr string, isLearner bool) error {
 	if _, ok := c.raftPeersAttr[id]; ok {
-		return errors.New("")
+		return fmt.Errorf("peer already exists: %d", id)
 	}
 	c.raftPeersAttr[id] = babuzapb.RaftPeerAttribute{
 		Id:             id,

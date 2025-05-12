@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package kvbenchpb;
+
+option go_package = "github.com/fanaujie/babuza/test/kvbench/kvbenchpb";
+
+// KVService provides operations for a key-value store
+service KVService {
+  // Put stores a key-value pair
+  rpc Put(PutRequest) returns (PutResponse);
+  
+  // Get retrieves a value for a given key
+  rpc Get(GetRequest) returns (GetResponse);
+  
+  // Delete removes a key-value pair
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  
+  rpc ClusterConfiguration(ClusterPeersRequest) returns (ClusterPeersResponse);
+}
+
+
+message ResponseHeader {
+  uint64 ClusterID = 1;
+  uint64 peerID  = 2;
+  uint64 groupID  = 3;
+  uint64 raftTerm = 4;
+}
+
+// PutRequest is the request for the Put RPC
+message PutRequest {
+  uint64 groupID  = 1;
+  bytes  key = 2;
+  bytes  value = 3;
+}
+
+// PutResponse is the response for the Put RPC
+message PutResponse {
+  ResponseHeader header = 1;
+}
+
+// GetRequest is the request for the Get RPC
+message GetRequest {
+  uint64 groupID  = 1;
+  bytes  key = 2;
+}
+
+// GetResponse is the response for the Get RPC
+message GetResponse {
+  ResponseHeader header = 1;
+  bytes value = 2;
+}
+
+// DeleteRequest is the request for the Delete RPC
+message DeleteRequest {
+  uint64 groupID  = 1;
+  bytes key = 2;
+}
+
+// DeleteResponse is the response for the Delete RPC
+message DeleteResponse {
+  ResponseHeader header = 1;
+}
+
+
+
+message RaftPeerAttribute {
+  uint64    peerID = 1;
+  string    raftListenAddr = 2;
+  string    grpcListenAddr = 3;
+  bool      isLearner = 4;
+}
+
+message GroupRaftPeerAttribute {
+  uint64    groupID = 1;
+  uint64    leaderID = 2;
+  repeated  RaftPeerAttribute peers = 3;
+}
+
+message ClusterPeersRequest {
+  uint64  clusterID = 1;
+}
+
+message ClusterPeersResponse {
+  uint64 ClusterID = 1;
+  uint64 peerID  = 2;
+  repeated GroupRaftPeerAttribute groupPeers = 3;
+}
+
+enum KvCommand {
+  NONE = 0;
+  PUT = 1;
+  DELETE = 2;
+}
+
+message KvOP {
+  KvCommand command = 1;
+  bytes key = 2;
+  bytes value = 3;
+}
