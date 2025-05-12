@@ -22,6 +22,7 @@ require (
 	golang.org/x/time v0.5.0
 	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.36.5
+	github.com/puzpuzpuz/xsync/v4 v4.1.0
 )
 
 require (

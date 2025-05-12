@@ -22,9 +22,7 @@ type Client struct {
 func NewGRPCClientWithRouting(config client.Config, factory *Factory) *Client {
 
 	memberConnAddr := make([]string, 0)
-	factory.nodeClientMap.Range(func(k, v interface{}) bool {
-		addr := k.(string)
-		clients := v.([]*grpc.ClientConn)
+	factory.nodeClientMap.Range(func(addr string, clients []*grpc.ClientConn) bool {
 		if len(clients) > 0 {
 			memberConnAddr = append(memberConnAddr, addr)
 		}
@@ -54,7 +52,7 @@ func (c *Client) getClientForGroup(groupID uint64) (*grpc.ClientConn, error) {
 		if !ok {
 			return nil, fmt.Errorf("group %d not found", groupID)
 		}
-		addr = v.(string)
+		addr = v
 	} else {
 		addr = c.memberConnAddr[c.nextMemberIndex]
 		c.nextMemberIndex = (c.nextMemberIndex + 1) % len(c.memberConnAddr)

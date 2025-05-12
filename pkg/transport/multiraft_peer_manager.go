@@ -2,19 +2,21 @@ package transport
 
 import (
 	"fmt"
-	"sync"
-
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/transport/peer"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 type MultiRaftManagerImpl struct {
-	peers     sync.Map // map[uint64]peer.MultiRaftPeer
-	addresses sync.Map // map[uint64]string
+	peers     *xsync.Map[uint64, peer.MultiRaftPeer]
+	addresses *xsync.Map[uint64, string]
 }
 
 func NewMultiRaftPeerManager() *MultiRaftManagerImpl {
-	return &MultiRaftManagerImpl{}
+	return &MultiRaftManagerImpl{
+		peers:     xsync.NewMap[uint64, peer.MultiRaftPeer](),
+		addresses: xsync.NewMap[uint64, string](),
+	}
 }
 
 func (m *MultiRaftManagerImpl) GetPeer(id uint64) (peer.MultiRaftPeer, error) {
@@ -58,12 +60,12 @@ func (m *MultiRaftManagerImpl) RemovePeer(peerID uint64) error {
 
 func (m *MultiRaftManagerImpl) RemoveAllPeers() {
 	var peersToStop []peer.MultiRaftPeer
-	m.peers.Range(func(key, value interface{}) bool {
-		peersToStop = append(peersToStop, value.(peer.MultiRaftPeer))
+	m.peers.Range(func(key uint64, value peer.MultiRaftPeer) bool {
+		peersToStop = append(peersToStop, value)
 		m.peers.Delete(key)
 		return true
 	})
-	m.addresses.Range(func(key, value interface{}) bool {
+	m.addresses.Range(func(key uint64, value string) bool {
 		m.addresses.Delete(key)
 		return true
 	})
@@ -77,12 +79,12 @@ func (m *MultiRaftManagerImpl) ResolvePeerAddress(id uint64) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("peer with id %d not found", id)
 	}
-	return addr.(string), nil
+	return addr, nil
 }
 
 func (m *MultiRaftManagerImpl) UpdatePeerRaftReport(raft ibabuza.MultiRaftStatusReporter) {
-	m.peers.Range(func(key, value interface{}) bool {
-		value.(peer.MultiRaftPeer).UpdateRaftReport(raft)
+	m.peers.Range(func(key uint64, value peer.MultiRaftPeer) bool {
+		value.UpdateRaftReport(raft)
 		return true
 	})
 }

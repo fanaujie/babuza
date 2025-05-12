@@ -404,7 +404,7 @@ func TestRecover(t *testing.T) {
 	assert.Equal(t, 1, len(groupIDs))
 	assert.Equal(t, raftGroup2, groupIDs[0])
 	//wait for leader election
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 3)
 	group1LeaderID, err := nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("group1 leader: %d", group1LeaderID)
@@ -446,7 +446,7 @@ func TestRecover(t *testing.T) {
 		assert.NoError(t, n.Start())
 	}
 	// wait for leader election
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 3)
 	group1LeaderID, err = nm.CheckSameLeader(raftGroup1)
 	assert.NoError(t, err)
 	t.Logf("rastart group1 leader: %d", group1LeaderID)
@@ -846,9 +846,8 @@ func TestSnapshot(t *testing.T) {
 	time.Sleep(time.Second)
 	assert.NoError(t, verifyCounterValue(nm, raftGroup1, 100))
 	for _, n := range nm.GetAllNodes() {
-		n.replicaSet.Range(func(key, value interface{}) bool {
-			r := value.(*replica)
-			assert.Equal(t, cConfig.SnapshotCount, r.status.GetSnapshotIndex())
+		n.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
+			assert.Equal(t, cConfig.SnapshotCount, value.status.GetSnapshotIndex())
 			return true
 		})
 	}
@@ -864,9 +863,8 @@ func TestSnapshot(t *testing.T) {
 	//wait for node3 to join group1 and apply the command
 	time.Sleep(time.Second)
 	for _, n := range nm.GetAllNodes() {
-		n.replicaSet.Range(func(key, value interface{}) bool {
-			r := value.(*replica)
-			assert.Equal(t, cConfig.SnapshotCount, r.status.GetSnapshotIndex())
+		n.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
+			assert.Equal(t, cConfig.SnapshotCount, value.status.GetSnapshotIndex())
 			return true
 		})
 	}
@@ -890,9 +888,8 @@ func TestSnapshot(t *testing.T) {
 
 	time.Sleep(time.Second)
 	for _, n := range nm.GetAllNodes() {
-		n.replicaSet.Range(func(key, value interface{}) bool {
-			r := value.(*replica)
-			assert.Equal(t, cConfig.SnapshotCount, r.status.GetSnapshotIndex())
+		n.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
+			assert.Equal(t, cConfig.SnapshotCount, value.status.GetSnapshotIndex())
 			return true
 		})
 	}

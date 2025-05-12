@@ -11,6 +11,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/status"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
+	"github.com/puzpuzpuz/xsync/v4"
 	"go.etcd.io/etcd/raft/v3"
 	"path/filepath"
 	"sync"
@@ -200,7 +201,7 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 		logger:         logger,
 		closer:         syncutil.NewCloser(),
 		replicaEventCh: make(chan replicaEvent, 8),
-		replicaSet:     &sync.Map{},
+		replicaSet:     xsync.NewMap[ibabuza.RaftGroupID, *replica](),
 	}
 	scheduler := newScheduler(config.NodeID, schedulerConfig{
 		shardNum:       config.SchedulerShardNum,

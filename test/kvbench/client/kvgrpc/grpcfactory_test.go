@@ -384,16 +384,16 @@ func TestNewGRPCFactory(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, f)
 				// validate
-				f.groupLeaderMap.Range(func(key, value interface{}) bool {
-					assert.Equal(t, tc.expectedGroupLeaderMap[key.(uint64)], value.(string))
+				f.groupLeaderMap.Range(func(key uint64, value string) bool {
+					assert.Equal(t, tc.expectedGroupLeaderMap[key], value)
 					return true
 				})
-				f.groupMemberMap.Range(func(key, value interface{}) bool {
-					assert.Equal(t, tc.expectedGroupMemberMap[key.(uint64)], value.([]string))
+				f.groupMemberMap.Range(func(key uint64, value []string) bool {
+					assert.Equal(t, tc.expectedGroupMemberMap[key], value)
 					return true
 				})
-				f.nodeClientMap.Range(func(key, value interface{}) bool {
-					assert.Equal(t, tc.expectedNodeClientNumMap[key.(string)], len(value.([]*grpc.ClientConn)))
+				f.nodeClientMap.Range(func(key string, value []*grpc.ClientConn) bool {
+					assert.Equal(t, tc.expectedNodeClientNumMap[key], len(value))
 					return true
 				})
 			})

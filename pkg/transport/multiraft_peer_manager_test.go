@@ -94,7 +94,7 @@ func TestMultiRaftManagerImpl_AddPeer(t *testing.T) {
 	assert.Equal(t, mockPeer, m.(*MockMultiRaftPeer))
 	a, ok := manager.addresses.Load(peerID)
 	assert.True(t, ok)
-	assert.Equal(t, peerAddress, a.(string))
+	assert.Equal(t, peerAddress, a)
 	factory.AssertCalled(t, "CreatePeer", peerID)
 
 	// Test adding duplicate peer
@@ -124,7 +124,7 @@ func TestMultiRaftManagerImpl_UpdatePeer(t *testing.T) {
 	assert.NoError(t, err)
 	a, ok := manager.addresses.Load(peerID)
 	assert.True(t, ok)
-	assert.Equal(t, newAddress, a.(string))
+	assert.Equal(t, newAddress, a)
 
 	// Test updating non-existent peer
 	err = manager.UpdatePeer(999, peerAddress)

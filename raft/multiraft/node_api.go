@@ -7,10 +7,10 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/pkg/errors"
+	"github.com/puzpuzpuz/xsync/v4"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"sort"
-	"sync"
 	"time"
 )
 
@@ -23,7 +23,7 @@ type Node struct {
 	scheduler      Scheduler
 	replicaEventCh chan replicaEvent
 	closer         *syncutil.Closer
-	replicaSet     *sync.Map
+	replicaSet     *xsync.Map[ibabuza.RaftGroupID, *replica]
 }
 
 func (n *Node) Start() error {
@@ -38,8 +38,8 @@ func (n *Node) Start() error {
 			n.closer.Close()
 			_ = n.trans.Stop()
 			n.scheduler.Stop()
-			n.replicaSet.Range(func(key, value interface{}) bool {
-				value.(*replica).Stop()
+			n.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
+				value.Stop()
 				return true
 			})
 		}
@@ -52,8 +52,8 @@ func (n *Node) Start() error {
 		err = errors.Errorf("Node[%d] raftScheduler start error: %v", n.config.NodeID, err)
 		return err
 	}
-	n.replicaSet.Range(func(key, value interface{}) bool {
-		if err = value.(*replica).Start(); err != nil {
+	n.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
+		if err = value.Start(); err != nil {
 			err = errors.Errorf("Node[%d] replica start error: %v", n.config.NodeID, err)
 			return false
 		}
@@ -72,9 +72,8 @@ func (n *Node) Stop() {
 	n.trans.Stop()
 	n.closer.Close()
 	n.scheduler.Stop()
-	n.replicaSet.Range(func(key, value interface{}) bool {
-		r := value.(*replica)
-		r.Stop()
+	n.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
+		value.Stop()
 		return true
 	})
 	n.storage.Close()
@@ -95,9 +94,8 @@ func (n *Node) CreateRaftGroup(groupID ibabuza.RaftGroupID, peersConfig *babuza.
 
 func (n *Node) GetGroupIDs() []ibabuza.RaftGroupID {
 	groupIDs := make([]ibabuza.RaftGroupID, 0)
-	n.replicaSet.Range(func(key, value any) bool {
-		groupID := key.(ibabuza.RaftGroupID)
-		groupIDs = append(groupIDs, groupID)
+	n.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
+		groupIDs = append(groupIDs, key)
 		return true
 	})
 	if len(groupIDs) > 1 {
@@ -290,5 +288,5 @@ func (n *Node) getReplica(groupID ibabuza.RaftGroupID) (*replica, error) {
 	if !ok {
 		return nil, errors.Errorf("Node[%d] raft group %d not found", n.config.NodeID, groupID)
 	}
-	return r.(*replica), nil
+	return r, nil
 }

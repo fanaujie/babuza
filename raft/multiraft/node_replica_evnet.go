@@ -25,8 +25,8 @@ func (n *Node) replicaRaftTick() {
 		case <-n.closer.CloseCh():
 			return
 		case <-ticker.C:
-			n.replicaSet.Range(func(key, value any) bool {
-				groupIDs = append(groupIDs, key.(ibabuza.RaftGroupID))
+			n.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
+				groupIDs = append(groupIDs, key)
 				return true
 			})
 			if len(groupIDs) > 0 {
@@ -50,7 +50,7 @@ func (n *Node) replicaListener() {
 			case eventRemovePeer:
 				r, ok := n.replicaSet.Load(event.groupID)
 				if ok {
-					r.(*replica).Stop()
+					r.Stop()
 					n.replicaSet.Delete(event.groupID)
 					n.logger.Infof("Node[%d] remove replica group %d", n.config.NodeID, event.groupID)
 				}

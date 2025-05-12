@@ -5,20 +5,19 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/test/kvbench/client"
 	"github.com/fanaujie/babuza/test/kvbench/kvbenchpb"
+	"github.com/puzpuzpuz/xsync/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"sort"
-	"sync"
 )
 
 // Factory implements the client.Factory interface for creating gRPC clients
 type Factory struct {
 	config         client.Config
-	groupLeaderMap sync.Map //map[uint64]string
-	groupMemberMap sync.Map //map[uint64][]string
-	nodeClientMap  sync.Map //map[string][]*grpc.ClientConn
-
-	connUsageStats sync.Map //map[*grpc.ClientConn]int64
+	groupLeaderMap *xsync.Map[uint64, string]
+	groupMemberMap *xsync.Map[uint64, []string]
+	nodeClientMap  *xsync.Map[string, []*grpc.ClientConn]
+	connUsageStats *xsync.Map[*grpc.ClientConn, uint]
 }
 
 // NewGRPCFactory creates a new gRPC client factory
@@ -33,7 +32,11 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 	f := &Factory{
-		config: config,
+		config:         config,
+		groupLeaderMap: xsync.NewMap[uint64, string](),
+		groupMemberMap: xsync.NewMap[uint64, []string](),
+		nodeClientMap:  xsync.NewMap[string, []*grpc.ClientConn](),
+		connUsageStats: xsync.NewMap[*grpc.ClientConn, uint](),
 	}
 	for _, addr := range config.Endpoints {
 		// 1. connect to the first endpoint to get cluster configuration
@@ -71,11 +74,11 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 			f.groupMemberMap.Store(group.GetGroupID(), members)
 		}
 		conn.Close()
-		if lenSyncMap(&f.groupLeaderMap) > 0 && lenSyncMap(&f.groupMemberMap) > 0 {
+		if f.groupLeaderMap.Size() > 0 && f.groupMemberMap.Size() > 0 {
 			break
 		}
 	}
-	if lenSyncMap(&f.groupLeaderMap) == 0 || lenSyncMap(&f.groupMemberMap) == 0 {
+	if f.groupLeaderMap.Size() == 0 || f.groupMemberMap.Size() == 0 {
 		return nil, fmt.Errorf("failed to get cluster configuration")
 	}
 
@@ -83,11 +86,10 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 	if config.TargetLeader {
 		// target leader policy
 		leaderCountByAddr := make(map[string]int)
-		leaderAddrList := []string{}
+		var leaderAddrList []string
 
 		// count the number of leaders for each address
-		f.groupLeaderMap.Range(func(_, leaderAddr interface{}) bool {
-			addr := leaderAddr.(string)
+		f.groupLeaderMap.Range(func(key uint64, addr string) bool {
 			if _, exists := leaderCountByAddr[addr]; !exists {
 				leaderAddrList = append(leaderAddrList, addr)
 			}
@@ -111,8 +113,7 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 				connsForThisNode = config.Connections - totalConns
 			}
 
-			v, _ := f.nodeClientMap.LoadOrStore(addr, []*grpc.ClientConn{})
-			nodeConns := v.([]*grpc.ClientConn)
+			nodeConns, _ := f.nodeClientMap.LoadOrStore(addr, []*grpc.ClientConn{})
 			for i := uint(0); i < connsForThisNode; i++ {
 				conn, err := grpc.NewClient(addr, opts...)
 				if err != nil {
@@ -132,8 +133,7 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 					break
 				}
 
-				v, _ := f.nodeClientMap.LoadOrStore(addr, []*grpc.ClientConn{})
-				nodeConns := v.([]*grpc.ClientConn)
+				nodeConns, _ := f.nodeClientMap.LoadOrStore(addr, []*grpc.ClientConn{})
 				conn, err := grpc.NewClient(addr, opts...)
 				if err != nil {
 					fmt.Printf("failed to connect to %s: %v", addr, err)
@@ -155,9 +155,8 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 				fmt.Printf("failed to connect to %s: %v", addr, err)
 				return nil, err
 			}
-			conns, loaded := f.nodeClientMap.LoadOrStore(addr, []*grpc.ClientConn{conn})
+			clientSlice, loaded := f.nodeClientMap.LoadOrStore(addr, []*grpc.ClientConn{conn})
 			if loaded {
-				clientSlice := conns.([]*grpc.ClientConn)
 				f.nodeClientMap.Store(addr, append(clientSlice, conn))
 			}
 			totalConns++
@@ -168,8 +167,7 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 		}
 	}
 	// 5. initialize connection usage stats
-	f.nodeClientMap.Range(func(k, v interface{}) bool {
-		conns := v.([]*grpc.ClientConn)
+	f.nodeClientMap.Range(func(k string, conns []*grpc.ClientConn) bool {
 		for _, conn := range conns {
 			f.connUsageStats.Store(conn, uint(0))
 		}
@@ -185,8 +183,7 @@ func (f *Factory) NewClient(config client.Config) client.Client {
 
 // Close closes the client connection
 func (f *Factory) Close() error {
-	f.nodeClientMap.Range(func(k, v interface{}) bool {
-		conns := v.([]*grpc.ClientConn)
+	f.nodeClientMap.Range(func(k string, conns []*grpc.ClientConn) bool {
 		for _, conn := range conns {
 			if err := conn.Close(); err != nil {
 				fmt.Printf("failed to close connection: %v", err)
@@ -197,18 +194,9 @@ func (f *Factory) Close() error {
 	return nil
 }
 
-func lenSyncMap(m *sync.Map) int {
-	var i int
-	m.Range(func(k, v interface{}) bool {
-		i++
-		return true
-	})
-	return i
-}
-
 func (f *Factory) recordConnUsage(conn *grpc.ClientConn) {
-	currentUsage, _ := f.connUsageStats.LoadOrStore(conn, uint(0))
-	f.connUsageStats.Store(conn, currentUsage.(uint)+1)
+	currentUsage, _ := f.connUsageStats.LoadOrStore(conn, 0)
+	f.connUsageStats.Store(conn, currentUsage+1)
 }
 
 func (f *Factory) getLeastUsedConn(conns []*grpc.ClientConn) *grpc.ClientConn {
@@ -219,11 +207,10 @@ func (f *Factory) getLeastUsedConn(conns []*grpc.ClientConn) *grpc.ClientConn {
 	leastUsedConn := conns[0]
 	minUsage := f.config.Connections
 	for _, conn := range conns {
-		usage, ok := f.connUsageStats.Load(conn)
+		cUsage, ok := f.connUsageStats.Load(conn)
 		if !ok {
 			panic("connection usage not found")
 		}
-		cUsage := usage.(uint)
 		if cUsage < minUsage {
 			minUsage = cUsage
 			leastUsedConn = conn
@@ -235,12 +222,11 @@ func (f *Factory) getLeastUsedConn(conns []*grpc.ClientConn) *grpc.ClientConn {
 
 func (f *Factory) getConnectionForClient(addr string) (*grpc.ClientConn, error) {
 
-	v, ok := f.nodeClientMap.Load(addr)
+	conns, ok := f.nodeClientMap.Load(addr)
 	if !ok {
 		return nil, fmt.Errorf("no connections for %s", addr)
 	}
 
-	conns := v.([]*grpc.ClientConn)
 	if len(conns) == 0 {
 		return nil, fmt.Errorf("empty connection list for %s", addr)
 	}
@@ -258,6 +244,6 @@ func (f *Factory) getConnectionForClient(addr string) (*grpc.ClientConn, error) 
 func (f *Factory) releaseConnection(conn *grpc.ClientConn) {
 	usage, ok := f.connUsageStats.Load(conn)
 	if ok {
-		f.connUsageStats.Store(conn, usage.(uint)-1)
+		f.connUsageStats.Store(conn, usage-1)
 	}
 }
