@@ -5,6 +5,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3"
+	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
 type transportProcessor struct {
@@ -13,13 +14,50 @@ type transportProcessor struct {
 
 func (d *transportProcessor) ProcessMultiRaftMessage(batchMsg babuzapb.MultiRaftBatchMessage) {
 	for _, msg := range batchMsg.Messages {
-		groupID := ibabuza.RaftGroupID(msg.GroupID)
-		r, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
-		if err != nil {
-			return
-		}
-		if err = r.EnqueueStep(msg.Message); err != nil {
-			d.logger.Warningf("Node[%d] ProcessBatchMessage groupID[%d] enqueue step error: %v", d.config.NodeID, groupID, err)
+		switch msg.Message.Type {
+		case raftpb.MsgHeartbeat:
+			for _, m := range msg.HeartbeatMessages {
+				groupID := ibabuza.RaftGroupID(m.GroupID)
+				r, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
+				if err != nil {
+					return
+				}
+				if err = r.EnqueueStep(raftpb.Message{
+					Type:   raftpb.MsgHeartbeat,
+					To:     msg.Message.To,
+					From:   msg.Message.From,
+					Term:   m.Term,
+					Commit: m.Commit,
+				}); err != nil {
+					d.logger.Warningf("Node[%d] ProcessBatchMessage[heartbeat] groupID[%d] enqueue step error: %v", d.config.NodeID, groupID, err)
+				}
+			}
+		case raftpb.MsgHeartbeatResp:
+			for _, m := range msg.HeartbeatResponseMessages {
+				groupID := ibabuza.RaftGroupID(m.GroupID)
+				r, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
+				if err != nil {
+					return
+				}
+				if err = r.EnqueueStep(raftpb.Message{
+					Type:   raftpb.MsgHeartbeatResp,
+					To:     msg.Message.To,
+					From:   msg.Message.From,
+					Term:   m.Term,
+					Commit: m.Commit,
+				}); err != nil {
+					d.logger.Warningf("Node[%d] ProcessBatchMessage[heartbeat response] groupID[%d] enqueue step error: %v", d.config.NodeID, groupID, err)
+				}
+			}
+		default:
+			groupID := ibabuza.RaftGroupID(msg.GroupID)
+			r, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
+			if err != nil {
+				return
+			}
+			if err = r.EnqueueStep(msg.Message); err != nil {
+				d.logger.Warningf("Node[%d] ProcessBatchMessage groupID[%d] enqueue step error: %v", d.config.NodeID, groupID, err)
+			}
 		}
 	}
 

@@ -1,7 +1,6 @@
 package multiraft
 
 import (
-	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/utility/queue"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
@@ -125,11 +124,11 @@ func (s *raftScheduler) worker(shardID, workderID int, sh *sharder) {
 	for {
 		groupID, err := sh.queue.GetOne()
 		if err != nil {
-			if errors.Is(err, queue.ErrQueueEmpty) {
-				continue
-			}
 			s.log.Errorf("Node[%d] raftScheduler worker %d-%d get error: %v", s.nodeID, shardID, workderID, err)
 			return
+		}
+		if groupID == 0 { // empty queue
+			continue
 		}
 		sh.mu.Lock()
 		oldState := sh.groupState[groupID]

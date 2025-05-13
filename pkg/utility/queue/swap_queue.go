@@ -107,7 +107,7 @@ func (q *SwapBufferQueue[T]) Get() (BufferSlice[T], error) {
 
 	if q.tail == 0 {
 		var zero BufferSlice[T]
-		return zero, ErrQueueEmpty
+		return zero, nil
 	}
 
 	q.bufferInUse = true

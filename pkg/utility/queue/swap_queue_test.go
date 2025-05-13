@@ -114,14 +114,11 @@ func TestGetEmptyQueue(t *testing.T) {
 	q := NewSwapBufferQueue[int](5, nil)
 
 	slice, err := q.Get()
-	if err == nil {
-		t.Error("Expected not nil error, got nil")
-	}
-	if !errors.Is(err, ErrQueueEmpty) {
-		t.Errorf("Expected ErrBufferInUse, got %v", err)
+	if err != nil {
+		t.Error("Expected nil error, got not nil", err)
 	}
 	if len(slice.Data) != 0 {
-		t.Errorf("Expected empty slice, got %d elements", len(slice.Data))
+		t.Errorf("Expected empty slice, got length %d", len(slice.Data))
 	}
 }
 

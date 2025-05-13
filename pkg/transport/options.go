@@ -10,6 +10,7 @@ type Options struct {
 	PeerQueueSize                  int64
 	PeerSnapshotChunkSize          int64
 	PeerQueuePoolSize              int
+	HeartbeatBufferSize            int
 }
 
 func DefaultOptions() Options {
@@ -19,6 +20,7 @@ func DefaultOptions() Options {
 		PeerQueueSize:                  256,
 		PeerSnapshotChunkSize:          3 * 1024 * 1024,
 		PeerQueuePoolSize:              8,
+		HeartbeatBufferSize:            256,
 	}
 }
 
@@ -51,6 +53,12 @@ func SetTransportOptionsWithPeerSnapshotChunkSize(d int64) SetTransportOptions {
 func SetTransportOptionsWithPeerQueuePoolSize(d int) SetTransportOptions {
 	return func(opt *Options) {
 		opt.PeerQueuePoolSize = d
+	}
+}
+
+func SetTransportOptionsWithHeartbeatBufferSize(d int) SetTransportOptions {
+	return func(opt *Options) {
+		opt.HeartbeatBufferSize = d
 	}
 }
 

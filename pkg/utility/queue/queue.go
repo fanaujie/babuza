@@ -73,7 +73,6 @@ import (
 
 var (
 	ErrQueueDisposed = errors.New("queue has been disposed")
-	ErrQueueEmpty    = errors.New("queue is empty")
 	ErrQueueTimeout  = errors.New("timeout")
 )
 
@@ -285,7 +284,7 @@ func (q *Queue[T]) PollOne(timeout time.Duration) (T, error) {
 			sema.response.Done()
 			if !ok {
 				var zero T
-				return zero, ErrQueueEmpty
+				return zero, nil
 			}
 			return item, nil
 		case <-timeoutC:
@@ -310,7 +309,7 @@ func (q *Queue[T]) PollOne(timeout time.Duration) (T, error) {
 	q.lock.Unlock()
 	if !ok {
 		var zero T
-		return zero, ErrQueueEmpty
+		return zero, nil
 	}
 	return item, nil
 }
@@ -386,7 +385,7 @@ func (q *Queue[T]) Peek() (T, error) {
 	peekItem, ok := q.items.peek()
 	if !ok {
 		var zero T
-		return zero, ErrQueueEmpty
+		return zero, nil
 	}
 
 	return peekItem, nil

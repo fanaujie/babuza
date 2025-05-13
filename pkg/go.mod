@@ -23,6 +23,7 @@ require (
 	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.36.5
 	github.com/puzpuzpuz/xsync/v4 v4.1.0
+	github.com/Workiva/go-datastructures v1.1.5
 )
 
 require (

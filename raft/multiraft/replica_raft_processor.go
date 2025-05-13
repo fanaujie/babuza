@@ -4,9 +4,11 @@ import (
 	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/utility/queue"
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
+	"time"
 )
 
 func (r *replica) ProcessTick() {
@@ -204,6 +206,30 @@ func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
 	for i := 0; i < len(msgs); i++ {
 		m := &msgs[i]
 		switch m.Type {
+		case raftpb.MsgHeartbeat:
+			hq, _ := r.coalescedHeartbeat.heartbeatMsg.LoadOrStore(m.To,
+				queue.NewSwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage](r.config.CoalescedHeartbeatQueueSize, nil))
+			if err := hq.Put(babuzapb.MultiRaftHeartbeatMessage{
+				GroupID: uint64(r.cluster.GroupID()),
+				Term:    m.Term,
+				Commit:  m.Commit,
+			}); err != nil {
+				r.logger.Panicf("groupID[%d] raft[id=%d]: error putting heartbeat message: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+			}
+			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(m.To, time.Now().Unix())
+		case raftpb.MsgHeartbeatResp:
+			hq, _ := r.coalescedHeartbeat.heartbeatRespMsg.LoadOrStore(m.To,
+				queue.NewSwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage](r.config.CoalescedHeartbeatQueueSize, nil))
+			if err := hq.Put(babuzapb.MultiRaftHeartbeatMessage{
+				GroupID: uint64(r.cluster.GroupID()),
+				Term:    m.Term,
+				Commit:  m.Commit,
+			}); err != nil {
+				r.logger.Panicf("groupID[%d] raft[id=%d]: error putting heartbeat response message: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+			}
+			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(m.To, time.Now().Unix())
 		case raftpb.MsgAppResp:
 			if !m.Reject && m.Index > appRespIndex {
 				appRespIndex = m.Index
@@ -214,10 +240,7 @@ func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
 			}
 		case raftpb.MsgSnap:
 			m.Snapshot.Metadata.ConfState = r.status.CloneConfState()
-			r.transport.SendSnapshot(babuzapb.MultiRaftMessage{
-				GroupID: uint64(r.cluster.GroupID()),
-				Message: *m,
-			})
+			r.transport.SendSnapshot(r.cluster.GroupID(), *m)
 		default:
 			r.transport.Send(r.cluster.GroupID(), *m)
 		}

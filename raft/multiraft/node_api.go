@@ -15,15 +15,16 @@ import (
 )
 
 type Node struct {
-	config         NodeConfig
-	trans          ibabuza.MultiRaftTransport
-	storage        BootstrapStorage
-	factory        ComponentsFactory
-	logger         ibabuza.Logger
-	scheduler      Scheduler
-	replicaEventCh chan replicaEvent
-	closer         *syncutil.Closer
-	replicaSet     *xsync.Map[ibabuza.RaftGroupID, *replica]
+	config                  NodeConfig
+	trans                   ibabuza.MultiRaftTransport
+	storage                 BootstrapStorage
+	factory                 ComponentsFactory
+	logger                  ibabuza.Logger
+	scheduler               Scheduler
+	replicaEventCh          chan replicaEvent
+	closer                  *syncutil.Closer
+	replicaSet              *xsync.Map[ibabuza.RaftGroupID, *replica]
+	coalescedHeartbeatQueue *coalescedHeartbeatQueue
 }
 
 func (n *Node) Start() error {
@@ -64,6 +65,9 @@ func (n *Node) Start() error {
 	})
 	n.closer.Run(func() {
 		n.replicaListener()
+	})
+	n.closer.Run(func() {
+		n.replicaCoalescedHeartbeat()
 	})
 	return nil
 }

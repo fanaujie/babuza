@@ -27,14 +27,22 @@ message BatchMessage {
   repeated raftpb.Message  messages = 2 [(gogoproto.nullable) = false];
 }
 
+message MultiRaftHeartbeatMessage {
+  uint64   groupID = 1;
+  uint64   term    = 2;
+  uint64   commit   = 3;
+}
+
 message MultiRaftMessage {
   uint64  groupID = 1;
   raftpb.Message  message = 2 [(gogoproto.nullable) = false];
+  repeated MultiRaftHeartbeatMessage heartbeatMessages = 3 [(gogoproto.nullable) = false];
+  repeated MultiRaftHeartbeatMessage heartbeatResponseMessages = 4 [(gogoproto.nullable) = false];
 }
 
 message MultiRaftBatchMessage {
   uint64  clusterID = 1;
-  repeated MultiRaftMessage  messages = 2 [(gogoproto.nullable) = false];
+  repeated MultiRaftMessage  messages = 2;
 }
 
 message SnapshotChunkMessage {

@@ -17,13 +17,14 @@ type multiRaftPeerFactory struct {
 func (p *multiRaftPeerFactory) CreatePeer(peerID uint64) peer.MultiRaftPeer {
 	c, err := p.t.protocol.CreateClient(p.t.peerMgr)
 	if err != nil {
-		p.t.logger.Panicf("transport[local id=%d] failed to create client for peerID=%d err=%s",
+		p.t.logger.Panicf("transport[Node=%d] failed to create client for peerID=%d err=%s",
 			p.t.localNodeID, peerID, err.Error())
 	}
 	return peer.NewMultiRaftPeer(p.t.clusterID, p.t.localNodeID, peerID, peer.MultiRaftPeerConfig{
 		LimiterMaxBatchMessageSize: p.t.options.PeerLimiterMaxBatchMessageSize,
 		SnapshotChunkSize:          p.t.options.PeerSnapshotChunkSize,
-		RaftMsgQueueSize:           p.t.options.PeerQueueSize},
+		RaftMsgQueueSize:           p.t.options.PeerQueueSize,
+		HeartbeatBufferSize:        p.t.options.HeartbeatBufferSize},
 		p.t.raftProcessor, p.t.memoryLimiter, p.t.chunkRateLimiter, p.t.breaker, c, p.t.logger)
 }
 
@@ -79,31 +80,71 @@ func (t *MultiRaftTransport) Stop() error {
 func (t *MultiRaftTransport) Send(groupID ibabuza.RaftGroupID, message raftpb.Message) {
 	p, err := t.peerMgr.GetPeer(message.To)
 	if err != nil {
-		t.logger.Warningf("transport[local id=%d] %s", t.localNodeID, err)
+		t.logger.Warningf("transport[Node=%d] %s", t.localNodeID, err)
 		return
 	}
 	m := peer.GetMultiRaftMessage()
 	m.GroupID = uint64(groupID)
 	m.Message = message
 	if err = p.SendRaftMessage(m); err != nil {
-		t.logger.Warningf("transport[local id=%d] failed to send raft message to [id=%d] err=%s", t.localNodeID,
+		t.logger.Warningf("transport[Node=%d] failed to send raft message to [id=%d] err=%s", t.localNodeID,
 			message.To, err.Error())
 	}
 }
 
-func (t *MultiRaftTransport) SendSnapshot(snapMsg babuzapb.MultiRaftMessage) {
-	p, err := t.peerMgr.GetPeer(snapMsg.Message.To)
+func (t *MultiRaftTransport) SendSnapshot(groupID ibabuza.RaftGroupID, snapMsg raftpb.Message) {
+	p, err := t.peerMgr.GetPeer(snapMsg.To)
 	if err != nil {
-		t.logger.Warningf("transport[local id=%d] %s", t.localNodeID, err)
+		t.logger.Warningf("transport[Node=%d] %s", t.localNodeID, err)
 		return
 	}
-	snapReader, err := t.raftProcessor.CreateSnapshotReader(ibabuza.RaftGroupID(snapMsg.GroupID),
-		snapMsg.Message.Snapshot.Metadata.Index)
+	snapReader, err := t.raftProcessor.CreateSnapshotReader(groupID, snapMsg.Snapshot.Metadata.Index)
 	if err != nil {
-		t.logger.Panicf("transport[local id=%d] can not create snapshot reader (index=%d)",
-			t.localNodeID, snapMsg.Message.Snapshot.Metadata.Index)
+		t.logger.Panicf("transport[Node=%d] can not create snapshot reader (index=%d)",
+			t.localNodeID, snapMsg.Snapshot.Metadata.Index)
 	}
-	p.SendSnapshot(snapMsg, snapReader)
+	p.SendSnapshot(babuzapb.MultiRaftMessage{
+		GroupID: uint64(groupID),
+		Message: snapMsg,
+	}, snapReader)
+}
+
+func (t *MultiRaftTransport) SendHeartbeat(to uint64, heartbeats []babuzapb.MultiRaftHeartbeatMessage, heartbeatResponse []babuzapb.MultiRaftHeartbeatMessage) {
+	p, err := t.peerMgr.GetPeer(to)
+	if err != nil {
+		t.logger.Warningf("transport[Node=%d] %s", t.localNodeID, err)
+		return
+	}
+	if len(heartbeats) > 0 {
+		for _, heartbeat := range heartbeats {
+			m := peer.GetMultiRaftHeartbeatMessage(1024)
+			// Setting GroupID to 0 as it's not needed at container level;
+			// each individual HeartbeatMessage already contains its own GroupID
+			m.GroupID = 0
+			m.Message.From = t.localNodeID
+			m.Message.To = to
+			m.HeartbeatMessages = append(m.HeartbeatMessages, heartbeat)
+			if err = p.SendRaftMessage(m); err != nil {
+				t.logger.Warningf("transport[Node=%d] failed to send heartbeat message to [id=%d] err=%s",
+					t.localNodeID, m.Message.To, err.Error())
+			}
+		}
+	}
+	if len(heartbeatResponse) > 0 {
+		for _, heartbeat := range heartbeatResponse {
+			m := peer.GetMultiRaftHeartbeatResponseMessage(1024)
+			// Setting GroupID to 0 as it's not needed at container level;
+			// each individual HeartbeatMessageResponse already contains its own GroupID
+			m.GroupID = 0
+			m.Message.From = t.localNodeID
+			m.Message.To = to
+			m.HeartbeatResponseMessages = append(m.HeartbeatResponseMessages, heartbeat)
+			if err = p.SendRaftMessage(m); err != nil {
+				t.logger.Warningf("transport[Node=%d] failed to send heartbeat response message to [id=%d] err=%s",
+					t.localNodeID, m.Message.To, err.Error())
+			}
+		}
+	}
 }
 
 func (t *MultiRaftTransport) SetupTransportConfig(cfg ibabuza.TransportConfig) error {
@@ -129,21 +170,21 @@ func (t *MultiRaftTransport) CreateTransportClient() (ibabuza.TransportClient, e
 func (t *MultiRaftTransport) AddPeer(peerID uint64, peerAddress string) {
 	err := t.peerMgr.AddPeer(peerID, peerAddress, &multiRaftPeerFactory{t})
 	if err != nil {
-		t.logger.Warningf("transport[local id=%d] failed to add peerID=%d err=%s", t.localNodeID, peerID, err.Error())
+		t.logger.Warningf("transport[Node=%d] failed to add peerID=%d err=%s", t.localNodeID, peerID, err.Error())
 	}
 }
 
 func (t *MultiRaftTransport) UpdatePeer(peerID uint64, peerAddress string) {
 	err := t.peerMgr.UpdatePeer(peerID, peerAddress)
 	if err != nil {
-		t.logger.Warningf("transport[local id=%d] failed to update peerID=%d err=%s", t.localNodeID, peerID, err.Error())
+		t.logger.Warningf("transport[Node=%d] failed to update peerID=%d err=%s", t.localNodeID, peerID, err.Error())
 	}
 }
 
 func (t *MultiRaftTransport) RemovePeer(peerID uint64) {
 	err := t.peerMgr.RemovePeer(peerID)
 	if err != nil {
-		t.logger.Warningf("transport[local id=%d] failed to remove peerID=%d", t.localNodeID, peerID)
+		t.logger.Warningf("transport[Node=%d] failed to remove peerID=%d", t.localNodeID, peerID)
 	}
 }
 

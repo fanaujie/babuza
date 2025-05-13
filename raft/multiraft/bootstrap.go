@@ -9,6 +9,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/metrics"
 	"github.com/fanaujie/babuza/pkg/replier"
 	"github.com/fanaujie/babuza/pkg/status"
+	"github.com/fanaujie/babuza/pkg/utility/queue"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/puzpuzpuz/xsync/v4"
@@ -137,10 +138,11 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			return nil, err
 		}
 		replicaRaftConfig := ReplicaRaftConfig{
-			EnableWalNoSync:     config.EnableWalNoSync,
-			SnapshotCount:       config.SnapshotCount,
-			RaftConfig:          config.RaftConfig,
-			LearnerReadyPercent: config.LearnerReadyPercent,
+			EnableWalNoSync:             config.EnableWalNoSync,
+			SnapshotCount:               config.SnapshotCount,
+			RaftConfig:                  config.RaftConfig,
+			LearnerReadyPercent:         config.LearnerReadyPercent,
+			CoalescedHeartbeatQueueSize: config.CoalescedHeartbeatQueueSize,
 		}
 		rawNode, err := raft.NewRawNode(replicaRaftConfig.convertToRaftConfig(replicaCluster.LocalPeerID(), logger, entryStorage))
 		if err != nil {
@@ -174,6 +176,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			scheduler:                 n.scheduler,
 			applyJobQueue:             newJobQueue(groupID, n.config.JobQueueSize, n.logger),
 			requestQueue:              newReplicaRequestQueue(),
+			coalescedHeartbeat:        n.coalescedHeartbeatQueue,
 			mu: struct {
 				lock           sync.Mutex
 				rawNode        *raft.RawNode
@@ -202,6 +205,11 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 		closer:         syncutil.NewCloser(),
 		replicaEventCh: make(chan replicaEvent, 8),
 		replicaSet:     xsync.NewMap[ibabuza.RaftGroupID, *replica](),
+		coalescedHeartbeatQueue: &coalescedHeartbeatQueue{
+			heartbeatMsg:               xsync.NewMap[uint64, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
+			heartbeatRespMsg:           xsync.NewMap[uint64, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
+			heartbeatLastActiveUnixSec: xsync.NewMap[uint64, int64](),
+		},
 	}
 	scheduler := newScheduler(config.NodeID, schedulerConfig{
 		shardNum:       config.SchedulerShardNum,
@@ -273,10 +281,11 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		return nil, err
 	}
 	replicaRaftConfig := ReplicaRaftConfig{
-		EnableWalNoSync:     node.config.EnableWalNoSync,
-		SnapshotCount:       node.config.SnapshotCount,
-		RaftConfig:          node.config.RaftConfig,
-		LearnerReadyPercent: node.config.LearnerReadyPercent,
+		EnableWalNoSync:             node.config.EnableWalNoSync,
+		SnapshotCount:               node.config.SnapshotCount,
+		RaftConfig:                  node.config.RaftConfig,
+		LearnerReadyPercent:         node.config.LearnerReadyPercent,
+		CoalescedHeartbeatQueueSize: node.config.CoalescedHeartbeatQueueSize,
 	}
 
 	raftCfg := replicaRaftConfig.convertToRaftConfig(node.config.NodeID, node.logger, entryStorage)
@@ -330,6 +339,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		scheduler:                 node.scheduler,
 		applyJobQueue:             newJobQueue(groupID, node.config.JobQueueSize, node.logger),
 		requestQueue:              newReplicaRequestQueue(),
+		coalescedHeartbeat:        node.coalescedHeartbeatQueue,
 		mu: struct {
 			lock           sync.Mutex
 			rawNode        *raft.RawNode

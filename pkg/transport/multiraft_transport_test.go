@@ -301,22 +301,19 @@ func TestMultiRaftTransport_SendSnapshot(t *testing.T) {
 	trans1.AddPeer(2, node2ListenAddr)
 
 	// Create and send a snapshot message
-	groupID := uint64(201)
-	snapMsg := babuzapb.MultiRaftMessage{
-		GroupID: groupID,
-		Message: raftpb.Message{
-			Type: raftpb.MsgSnap,
-			To:   2,
-			From: 1,
-			Snapshot: raftpb.Snapshot{
-				Metadata: raftpb.SnapshotMetadata{
-					Index: 1,
-					Term:  1,
-				},
+	groupID := ibabuza.RaftGroupID(201)
+	snapMsg := raftpb.Message{
+		Type: raftpb.MsgSnap,
+		To:   2,
+		From: 1,
+		Snapshot: raftpb.Snapshot{
+			Metadata: raftpb.SnapshotMetadata{
+				Index: 1,
+				Term:  1,
 			},
 		},
 	}
-	trans1.SendSnapshot(snapMsg)
+	trans1.SendSnapshot(groupID, snapMsg)
 
 	// Allow time for snapshot to be processed
 	time.Sleep(time.Second * 2)
@@ -326,9 +323,9 @@ func TestMultiRaftTransport_SendSnapshot(t *testing.T) {
 	for tag, data := range mockRaft1.snapshotFileData {
 		assert.Equal(t, data, mockRaft2.snapshotFileData[tag], "Snapshot file data should match")
 	}
-	assert.Equal(t, snapMsg.Message.From, mockRaft2.finishMsg.From, "Snapshot finish message From field should match")
-	assert.Equal(t, snapMsg.Message.To, mockRaft2.finishMsg.To, "Snapshot finish message To field should match")
-	assert.Equal(t, snapMsg.Message.Type, mockRaft2.finishMsg.Type, "Snapshot finish message Type field should match")
+	assert.Equal(t, snapMsg.From, mockRaft2.finishMsg.From, "Snapshot finish message From field should match")
+	assert.Equal(t, snapMsg.To, mockRaft2.finishMsg.To, "Snapshot finish message To field should match")
+	assert.Equal(t, snapMsg.Type, mockRaft2.finishMsg.Type, "Snapshot finish message Type field should match")
 }
 
 // Test peer management operations for MultiRaftTransport

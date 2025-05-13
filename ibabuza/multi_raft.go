@@ -15,7 +15,8 @@ type MultiRaftTransport interface {
 	Start() error
 	Stop() error
 	Send(RaftGroupID, raftpb.Message)
-	SendSnapshot(babuzapb.MultiRaftMessage)
+	SendSnapshot(RaftGroupID, raftpb.Message)
+	SendHeartbeat(to uint64, heartbeats []babuzapb.MultiRaftHeartbeatMessage, heartbeatResponse []babuzapb.MultiRaftHeartbeatMessage)
 	CreateTransportClient() (TransportClient, error)
 	AddPeer(uint64, string)
 	UpdatePeer(uint64, string)

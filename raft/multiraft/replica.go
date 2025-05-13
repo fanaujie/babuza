@@ -8,6 +8,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/pkg/errors"
+	"github.com/puzpuzpuz/xsync/v4"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"sync"
@@ -41,6 +42,12 @@ type replicaRequestQueue struct {
 	proposal     *queue.SwapBufferQueue[*proposalRequest]
 	configChange *queue.SwapBufferQueue[configChangeRequest]
 	step         *queue.SwapBufferQueue[raftpb.Message]
+}
+
+type coalescedHeartbeatQueue struct {
+	heartbeatMsg               *xsync.Map[uint64, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]]
+	heartbeatRespMsg           *xsync.Map[uint64, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]]
+	heartbeatLastActiveUnixSec *xsync.Map[uint64, int64]
 }
 
 func newReplicaRequestQueue() *replicaRequestQueue {
@@ -86,6 +93,7 @@ type replica struct {
 	scheduler                 Scheduler
 	applyJobQueue             JobQueue
 	requestQueue              *replicaRequestQueue
+	coalescedHeartbeat        *coalescedHeartbeatQueue
 	mu                        struct {
 		lock           sync.Mutex
 		rawNode        *raft.RawNode
