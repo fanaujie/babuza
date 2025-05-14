@@ -90,27 +90,26 @@ func (s *bootstrapStorage) OpenStateMachine(snapshot *raftpb.Snapshot) error {
 		if err = s.stateMachine.RestoreFromSnapshot(reader); err != nil {
 			return err
 		}
-		s.bsmInfo.appliedIndex = snapshot.Metadata.Index
+		s.bsmInfo.openAppliedIndex = snapshot.Metadata.Index
 		return nil
 	}
 	if s.bsmInfo.diskType {
-		diskApplyIndex, rebuildStateMachine, err := s.stateMachine.(ibabuza.DiskStateMachine).Open()
-		if err != nil && rebuildStateMachine == false {
-			return err
-		}
+		diskAppliedIndex, rebuildStateMachine := s.stateMachine.(ibabuza.DiskStateMachine).Open()
 		if rebuildStateMachine {
 			if snapshot != nil {
-				if err = restoreStateMachine(); err != nil {
+				if err := restoreStateMachine(); err != nil {
 					return err
 				}
 			}
+			s.bsmInfo.SetOpenAppliedIndex(diskAppliedIndex)
 			return nil
 		}
-		if snapshot != nil && diskApplyIndex < snapshot.Metadata.Index {
+		if snapshot != nil && diskAppliedIndex < snapshot.Metadata.Index {
 			return fmt.Errorf("storage: on disk applied index (%d) is less than snapshot index (%d)",
-				diskApplyIndex, snapshot.Metadata.Index)
+				diskAppliedIndex, snapshot.Metadata.Index)
 		}
-		s.bsmInfo.appliedIndex = diskApplyIndex
+		// open state machine is successful
+		s.bsmInfo.SetOpenAppliedIndex(diskAppliedIndex)
 	} else {
 		if snapshot != nil {
 			if err := restoreStateMachine(); err != nil {

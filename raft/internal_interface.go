@@ -39,15 +39,13 @@ type RaftStorage interface {
 		cluster ibabuza.Cluster, sessionMgr ibabuza.SessionManager) (StorageSnapshotContext, error)
 	SaveStateMachineSnapshot(ctx StorageSnapshotContext) (babuzapb.SnapshotMetadata, error)
 	RestoreFromSnapshot(snapShotIndex uint64, restoreStateMachine bool, cluster ibabuza.Cluster, session ibabuza.SessionManager) error
-	MetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error
-	FinishSnapshotMessage(msg babuzapb.SnapshotMessage) error
-	ChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error
-	GetStateMachineAppliedIndex() uint64
-	SetStateMachineAppliedIndex(index uint64)
+	ProcessMetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error
+	ProcessFinishSnapshotMessage(msg babuzapb.SnapshotMessage) error
+	ProcessChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error
 	Apply(e ibabuza.Entry) ibabuza.ApplyResult
-	SupportConcurrentSnapshot() bool
 	CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error)
 	GetStateMachine() ibabuza.BaseStateMachine
+	GetBasedStateMachineInfo() *BasedStateMachineInfo
 }
 
 type InternalIdGenerator interface {
@@ -67,7 +65,7 @@ type InternalCompletionReplier interface {
 
 type InternalAppliedFacade interface {
 	ApplyNilEntryInNewTerm(index, term uint64)
-	ApplyNormalEntry(entry raftpb.Entry) (babuzapb.NormalRequest, ibabuza.ApplyResult)
+	ApplyNormalEntry(entry raftpb.Entry) (babuzapb.NormalRequest, ibabuza.ApplyResult, ibabuza.Session)
 	ApplyConfChangeEntry(entry raftpb.Entry) (babuzapb.RequestContext, ibabuza.ApplyResult, bool)
 	SendAppliedResult(replyID uint64, ar ibabuza.ApplyResult)
 }

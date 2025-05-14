@@ -6,7 +6,7 @@ import (
 )
 
 type BasedStateMachineInfo struct {
-	appliedIndex              uint64
+	openAppliedIndex          uint64
 	supportConcurrentSnapshot bool
 	supportSession            bool
 	diskType                  bool
@@ -25,12 +25,12 @@ func NewBasedStateMachineInfo(stateMachine ibabuza.BaseStateMachine) (*BasedStat
 	return b, nil
 }
 
-func (b *BasedStateMachineInfo) GetAppliedIndex() uint64 {
-	return b.appliedIndex
+func (b *BasedStateMachineInfo) OpenAppliedIndex() uint64 {
+	return b.openAppliedIndex
 }
 
-func (b *BasedStateMachineInfo) SetAppliedIndex(index uint64) {
-	b.appliedIndex = index
+func (b *BasedStateMachineInfo) SetOpenAppliedIndex(index uint64) {
+	b.openAppliedIndex = index
 }
 
 func (b *BasedStateMachineInfo) SupportConcurrentSnapshot() bool {

@@ -41,7 +41,7 @@ type BaseStateMachine interface {
 type MemoryStateMachine BaseStateMachine
 
 type DiskStateMachine interface {
-	Open() (uint64, bool, error)
+	Open() (uint64, bool)
 	BaseStateMachine
 	ConcurrentSnapshotStateMachine
 }

@@ -27,14 +27,16 @@ type ComponentsFactory interface {
 	CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, error)
 	CreateCluster() ibabuza.Cluster
 	CreateSessionManager() ibabuza.SessionManager
+	GetLogger() ibabuza.Logger
 }
 
 func BootstrapOrRecoverNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
-	snapshotManager ibabuza.MultiRaftSnapshotManager, logger ibabuza.Logger) (*Node, error) {
+	snapshotManager ibabuza.MultiRaftSnapshotManager) (*Node, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	stateMachineRootDir := filepath.Join(cfg.NodeHostDir, stateMachineDir)
+	logger := factory.GetLogger()
 	storage := newBootstrapStorage(stateMachineRootDir, factory, walManager, snapshotManager, logger)
 	if err := trans.SetupTransportConfig(ibabuza.TransportConfig{
 		PeerId:      cfg.NodeID,
@@ -128,6 +130,10 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			replicaStatus.SetAppliedTerm(snap.Metadata.Term)
 			replicaStatus.SetSnapshotIndex(snap.Metadata.Index)
 			replicaStatus.SetConfState(snap.Metadata.ConfState)
+			// For disk-type state machines, if not rebuilt, set the status appliedIndex to openAppliedIndex
+			if replicaStorage.GetBasedStateMachineInfo().OpenAppliedIndex() > snap.Metadata.Index {
+				replicaStatus.SetAppliedIndex(snap.Metadata.Index)
+			}
 		}
 		if config.EnableWalNoSync {
 			_ = storage.SetWalNoFSync(groupID)
@@ -150,7 +156,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		}
 		firstCommitInTermNotifier := syncutil.NewNotifier()
 		resultReplier := replier.NewResult[ibabuza.ApplyResult]()
-		appliedFacade := babuza.NewAppliedFacade(replicaStorage, firstCommitInTermNotifier, replicaSession,
+		appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
 			resultReplier, replicaCluster, n, trans, logger, metrics.NewMockMetricsCollector())
 
 		r := &replica{
@@ -313,7 +319,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 	if err != nil {
 		return nil, err
 	}
-	appliedFacade := babuza.NewAppliedFacade(replicaStorage, firstCommitInTermNotifier, replicaSession,
+	appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
 		resultReplier, replicaCluster, node, node.trans, node.logger, metrics.NewMockMetricsCollector())
 
 	r := &replica{

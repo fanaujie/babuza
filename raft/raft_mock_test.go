@@ -320,15 +320,19 @@ type mockStorageMgr struct {
 	entryStorage mockEntryStorage
 }
 
-func (m *mockStorageMgr) MetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+func (m *mockStorageMgr) GetBasedStateMachineInfo() *BasedStateMachineInfo {
 	return nil
 }
 
-func (m *mockStorageMgr) FinishSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+func (m *mockStorageMgr) ProcessMetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error {
 	return nil
 }
 
-func (m *mockStorageMgr) ChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+func (m *mockStorageMgr) ProcessFinishSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+	return nil
+}
+
+func (m *mockStorageMgr) ProcessChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error {
 	return nil
 }
 
@@ -372,10 +376,6 @@ func (m *mockStorageMgr) SetStateMachineAppliedIndex(index uint64) {
 
 func (m *mockStorageMgr) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
 	return ibabuza.ApplyResult{}
-}
-
-func (m *mockStorageMgr) SupportConcurrentSnapshot() bool {
-	return false
 }
 
 func (m *mockStorageMgr) GetEntryStorage() (ibabuza.EntryStorage, error) {

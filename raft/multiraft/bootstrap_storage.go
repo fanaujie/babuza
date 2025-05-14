@@ -123,15 +123,12 @@ func (s *bootstrapStorage) OpenStateMachine(groupID ibabuza.RaftGroupID, snapsho
 		if err = stateMachine.RestoreFromSnapshot(reader); err != nil {
 			return err
 		}
-		bsmInfo.SetAppliedIndex(snapshot.Metadata.Index)
+		bsmInfo.SetOpenAppliedIndex(snapshot.Metadata.Index)
 		return nil
 	}
 
 	if bsmInfo.IsDiskType() {
-		diskApplyIndex, rebuildStateMachine, err := stateMachine.(ibabuza.DiskStateMachine).Open()
-		if err != nil && rebuildStateMachine == false {
-			return nil, err
-		}
+		diskAppliedIndex, rebuildStateMachine := stateMachine.(ibabuza.DiskStateMachine).Open()
 		if rebuildStateMachine {
 			if snapshot != nil {
 				if err = restoreStateMachine(); err != nil {
@@ -142,13 +139,15 @@ func (s *bootstrapStorage) OpenStateMachine(groupID ibabuza.RaftGroupID, snapsho
 				stateMachine: stateMachine,
 				bsmInfo:      bsmInfo,
 			}
+			bsmInfo.SetOpenAppliedIndex(diskAppliedIndex)
 			return responseSerializer, nil
 		}
-		if snapshot != nil && diskApplyIndex < snapshot.Metadata.Index {
+		if snapshot != nil && diskAppliedIndex < snapshot.Metadata.Index {
 			return nil, fmt.Errorf("storage: on disk applied index (%d) is less than snapshot index (%d)",
-				diskApplyIndex, snapshot.Metadata.Index)
+				diskAppliedIndex, snapshot.Metadata.Index)
 		}
-		bsmInfo.SetAppliedIndex(diskApplyIndex)
+		// open state machine is successful
+		bsmInfo.SetOpenAppliedIndex(diskAppliedIndex)
 	} else {
 		if snapshot != nil {
 			if err = restoreStateMachine(); err != nil {
@@ -156,7 +155,6 @@ func (s *bootstrapStorage) OpenStateMachine(groupID ibabuza.RaftGroupID, snapsho
 			}
 		}
 	}
-
 	s.raftStateMachineWrappers[groupID] = raftStateMachineWrapper{
 		stateMachine: stateMachine,
 		bsmInfo:      bsmInfo,

@@ -119,12 +119,12 @@ func (s *raftScheduler) EnqueueBatchState(state int, groupIDs []ibabuza.RaftGrou
 }
 
 func (s *raftScheduler) worker(shardID, workderID int, sh *sharder) {
-	s.log.Infof("Node[%d] starting raftScheduler worker %d-%d", s.nodeID, shardID, workderID)
-	defer s.log.Infof("Node[%d] stopping raftScheduler worker %d-%d", s.nodeID, shardID, workderID)
+	s.log.Debugf("Node[%d] starting raftScheduler worker %d-%d", s.nodeID, shardID, workderID)
+	defer s.log.Debugf("Node[%d] stopping raftScheduler worker %d-%d", s.nodeID, shardID, workderID)
 	for {
 		groupID, err := sh.queue.GetOne()
 		if err != nil {
-			s.log.Errorf("Node[%d] raftScheduler worker %d-%d get error: %v", s.nodeID, shardID, workderID, err)
+			s.log.Debugf("Node[%d] raftScheduler worker %d-%d get error: %v", s.nodeID, shardID, workderID, err)
 			return
 		}
 		if groupID == 0 { // empty queue

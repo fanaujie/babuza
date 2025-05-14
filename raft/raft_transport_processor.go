@@ -40,7 +40,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 	}
 	switch msg.Type {
 	case babuzapb.SnapshotMessageType_Metadata:
-		if err := d.storage.MetadataSnapshotMessage(msg); err != nil {
+		if err := d.storage.ProcessMetadataSnapshotMessage(msg); err != nil {
 			d.logger.Warningf("raft[id=%d] failed to process snapshot metadata. err(%s)",
 				d.cluster.LocalPeerID(), err.Error())
 			return babuzapb.SnapshotMessageResponse{
@@ -49,7 +49,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 			}
 		}
 	case babuzapb.SnapshotMessageType_Chunk:
-		if err := d.storage.ChunkSnapshotMessage(msg); err != nil {
+		if err := d.storage.ProcessChunkSnapshotMessage(msg); err != nil {
 			d.logger.Warningf("raft[%d] failed to process snapshot chunk. err(%s)",
 				d.cluster.LocalPeerID(), err.Error())
 			return babuzapb.SnapshotMessageResponse{
@@ -58,7 +58,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 			}
 		}
 	case babuzapb.SnapshotMessageType_Finish:
-		if err := d.storage.FinishSnapshotMessage(msg); err != nil {
+		if err := d.storage.ProcessFinishSnapshotMessage(msg); err != nil {
 			d.logger.Warningf("raft[%d] failed to process snapshot finish. err(%s)",
 				d.cluster.LocalPeerID(), err.Error())
 			return babuzapb.SnapshotMessageResponse{

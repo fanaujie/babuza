@@ -159,6 +159,25 @@ func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
+func (r *replica) RegisterSessionRequest(ctx context.Context) babuza.ProposedResult {
+
+	replyID := r.idGenerator.Next()
+	data, err := babuza.EncodeRegisterSessionRequest(replyID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	proposal := poolGetProposal()
+	proposal.replyID = replyID
+	proposal.data = data
+	if err = r.requestQueue.proposal.Put(proposal); err != nil {
+		poolReleaseProposal(proposal)
+		return babuza.NewErrorResult(err)
+	}
+	r.scheduler.EnqueueState(stateProposal, r.raftGroup.GroupID)
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
+	return babuza.NewProposalResult(ctx, r.closer, ch)
+}
+
 func (r *replica) EnqueueStep(msg raftpb.Message) error {
 	if err := r.requestQueue.step.Put(msg); err != nil {
 		return errors.Wrapf(err, "GroupID[%d] enqueue step error", r.raftGroup.GroupID)

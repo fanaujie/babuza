@@ -103,8 +103,8 @@ func (r *Raft) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
 			reqCtx, ar, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
 			if ar.Response != nil {
 				r.status.SetConfState(*ar.Response.(*raftpb.ConfState))
+				ar.Response = nil
 			}
-			ar.Response = nil
 			r.appliedFacade.SendAppliedResult(reqCtx.ReplyID, ar)
 			if removeSelf {
 				return true

@@ -38,7 +38,6 @@ type RaftPeer struct {
 	logger                     ibabuza.Logger
 	currentMsgCh               chan raftpb.Message
 	msgQueueCh                 chan chan raftpb.Message
-	msgQueueChPool             chan chan raftpb.Message
 	closer                     *syncutil.Closer
 	mu                         sync.RWMutex
 }
@@ -61,7 +60,6 @@ func New(clusterID, localNodeID, remotePeerID uint64, cfg RaftPeerConfig, raftRe
 		transportClient:            transportClient,
 		logger:                     logger,
 		msgQueueCh:                 make(chan chan raftpb.Message, 1),
-		msgQueueChPool:             make(chan chan raftpb.Message, cfg.QueuePoolSize),
 		closer:                     closer,
 	}
 	closer.Run(func() {
@@ -130,7 +128,6 @@ func (p *RaftPeer) getQueue() (chan raftpb.Message, error) {
 		select {
 		case <-p.closer.CloseCh():
 			return nil, ErrPeerStopped
-		case msgCh = <-p.msgQueueChPool:
 		default:
 			msgCh = make(chan raftpb.Message, p.raftQueueSize)
 		}
@@ -160,23 +157,6 @@ func (p *RaftPeer) processRaftMessage() {
 			p.mu.Lock()
 			p.currentMsgCh = nil
 			p.mu.Unlock()
-			//drain the message channel
-		DrainLoop:
-			for {
-				select {
-				case <-msgCh:
-				default:
-					break DrainLoop
-				}
-			}
-			// push the message channel to pool
-			select {
-			case p.msgQueueChPool <- msgCh:
-			default:
-				// if the pool is full, drop channel
-				p.logger.Warningf("Local peer[%d] message channel pool is full, drop channel", p.localNodeID)
-			}
-
 		}
 	}
 }

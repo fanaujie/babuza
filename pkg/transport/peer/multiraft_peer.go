@@ -109,7 +109,6 @@ type MultiRaftPeerImpl struct {
 	logger                     ibabuza.Logger
 	currentMsgCh               chan *babuzapb.MultiRaftMessage
 	msgQueueCh                 chan chan *babuzapb.MultiRaftMessage
-	msgQueueChPool             chan chan *babuzapb.MultiRaftMessage
 	closer                     *syncutil.Closer
 	mu                         sync.RWMutex
 }
@@ -132,7 +131,6 @@ func NewMultiRaftPeer(clusterID, localNodeID, remotePeerID uint64, cfg MultiRaft
 		transportClient:            transportClient,
 		logger:                     logger,
 		msgQueueCh:                 make(chan chan *babuzapb.MultiRaftMessage, 1),
-		msgQueueChPool:             make(chan chan *babuzapb.MultiRaftMessage, cfg.RaftMsgQueueSize),
 		closer:                     closer,
 	}
 	closer.Run(func() {
@@ -200,7 +198,6 @@ func (p *MultiRaftPeerImpl) getQueue() (chan *babuzapb.MultiRaftMessage, error) 
 		select {
 		case <-p.closer.CloseCh():
 			return nil, ErrPeerStopped
-		case msgCh = <-p.msgQueueChPool:
 		default:
 			msgCh = make(chan *babuzapb.MultiRaftMessage, p.raftQueueSize)
 		}
@@ -226,22 +223,6 @@ func (p *MultiRaftPeerImpl) processRaftMessage() {
 			p.mu.Lock()
 			p.currentMsgCh = nil
 			p.mu.Unlock()
-			//drain the message channel
-		DrainLoop:
-			for {
-				select {
-				case <-msgCh:
-				default:
-					break DrainLoop
-				}
-			}
-			// push the message channel to pool
-			select {
-			case p.msgQueueChPool <- msgCh:
-			default:
-				// if the pool is full, drop channel
-				p.logger.Warningf("Node[%d] message channel pool is full, drop channel", p.localNodeID)
-			}
 		}
 	}
 }

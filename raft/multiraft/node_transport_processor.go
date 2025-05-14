@@ -78,7 +78,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 	}
 	switch msg.Type {
 	case babuzapb.SnapshotMessageType_Metadata:
-		if err = r.storage.MetadataSnapshotMessage(msg); err != nil {
+		if err = r.storage.ProcessMetadataSnapshotMessage(msg); err != nil {
 			d.logger.Warningf("Node[%d] groupID[%d] failed to process snapshot metadata. err(%s)",
 				r.cluster.LocalPeerID(), msg.GroupID, err.Error())
 			return babuzapb.SnapshotMessageResponse{
@@ -87,7 +87,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 			}
 		}
 	case babuzapb.SnapshotMessageType_Chunk:
-		if err = r.storage.ChunkSnapshotMessage(msg); err != nil {
+		if err = r.storage.ProcessChunkSnapshotMessage(msg); err != nil {
 			r.logger.Warningf("Node[%d] groupID[%d] failed to process snapshot chunk. err(%s)",
 				r.cluster.LocalPeerID(), msg.GroupID, err.Error())
 			return babuzapb.SnapshotMessageResponse{
@@ -96,7 +96,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 			}
 		}
 	case babuzapb.SnapshotMessageType_Finish:
-		if err = r.storage.FinishSnapshotMessage(msg); err != nil {
+		if err = r.storage.ProcessFinishSnapshotMessage(msg); err != nil {
 			r.logger.Warningf("Node[%d] groupID[%d] failed to process snapshot finish. err(%s)",
 				r.cluster.LocalPeerID(), msg.GroupID, err.Error())
 			return babuzapb.SnapshotMessageResponse{

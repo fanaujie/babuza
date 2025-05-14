@@ -19,8 +19,8 @@ type replicaEvent struct {
 }
 
 func (n *Node) replicaRaftTick() {
-	n.logger.Infof("Node[%d] raft tick start", n.config.NodeID)
-	defer n.logger.Infof("Node[%d] raft tick end", n.config.NodeID)
+	n.logger.Debugf("Node[%d] raft tick start", n.config.NodeID)
+	defer n.logger.Debugf("Node[%d] raft tick end", n.config.NodeID)
 	ticker := time.NewTicker(time.Duration(n.config.LogicalTickMs) * time.Millisecond)
 	defer ticker.Stop()
 	var groupIDs []ibabuza.RaftGroupID
@@ -41,8 +41,8 @@ func (n *Node) replicaRaftTick() {
 	}
 }
 func (n *Node) replicaCoalescedHeartbeat() {
-	n.logger.Infof("Node[%d] coalesced heartbeat start", n.config.NodeID)
-	defer n.logger.Infof("Node[%d] coalesced heartbeat end", n.config.NodeID)
+	n.logger.Debugf("Node[%d] coalesced heartbeat start", n.config.NodeID)
+	defer n.logger.Debugf("Node[%d] coalesced heartbeat end", n.config.NodeID)
 	ticker := time.NewTicker(time.Duration(n.config.CoalescedHeartbeatTickMs) * time.Millisecond)
 	checkTicker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -91,8 +91,8 @@ func (n *Node) replicaCoalescedHeartbeat() {
 }
 
 func (n *Node) replicaListener() {
-	n.logger.Infof("Node[%d] replica listener start", n.config.NodeID)
-	defer n.logger.Infof("Node[%d] replica listener end", n.config.NodeID)
+	n.logger.Debugf("Node[%d] replica listener start", n.config.NodeID)
+	defer n.logger.Debugf("Node[%d] replica listener end", n.config.NodeID)
 
 	for {
 		select {

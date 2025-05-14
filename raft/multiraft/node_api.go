@@ -121,23 +121,13 @@ func (n *Node) StateMachine(groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachi
 	return r.storage.GetStateMachine(), nil
 }
 
-//func (n *Node) RegisterSession(ctx context.Context, groupID ibabuza.RaftGroupID) babuza.ProposedResult {
-//	//replyID := r.idGenerator.Next()
-//	//proposalData, err := EncodeRegisterSessionRequest(replyID)
-//	//if err != nil {
-//	//	return NewErrorResult(err)
-//	//}
-//	//ch, err := r.propose(ctx, replyID, proposalData)
-//	//if err != nil {
-//	//	return NewErrorResult(err)
-//	//}
-//	//return NewProposalResult(ctx, r.closer, ch)
-//	r, err := n.getReplica(groupID)
-//	if err != nil {
-//		return babuza.NewErrorResult(err)
-//	}
-//	return r.EnqueueProposal(ctx, session, log)
-//}
+func (n *Node) RegisterSession(ctx context.Context, groupID ibabuza.RaftGroupID) babuza.ProposedResult {
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	return r.RegisterSessionRequest(ctx)
+}
 
 func (n *Node) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession, log []byte) babuza.ProposedResult {
 	r, err := n.getReplica(groupID)

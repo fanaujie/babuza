@@ -19,8 +19,8 @@ func NewDisk(dataDir string) *Disk {
 	}
 }
 
-func (d *Disk) Open() (lastApplyIndex uint64, rebuild bool, err error) {
-	err = d.db.View(func(txn *badger.Txn) error {
+func (d *Disk) Open() (lastApplyIndex uint64, rebuild bool) {
+	err := d.db.View(func(txn *badger.Txn) error {
 		item, gErr := txn.Get(applyIndexPrefix)
 		if gErr != nil {
 			return gErr

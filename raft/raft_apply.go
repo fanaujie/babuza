@@ -56,21 +56,33 @@ func (r *Raft) applyEntries(entries []raftpb.Entry) {
 		r.metricsCollector.SetProposalAppliedIndex(appliedIndex)
 	}()
 	length := len(entries)
+	bsmInfo := r.storage.GetBasedStateMachineInfo()
 	for _, entry := range entries {
 		if len(entry.Data) == 0 {
 			r.appliedFacade.ApplyNilEntryInNewTerm(entry.Index, entry.Term)
 		} else {
 			switch entry.Type {
 			case raftpb.EntryNormal:
-				normalReq, ar := r.appliedFacade.ApplyNormalEntry(entry)
+				if entry.Index <= bsmInfo.OpenAppliedIndex() {
+					if !bsmInfo.IsDiskType() {
+						r.logger.Panicf("raft[id=%d]: apply entry index %d <= opened applied index %d", r.cluster.LocalPeerID(),
+							entry.Index, bsmInfo.OpenAppliedIndex())
+					}
+					continue
+				}
+				normalReq, ar, session := r.appliedFacade.ApplyNormalEntry(entry)
+				now := time.Now()
 				if ar.IsEmpty() {
-					now := time.Now()
+					// not applied yet
 					ar = r.storage.Apply(ibabuza.Entry{
 						Term:    entry.Term,
 						Index:   entry.Index,
 						Command: normalReq.StateMachineLog,
 					})
 					r.metricsCollector.RecordApplySec(time.Since(now).Seconds())
+					if err := session.AddResult(normalReq.Context.SequenceNum, now.UnixNano(), ar); err != nil {
+						r.logger.Panicf("raft[id=%d]: add result failed: %v", r.cluster.LocalPeerID(), err)
+					}
 				}
 				r.appliedFacade.SendAppliedResult(normalReq.Context.ReplyID, ar)
 			case raftpb.EntryConfChange:
@@ -118,7 +130,6 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 	r.status.SetAppliedIndex(snap.Metadata.Index)
 	r.status.SetSnapshotIndex(snap.Metadata.Index)
 	r.status.SetConfState(snap.Metadata.ConfState)
-	r.storage.SetStateMachineAppliedIndex(snap.Metadata.Index)
 }
 
 func (r *Raft) doSnapshot(snapCtx StorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
@@ -160,7 +171,7 @@ func (r *Raft) triggerSnapshot(snapCtx StorageSnapshotContext, snapshotResultCh 
 			}
 		}
 	}
-	if !r.storage.SupportConcurrentSnapshot() {
+	if !r.storage.GetBasedStateMachineInfo().SupportConcurrentSnapshot() {
 		doSnapshot()
 	} else {
 		r.closer.Run(func() {

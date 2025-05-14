@@ -17,7 +17,7 @@ type ExpiredManager struct {
 	sessions     map[uint64]ibabuza.Session
 	arSerializer *applyResultSerializer
 	logger       ibabuza.Logger
-	mu           *sync.RWMutex
+	mu           sync.RWMutex
 }
 
 //TODO: application need session expire error message to do next action if expire need to register again
@@ -35,7 +35,6 @@ func NewExpiredManager(logger ibabuza.Logger, setOpts ...SetExpiredMgrOptions) *
 		opts:     opts,
 		sessions: make(map[uint64]ibabuza.Session),
 		logger:   logger,
-		mu:       &sync.RWMutex{},
 	}
 }
 func (m *ExpiredManager) SetResponseSerializer(rs ibabuza.ResponseSerializer) error {

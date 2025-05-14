@@ -37,17 +37,65 @@ const (
 	Decrement          CounterOperationType = "decrement"
 	Reset              CounterOperationType = "reset"
 	GetValue           CounterOperationType = "get"
+
+	//session type
+	NoOPSessionType        int = 0
+	LruSessionType         int = 1
+	TimeExpiredSessionType int = 2
 )
 
 type CounterCommand struct {
 	Operation CounterOperationType `json:"operation"`
-	Value     int64                `json:"value,omitempty"` // 用于增量或重置值
+	Value     int64                `json:"value,omitempty"`
 }
 
 type CounterResult struct {
 	Operation CounterOperationType `json:"operation"`
 	Success   bool                 `json:"success"`
 	Value     int64                `json:"value"`
+}
+
+type ResultSerializer struct {
+	buf []byte
+}
+
+func NewResultSerializer() *ResultSerializer {
+	return &ResultSerializer{buf: make([]byte, 8)}
+}
+
+func (s *ResultSerializer) Serialize(w io.Writer, res any) error {
+	result, ok := res.(*CounterResult)
+	if !ok {
+		return errors.New("can not cast res to a pointer to valid response")
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	binary.LittleEndian.PutUint64(s.buf, uint64(len(data)))
+	if _, err = w.Write(s.buf); err != nil {
+		return err
+	}
+	if _, err = w.Write(data); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ResultSerializer) Deserialize(r io.Reader) (any, error) {
+	if _, err := io.ReadFull(r, s.buf); err != nil {
+		return nil, err
+	}
+	var res any
+	dataLen := binary.LittleEndian.Uint64(s.buf)
+	buf := make([]byte, dataLen)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(buf, res); err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 type SimpleStateMachine struct {
@@ -148,21 +196,47 @@ func (s *SimpleStateMachine) Counter() int64 {
 	return s.counter
 }
 
-type ComponentFactory struct {
-	logger ibabuza.Logger
+func (s *SimpleStateMachine) GetResponseSerializer() ibabuza.ResponseSerializer {
+	return NewResultSerializer()
 }
 
-func (c *ComponentFactory) CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, error) {
+type componentFactory struct {
+	logger      ibabuza.Logger
+	sessionType int
+}
 
+func newComponentFactory(sessionType int) *componentFactory {
+	z, _ := zap.NewProduction(zap.AddCallerSkip(1))
+	log := logger.NewRaftLogger(z.Sugar())
+	return &componentFactory{
+		logger:      log,
+		sessionType: sessionType,
+	}
+}
+
+func (c *componentFactory) CreateStateMachine(stateMachineRootDir string, groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMachine, error) {
 	return NewSimpleStateMachine(), nil
 }
 
-func (c *ComponentFactory) CreateCluster() ibabuza.Cluster {
+func (c *componentFactory) CreateCluster() ibabuza.Cluster {
 	return cluster.NewCluster(c.logger)
 }
 
-func (c *ComponentFactory) CreateSessionManager() ibabuza.SessionManager {
-	return session.NewNoOpManager(c.logger)
+func (c *componentFactory) CreateSessionManager() ibabuza.SessionManager {
+	switch c.sessionType {
+	case NoOPSessionType:
+		return session.NewNoOpManager(c.logger)
+	case LruSessionType:
+		return session.NewLruManager(c.logger)
+	case TimeExpiredSessionType:
+		return session.NewExpiredManager(c.logger)
+	default:
+		panic("unknown session type")
+	}
+}
+
+func (c *componentFactory) GetLogger() ibabuza.Logger {
+	return c.logger
 }
 
 type customConfig struct {
@@ -194,14 +268,16 @@ func defaultCustomConfig() customConfig {
 	}
 }
 
-func createNodeManager(cConfig customConfig, rootDir string, configuration *babuza.PeersConfiguration) (*NodeManager, error) {
+func createNodeManager(cConfig customConfig, rootDir string, configuration *babuza.PeersConfiguration,
+	factory ComponentsFactory) (*NodeManager, error) {
+
 	if err := configuration.Validate(); err != nil {
 		return nil, err
 	}
 	nm := NewNodeManager()
 	if err := configuration.Visit(func(attribute babuzapb.RaftPeerAttribute) error {
 		node, err := createNode(ClusterID, attribute.Id, cConfig, attribute.RaftListenAddr,
-			filepath.Join(rootDir, fmt.Sprintf("%d", attribute.Id)))
+			filepath.Join(rootDir, fmt.Sprintf("%d", attribute.Id)), factory)
 		if err != nil {
 			return err
 		}
@@ -212,7 +288,8 @@ func createNodeManager(cConfig customConfig, rootDir string, configuration *babu
 	return nm, nil
 }
 
-func createNode(clusterID uint64, nodeID uint64, cConfig customConfig, nodeRaftListenAddr string, rootDir string) (*Node, error) {
+func createNode(clusterID uint64, nodeID uint64, cConfig customConfig, nodeRaftListenAddr string,
+	rootDir string, factory ComponentsFactory) (*Node, error) {
 	config := DefaultNodeConfig(clusterID, nodeID, rootDir, nodeRaftListenAddr)
 	config.EnableWalNoSync = cConfig.EnableWalNoSync
 	config.SnapshotCount = cConfig.SnapshotCount
@@ -222,8 +299,7 @@ func createNode(clusterID uint64, nodeID uint64, cConfig customConfig, nodeRaftL
 	config.SchedulerShardNum = cConfig.SchedulerShardNum
 	config.SchedulerShardWorkerNum = cConfig.SchedulerShardWorkerNum
 	config.SchedulerQueueSize = cConfig.SchedulerQueueSize
-	z, _ := zap.NewProduction(zap.AddCallerSkip(1))
-	log := logger.NewRaftLogger(z.Sugar())
+	log := factory.GetLogger()
 	walMgr := lsmtwal.NewMultiRaftBadgerWalManager(lsmtwal.MultiRaftConfig{
 		InMemory:           false,
 		WalDir:             filepath.Join(rootDir, "wal"),
@@ -240,9 +316,7 @@ func createNode(clusterID uint64, nodeID uint64, cConfig customConfig, nodeRaftL
 		transport.SetTransportOptionsWithPeerQueueSize(cConfig.TransportPeerQueueSize),
 		transport.SetTransportOptionsWithHeartbeatBufferSize(cConfig.TransportHeartbeatBufferSize))
 
-	return BootstrapOrRecoverNode(config, &ComponentFactory{
-		logger: log,
-	}, trans, walMgr, snapshotMgr, log)
+	return BootstrapOrRecoverNode(config, factory, trans, walMgr, snapshotMgr)
 }
 
 func proposeCommand(node *Node, groupID ibabuza.RaftGroupID, cmd CounterCommand) (*CounterResult, error) {
@@ -302,7 +376,7 @@ func TestBootstrap(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -383,7 +457,7 @@ func TestRecover(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -459,7 +533,7 @@ func TestRecover(t *testing.T) {
 	}
 	nm.Clear()
 
-	nm, err = createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
+	nm, err = createNodeManager(defaultCustomConfig(), rootDir, peersConfig, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	for _, n := range nm.GetAllNodes() {
 		assert.NoError(t, n.Start())
@@ -482,7 +556,7 @@ func TestJoinVotingGroup(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -556,7 +630,7 @@ func TestRemoveVotingGroup(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -636,7 +710,7 @@ func TestJoinLearnerAndPromoteLearner(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", true)) // node3 設為 learner
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -726,7 +800,7 @@ func TestTransferLeader(t *testing.T) {
 	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
 	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
 	rootDir := t.TempDir()
-	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig)
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -814,7 +888,7 @@ func TestSnapshot(t *testing.T) {
 	rootDir := t.TempDir()
 	cConfig := defaultCustomConfig()
 	cConfig.SnapshotCount = 50
-	nm, err := createNodeManager(cConfig, rootDir, peersConfig)
+	nm, err := createNodeManager(cConfig, rootDir, peersConfig, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -900,7 +974,7 @@ func TestSnapshot(t *testing.T) {
 	assert.NoError(t, nm.Remove(3))
 
 	node3, err = createNode(ClusterID, peer3.Id, cConfig, peer3.RaftListenAddr,
-		filepath.Join(rootDir, fmt.Sprintf("%d", peer3.Id)))
+		filepath.Join(rootDir, fmt.Sprintf("%d", peer3.Id)), newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NoError(t, node3.Start())
 	assert.NoError(t, nm.Add(node3))
@@ -932,7 +1006,7 @@ func TestMultipleGroup(t *testing.T) {
 	cConfig.SchedulerShardNum = 10
 	cConfig.SchedulerShardWorkerNum = 3
 	cConfig.SchedulerQueueSize = 128
-	nm, err := createNodeManager(cConfig, rootDir, peersConfig)
+	nm, err := createNodeManager(cConfig, rootDir, peersConfig, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)
 	assert.Equal(t, 3, len(nm.GetAllNodes()))
@@ -1000,4 +1074,114 @@ func TestMultipleGroup(t *testing.T) {
 		assert.NoError(t, verifyCounterValue(nm, groupID, int64(proposeCount)))
 	}
 	t.Logf("total groups: %d finish", totalGroups)
+}
+
+func TestRegisterSession(t *testing.T) {
+	peersConfig := babuza.NewPeersConfiguration()
+	assert.NoError(t, peersConfig.AddPeer(1, "localhost:14201", false))
+	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
+	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
+	rootDir := t.TempDir()
+
+	nm, err := createNodeManager(defaultCustomConfig(), rootDir, peersConfig, newComponentFactory(LruSessionType))
+	assert.NoError(t, err)
+	assert.NotNil(t, nm)
+
+	for _, n := range nm.GetAllNodes() {
+		assert.NoError(t, n.Start())
+	}
+	defer func() {
+		for _, n := range nm.GetAllNodes() {
+			n.Stop()
+		}
+	}()
+
+	raftGroup := ibabuza.RaftGroupID(10)
+	for _, n := range nm.GetAllNodes() {
+		assert.NoError(t, n.CreateRaftGroup(raftGroup, peersConfig, false))
+	}
+
+	// wait for leader election
+	time.Sleep(time.Second * 3)
+	leaderID, err := nm.CheckSameLeader(raftGroup)
+	assert.NoError(t, err)
+	t.Logf("Leader ID: %d", leaderID)
+
+	leaderNode, err := nm.GetNode(leaderID)
+	assert.NoError(t, err)
+
+	ctx := context.Background()
+	res := leaderNode.RegisterSession(ctx, raftGroup)
+	ar := res.WaitForApplyResult()
+	assert.NoError(t, ar.Error)
+	sessionID1 := ar.LogIndex
+	assert.Nil(t, ar.Error)
+	res.Release()
+
+	cmd1 := CounterCommand{Operation: Increment, Value: 1}
+	cmdBytes1, err := json.Marshal(cmd1)
+	assert.NoError(t, err)
+
+	session1 := babuza.ClientSession{
+		SessionID:      sessionID1,
+		SequenceNumber: 1,
+	}
+
+	res = leaderNode.Propose(ctx, raftGroup, session1, cmdBytes1)
+	ar = res.WaitForApplyResult()
+	assert.Nil(t, ar.Error)
+	result1, ok := ar.Response.(*CounterResult)
+	assert.True(t, ok)
+	assert.Equal(t, int64(1), result1.Value)
+	res.Release()
+
+	// Propose multiple commands with the same session ID and the same sequence number
+	for i := 0; i < 5; i++ {
+		res = leaderNode.Propose(ctx, raftGroup, session1, cmdBytes1)
+		ar = res.WaitForApplyResult()
+		res.Release()
+		assert.Nil(t, ar.Error)
+		result, ok := ar.Response.(*CounterResult)
+		assert.True(t, ok)
+		assert.Equal(t, int64(1), result.Value)
+	}
+
+	session1.SequenceNumber = 2
+	cmd2 := CounterCommand{Operation: Increment, Value: 10}
+	cmdBytes2, err := json.Marshal(cmd2)
+	assert.NoError(t, err)
+
+	res = leaderNode.Propose(ctx, raftGroup, session1, cmdBytes2)
+	ar = res.WaitForApplyResult()
+	res.Release()
+	assert.Nil(t, ar.Error)
+	result2, ok := ar.Response.(*CounterResult)
+	assert.True(t, ok)
+	assert.Equal(t, int64(11), result2.Value)
+
+	res = leaderNode.RegisterSession(ctx, raftGroup)
+	ar = res.WaitForApplyResult()
+	sessionID2 := ar.LogIndex
+	res.Release()
+	assert.Nil(t, ar.Error)
+
+	session2 := babuza.ClientSession{
+		SessionID:      sessionID2,
+		SequenceNumber: 1,
+	}
+
+	cmd3 := CounterCommand{Operation: Reset, Value: 50}
+	cmdBytes3, err := json.Marshal(cmd3)
+	assert.NoError(t, err)
+
+	res = leaderNode.Propose(ctx, raftGroup, session2, cmdBytes3)
+	ar = res.WaitForApplyResult()
+	res.Release()
+	assert.Nil(t, ar.Error)
+	result3, ok := ar.Response.(*CounterResult)
+	assert.True(t, ok)
+	assert.Equal(t, int64(50), result3.Value)
+
+	time.Sleep(time.Second)
+	assert.NoError(t, verifyCounterValue(nm, raftGroup, 50))
 }

@@ -140,7 +140,7 @@ func (s *raftStorage) RestoreFromSnapshot(snapShotIndex uint64, restoreStateMach
 	}
 	return session.Restore(sessionReader)
 }
-func (s *raftStorage) MetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+func (s *raftStorage) ProcessMetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error {
 	if msg.Metadata.Files != nil {
 		if s.snapshotReceiver != nil {
 			if err := s.snapshotReceiver.DeleteDir(); err != nil {
@@ -157,7 +157,7 @@ func (s *raftStorage) MetadataSnapshotMessage(msg babuzapb.SnapshotMessage) erro
 	return fmt.Errorf("storage: received metadata message but snapshot metadata is nil (index=%d)", msg.Index)
 }
 
-func (s *raftStorage) ChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+func (s *raftStorage) ProcessChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error {
 	if s.snapshotReceiver == nil {
 		return fmt.Errorf("storage: received chunk message but snapshot receiver is nil (index=%d)", msg.Index)
 	}
@@ -167,7 +167,7 @@ func (s *raftStorage) ChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error {
 	return fmt.Errorf("storage: received chunk message but invalid (continueCrc32=0 index=%d)", msg.Index)
 }
 
-func (s *raftStorage) FinishSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+func (s *raftStorage) ProcessFinishSnapshotMessage(msg babuzapb.SnapshotMessage) error {
 	if msg.FinishMessage.To != 0 {
 		var err error
 		defer func() {
@@ -221,24 +221,16 @@ func (s *raftStorage) EntryStorageInfo() (lastIndex uint64, lastTerm uint64, sna
 	return
 }
 
-func (s *raftStorage) GetStateMachineAppliedIndex() uint64 {
-	return s.bsmInfo.appliedIndex
-}
-
-func (s *raftStorage) SetStateMachineAppliedIndex(index uint64) {
-	s.bsmInfo.appliedIndex = index
-}
-
 func (s *raftStorage) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
 	return s.stateMachine.Apply(e)
 }
 
-func (s *raftStorage) SupportConcurrentSnapshot() bool {
-	return s.bsmInfo.supportConcurrentSnapshot
-}
-
 func (s *raftStorage) GetStateMachine() ibabuza.BaseStateMachine {
 	return s.stateMachine
+}
+
+func (s *raftStorage) GetBasedStateMachineInfo() *BasedStateMachineInfo {
+	return s.bsmInfo
 }
 
 func (s *raftStorage) releaseSnapshotContext(ctx ibabuza.StateMachineSnapshotContext) error {

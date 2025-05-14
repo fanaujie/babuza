@@ -9,11 +9,6 @@ import (
 	"time"
 )
 
-type AppliedStorage interface {
-	GetStateMachineAppliedIndex() uint64
-	SetStateMachineAppliedIndex(index uint64)
-}
-
 type AppliedStatus interface {
 	SetAppliedIndex(uint64)
 	SetAppliedTerm(uint64)
@@ -57,7 +52,6 @@ type AppliedTransport interface {
 }
 
 type appliedFacadeImpl struct {
-	storage             AppliedStorage
 	firstCommitNotifier AppliedFirstCommitInTermNotifier
 	sessionMgr          AppliedSessionManager
 	replier             AppliedReplier
@@ -68,11 +62,10 @@ type appliedFacadeImpl struct {
 	metricsCollector    ibabuza.MetricsCollector
 }
 
-func NewAppliedFacade(storage AppliedStorage, firstCommitNotifier AppliedFirstCommitInTermNotifier,
+func NewAppliedFacade(firstCommitNotifier AppliedFirstCommitInTermNotifier,
 	sessionMgr AppliedSessionManager, replier AppliedReplier, cluster AppliedCluster, raftNode AppliedRaftNode,
 	trans AppliedTransport, log ibabuza.Logger, metricsCollector ibabuza.MetricsCollector) InternalAppliedFacade {
 	return &appliedFacadeImpl{
-		storage:             storage,
 		firstCommitNotifier: firstCommitNotifier,
 		sessionMgr:          sessionMgr,
 		replier:             replier,
@@ -87,7 +80,6 @@ func NewAppliedFacade(storage AppliedStorage, firstCommitNotifier AppliedFirstCo
 func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 
 	return &appliedFacadeImpl{
-		storage:             r.storage,
 		firstCommitNotifier: r.firstCommitInTermNotifier,
 		sessionMgr:          r.sessionMgr,
 		replier:             r.resultReplier,
@@ -103,7 +95,7 @@ func (a *appliedFacadeImpl) ApplyNilEntryInNewTerm(index, term uint64) {
 	a.firstCommitNotifier.CloseAndRenew()
 }
 
-func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) (babuzapb.NormalRequest, ibabuza.ApplyResult) {
+func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) (babuzapb.NormalRequest, ibabuza.ApplyResult, ibabuza.Session) {
 	var req babuzapb.NormalRequest
 	if err := req.Unmarshal(e.Data); err != nil {
 		a.log.Errorf("CRITICAL: Failed to unmarshal entry at index %d, term %d: %v",
@@ -115,15 +107,26 @@ func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) (babuzapb.NormalReq
 
 	reqTime := time.Now().UnixNano()
 	if req.Register != nil {
-		return req, a.handleSessionRegister(e, req, reqTime)
+		noOpSession, _ := a.sessionMgr.GetSession(0)
+		return req, a.handleSessionRegister(e, req, reqTime), noOpSession
 	} else if req.PubAppService != nil {
-		return req, a.handlePubAppService(e, req)
+		noOpSession, _ := a.sessionMgr.GetSession(0)
+		return req, a.handlePubAppService(e, req), noOpSession
 	}
-	toApply, ar := a.doExactlyOnce(e.Index, reqTime, req.Context)
-	if !toApply || e.Index <= a.storage.GetStateMachineAppliedIndex() {
-		return req, ar
+	a.sessionMgr.ExpireSession(reqTime)
+	session, err := a.sessionMgr.GetSession(req.Context.SessionID)
+	if err != nil {
+		noOpSession, _ := a.sessionMgr.GetSession(0)
+		return req, ibabuza.ApplyResult{
+			LogIndex: e.Index,
+			Error:    err,
+		}, noOpSession
 	}
-	return req, ibabuza.ApplyResult{}
+	toApply, ar := a.doExactlyOnce(e.Index, req.Context, session)
+	if !toApply {
+		return req, ar, session
+	}
+	return req, ibabuza.ApplyResult{}, session
 }
 
 func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) (babuzapb.RequestContext, ibabuza.ApplyResult, bool) {
@@ -132,11 +135,27 @@ func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) (babuzapb.R
 		a.log.Panicf("Failed to parse conf change: %v", err)
 	}
 	reqTime := time.Now().UnixNano()
-	toApply, ar := a.doExactlyOnce(entry.Index, reqTime, confReq.Context)
+	a.sessionMgr.ExpireSession(reqTime)
+	session, err := a.sessionMgr.GetSession(confReq.Context.SessionID)
+	if err != nil {
+		return confReq.Context, ibabuza.ApplyResult{
+			LogIndex: entry.Index,
+			Error:    err,
+		}, false
+	}
+	toApply, ar := a.doExactlyOnce(entry.Index, confReq.Context, session)
 	if !toApply {
 		return confReq.Context, ar, false
 	}
 	confChange, removeSelf, err := a.processConfChange(cc, confReq)
+	ar = ibabuza.ApplyResult{
+		LogIndex: entry.Index,
+		Response: confChange,
+		Error:    err,
+	}
+	if err = session.AddResult(confReq.Context.SequenceNum, reqTime, ar); err != nil {
+		a.log.Panicf("Failed to add result: %v", err)
+	}
 	return confReq.Context, ibabuza.ApplyResult{
 		LogIndex: entry.Index,
 		Response: confChange,
@@ -146,19 +165,11 @@ func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) (babuzapb.R
 
 func (a *appliedFacadeImpl) SendAppliedResult(replyID uint64, ar ibabuza.ApplyResult) {
 	a.replier.SendResult(replyID, ar)
-	a.storage.SetStateMachineAppliedIndex(ar.LogIndex)
 }
 
-func (a *appliedFacadeImpl) doExactlyOnce(index uint64, requestTime int64, ctx babuzapb.RequestContext) (bool, ibabuza.ApplyResult) {
-	a.sessionMgr.ExpireSession(requestTime)
-	session, err := a.sessionMgr.GetSession(ctx.SessionID)
-	if err != nil {
-		return false, ibabuza.ApplyResult{
-			LogIndex: index,
-			Error:    err,
-		}
-	}
+func (a *appliedFacadeImpl) doExactlyOnce(index uint64, ctx babuzapb.RequestContext, session ibabuza.Session) (bool, ibabuza.ApplyResult) {
 	defer session.ClearResult(ctx.LowestSeqNumNotYetReplied)
+
 	if session.RepeatSequenceNum(ctx.SequenceNum) {
 		if ar, ok := session.GetResult(ctx.SequenceNum); ok == false {
 			return false, ibabuza.ApplyResult{

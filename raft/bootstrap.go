@@ -299,6 +299,10 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 		status.SetAppliedTerm(snap.Metadata.Term)
 		status.SetSnapshotIndex(snap.Metadata.Index)
 		status.SetConfState(snap.Metadata.ConfState)
+		// For disk-type state machines, if not rebuilt, set the status appliedIndex to openAppliedIndex
+		if storage.GetBasedStateMachineInfo().OpenAppliedIndex() > snap.Metadata.Index {
+			status.SetAppliedIndex(snap.Metadata.Index)
+		}
 	}
 	return raftNode.Restart(cfg.convertToRaftConfig(logger, entryStorage))
 }

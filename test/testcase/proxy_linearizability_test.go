@@ -270,7 +270,10 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 	// Wait for leader election
 	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	rs := tc.GetAllRaft()
+	var rs []*babuza.Raft
+	for _, r := range tc.GetAllRaft() {
+		rs = append(rs, r)
+	}
 
 	// Storage for operations to check linearizability
 	var operations []porcupine.Operation

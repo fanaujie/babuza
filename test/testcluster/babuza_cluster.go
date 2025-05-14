@@ -84,15 +84,16 @@ func (c *BabuzaCluster) IsUseProxyNetwork() bool {
 	return c.useProxyNetwork
 }
 
-func (c *BabuzaCluster) GetAllRaft() []*babuza.Raft {
-	var r []*babuza.Raft
+func (c *BabuzaCluster) GetAllRaft() map[uint64]*babuza.Raft {
+	var result = make(map[uint64]*babuza.Raft, len(c.appControllers))
 	for _, app := range c.appControllers {
 		if app == nil {
 			continue
 		}
-		r = append(r, app.app.Raft())
+		r := app.app.Raft()
+		result[app.app.Raft().Status().LocalPeerID] = r
 	}
-	return r
+	return result
 }
 
 func (c *BabuzaCluster) MakeCluster(wait time.Duration, votingPeers []Peer) error {

@@ -18,7 +18,7 @@ type LruManager struct {
 	lru          *list.List
 	arSerializer *applyResultSerializer
 	logger       ibabuza.Logger
-	mu           *sync.RWMutex
+	mu           sync.RWMutex
 }
 
 func NewLruManager(logger ibabuza.Logger, setOpts ...SetLruMgrOptions) *LruManager {
@@ -35,7 +35,6 @@ func NewLruManager(logger ibabuza.Logger, setOpts ...SetLruMgrOptions) *LruManag
 		sessions: make(map[uint64]*list.Element),
 		lru:      list.New(),
 		logger:   logger,
-		mu:       &sync.RWMutex{},
 	}
 }
 func (m *LruManager) SetResponseSerializer(rs ibabuza.ResponseSerializer) error {

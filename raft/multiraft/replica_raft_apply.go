@@ -6,6 +6,7 @@ import (
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
+	"time"
 )
 
 func (r *replica) doApplyJob(applyData *applyEntry) {
@@ -50,7 +51,6 @@ func (r *replica) applySnapshot(snap raftpb.Snapshot) {
 	r.status.SetAppliedIndex(snap.Metadata.Index)
 	r.status.SetSnapshotIndex(snap.Metadata.Index)
 	r.status.SetConfState(snap.Metadata.ConfState)
-	r.storage.SetStateMachineAppliedIndex(snap.Metadata.Index)
 }
 
 func (r *replica) applyEntries(entries []raftpb.Entry) {
@@ -58,19 +58,32 @@ func (r *replica) applyEntries(entries []raftpb.Entry) {
 		r.completionReplier.MarkCompleted(r.status.GetAppliedIndex())
 	}()
 	length := len(entries)
+	bsmInfo := r.storage.GetBasedStateMachineInfo()
 	for _, entry := range entries {
 		if len(entry.Data) == 0 {
 			r.appliedFacade.ApplyNilEntryInNewTerm(entry.Index, entry.Term)
 		} else {
 			switch entry.Type {
 			case raftpb.EntryNormal:
-				normalReq, ar := r.appliedFacade.ApplyNormalEntry(entry)
+				if entry.Index <= bsmInfo.OpenAppliedIndex() {
+					// Skip applying if only the disk-based state machine was successfully opened
+					if !r.storage.GetBasedStateMachineInfo().IsDiskType() {
+						r.logger.Panicf("groupID[%d] raft[id=%d]: apply entry index %d <= opened applied index %d", r.cluster.GroupID(),
+							r.cluster.LocalPeerID(), entry.Index, r.status.GetAppliedIndex())
+					}
+					continue
+				}
+				normalReq, ar, session := r.appliedFacade.ApplyNormalEntry(entry)
 				if ar.IsEmpty() {
 					ar = r.storage.Apply(ibabuza.Entry{
 						Term:    entry.Term,
 						Index:   entry.Index,
 						Command: normalReq.StateMachineLog,
 					})
+					if err := session.AddResult(normalReq.Context.SequenceNum, time.Now().UnixNano(), ar); err != nil {
+						r.logger.Panicf("groupID[%d] raft[id=%d]: add result failed: %v", r.cluster.GroupID(),
+							r.cluster.LocalPeerID(), err)
+					}
 				}
 				r.appliedFacade.SendAppliedResult(normalReq.Context.ReplyID, ar)
 			case raftpb.EntryConfChange:
@@ -99,7 +112,7 @@ func (r *replica) triggerSnapshot(snapCtx babuza.StorageSnapshotContext, snapsho
 			snapshotResultCh <- babuza.NewSnapshotResult(metadata, err)
 		}
 	}
-	if !r.storage.SupportConcurrentSnapshot() {
+	if !r.storage.GetBasedStateMachineInfo().SupportConcurrentSnapshot() {
 		doSnapshot()
 	} else {
 		r.closer.Run(func() {
