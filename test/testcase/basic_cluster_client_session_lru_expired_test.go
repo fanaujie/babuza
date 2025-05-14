@@ -14,7 +14,7 @@ import (
 )
 
 // Component factory for session expiration testing
-func sessionLruExpirationTestComponents() []BabuzaComponent {
+func sessionLruExpirationTestComponents(maxSession int64) []BabuzaComponent {
 	// Create components for all combinations we want to test
 	var components []BabuzaComponent
 
@@ -59,7 +59,7 @@ func sessionLruExpirationTestComponents() []BabuzaComponent {
 						builder.TcpTransport, proxyNet).
 						SetClusterId(config.BubuzaConfig.ClusterID).
 						SetStorageRootDir(storageDir).
-						AddLruSessionOptions(session.SetLruMgrOptionsWithMaxSessions(2))
+						AddLruSessionOptions(session.SetLruMgrOptionsWithMaxSessions(maxSession))
 
 					return *config, *b.Build()
 				}
@@ -72,7 +72,8 @@ func sessionLruExpirationTestComponents() []BabuzaComponent {
 }
 
 type BasicClientSessionLruExpiredResponse struct {
-	t *testing.T
+	t          *testing.T
+	maxSession int64
 }
 
 func (c *BasicClientSessionLruExpiredResponse) Log(s string) {
@@ -80,7 +81,7 @@ func (c *BasicClientSessionLruExpiredResponse) Log(s string) {
 }
 
 func (c *BasicClientSessionLruExpiredResponse) CreateTestComponents() []BabuzaComponent {
-	return sessionLruExpirationTestComponents()
+	return sessionLruExpirationTestComponents(c.maxSession)
 }
 
 func (c *BasicClientSessionLruExpiredResponse) Run(tc *testcluster.BabuzaCluster, a any) {
@@ -91,19 +92,8 @@ func (c *BasicClientSessionLruExpiredResponse) Run(tc *testcluster.BabuzaCluster
 	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
-	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewAutoIncrementSession())
-	assert.Nil(c.t, err)
-	defer func() {
-		_ = kvClient.Close()
-	}()
-	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
-		_, err = kvClient.Set(ctx, "test-key", "test-value")
-		return err
-	})
-	assert.Nil(c.t, err)
-
 	var tempClients []*client.KvStoreClient
-	for i := 0; i < 3; i++ {
+	for i := int64(0); i < c.maxSession+1; i++ {
 		tempClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewAutoIncrementSession())
 		assert.Nil(c.t, err)
 
@@ -112,28 +102,36 @@ func (c *BasicClientSessionLruExpiredResponse) Run(tc *testcluster.BabuzaCluster
 			return err
 		})
 		assert.Nil(c.t, err)
-		if i == 2 {
-			_ = tempClient.Close()
-		} else {
-			tempClients = append(tempClients, tempClient)
-		}
+		tempClients = append(tempClients, tempClient)
 	}
 	defer func() {
 		for _, cl := range tempClients {
 			_ = cl.Close()
 		}
 	}()
-
+	// first client should be expired
 	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
-		_, err = kvClient.Set(ctx, "key-after-expiration", "value")
+		_, err = tempClients[0].Set(ctx, "key-after-expiration", "value")
 		return err
 	})
-
 	assert.Error(c.t, err)
-	assert.ErrorIs(c.t, err, session.ErrSessionExpired)
 
+	// unregister the first client session,
+	// it should be expired
+	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
+		return tempClients[0].UnregisterSession(ctx)
+	})
+	assert.Error(c.t, err)
+
+	// the second client unregister session should be ok
+	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
+		return tempClients[1].UnregisterSession(ctx)
+	})
+	assert.Nil(c.t, err)
 }
 
 func TestClientSessionLruExpiredResponse(t *testing.T) {
-	RunTests(&BasicClientSessionLruExpiredResponse{t: t})
+	RunTests(&BasicClientSessionLruExpiredResponse{
+		t:          t,
+		maxSession: 2})
 }

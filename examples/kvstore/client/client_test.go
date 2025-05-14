@@ -59,11 +59,12 @@ func TestSendHttpRequest_Session(t *testing.T) {
 	}, ms)
 	assert.Nil(t, err)
 	defer c1.Close()
-	s1 := c1.Session()
+	s1, _ := c1.Session()
 	assert.Equal(t, uint64(100), s1.SessionID)
 	assert.Equal(t, uint64(0), s1.SequenceNumber)
 	ms.SetSequenceNumber(5)
-	assert.Equal(t, uint64(5), c1.Session().SequenceNumber)
+	s1, _ = c1.Session()
+	assert.Equal(t, uint64(5), s1.SequenceNumber)
 
 	c2, err := CreateKvStoreClient(Config{
 		AutoSyncInterval: time.Second,
@@ -75,10 +76,11 @@ func TestSendHttpRequest_Session(t *testing.T) {
 		},
 	}, NewAutoIncrementSession())
 	assert.Nil(t, err)
-	s2 := c2.Session()
+	s2, _ := c2.Session()
 	assert.Equal(t, uint64(100), s2.SessionID)
 	assert.Equal(t, uint64(1), s2.SequenceNumber)
-	assert.Equal(t, uint64(2), c2.Session().SequenceNumber)
+	s2, _ = c2.Session()
+	assert.Equal(t, uint64(2), s2.SequenceNumber)
 
 	c3, err := CreateKvStoreClient(Config{
 		AutoSyncInterval: time.Second,
@@ -90,10 +92,11 @@ func TestSendHttpRequest_Session(t *testing.T) {
 		},
 	}, NewNoOpSession())
 	assert.Nil(t, err)
-	s3 := c3.Session()
+	s3, _ := c3.Session()
 	assert.Equal(t, uint64(0), s3.SessionID)
 	assert.Equal(t, uint64(0), s3.SequenceNumber)
-	assert.Equal(t, uint64(0), c3.Session().SequenceNumber)
+	s3, _ = c3.Session()
+	assert.Equal(t, uint64(0), s3.SequenceNumber)
 }
 
 func TestSendHttpRequest_AutoSync(t *testing.T) {

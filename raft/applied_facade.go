@@ -21,7 +21,8 @@ type AppliedFirstCommitInTermNotifier interface {
 }
 
 type AppliedSessionManager interface {
-	Register(uint64, int64)
+	Register(uint64, int64) error
+	UnRegister(uint64) error
 	ExpireSession(int64)
 	GetSession(uint64) (ibabuza.Session, error)
 }
@@ -53,7 +54,7 @@ type AppliedTransport interface {
 
 type appliedFacadeImpl struct {
 	firstCommitNotifier AppliedFirstCommitInTermNotifier
-	sessionMgr          AppliedSessionManager
+	sessionManager      AppliedSessionManager
 	replier             AppliedReplier
 	cluster             AppliedCluster
 	raftNode            AppliedRaftNode
@@ -67,7 +68,7 @@ func NewAppliedFacade(firstCommitNotifier AppliedFirstCommitInTermNotifier,
 	trans AppliedTransport, log ibabuza.Logger, metricsCollector ibabuza.MetricsCollector) InternalAppliedFacade {
 	return &appliedFacadeImpl{
 		firstCommitNotifier: firstCommitNotifier,
-		sessionMgr:          sessionMgr,
+		sessionManager:      sessionMgr,
 		replier:             replier,
 		cluster:             cluster,
 		raftNode:            raftNode,
@@ -81,7 +82,7 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 
 	return &appliedFacadeImpl{
 		firstCommitNotifier: r.firstCommitInTermNotifier,
-		sessionMgr:          r.sessionMgr,
+		sessionManager:      r.sessionManager,
 		replier:             r.resultReplier,
 		cluster:             r.cluster,
 		raftNode:            r,
@@ -107,16 +108,16 @@ func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) (babuzapb.NormalReq
 
 	reqTime := time.Now().UnixNano()
 	if req.Register != nil {
-		noOpSession, _ := a.sessionMgr.GetSession(0)
-		return req, a.handleSessionRegister(e, req, reqTime), noOpSession
+		noOpSession, _ := a.sessionManager.GetSession(0)
+		return req, a.handleSessionRegister(e, reqTime, req.Register), noOpSession
 	} else if req.PubAppService != nil {
-		noOpSession, _ := a.sessionMgr.GetSession(0)
+		noOpSession, _ := a.sessionManager.GetSession(0)
 		return req, a.handlePubAppService(e, req), noOpSession
 	}
-	a.sessionMgr.ExpireSession(reqTime)
-	session, err := a.sessionMgr.GetSession(req.Context.SessionID)
+	a.sessionManager.ExpireSession(reqTime)
+	session, err := a.sessionManager.GetSession(req.Context.SessionID)
 	if err != nil {
-		noOpSession, _ := a.sessionMgr.GetSession(0)
+		noOpSession, _ := a.sessionManager.GetSession(0)
 		return req, ibabuza.ApplyResult{
 			LogIndex: e.Index,
 			Error:    err,
@@ -135,8 +136,8 @@ func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) (babuzapb.R
 		a.log.Panicf("Failed to parse conf change: %v", err)
 	}
 	reqTime := time.Now().UnixNano()
-	a.sessionMgr.ExpireSession(reqTime)
-	session, err := a.sessionMgr.GetSession(confReq.Context.SessionID)
+	a.sessionManager.ExpireSession(reqTime)
+	session, err := a.sessionManager.GetSession(confReq.Context.SessionID)
 	if err != nil {
 		return confReq.Context, ibabuza.ApplyResult{
 			LogIndex: entry.Index,
@@ -270,10 +271,16 @@ func (a *appliedFacadeImpl) sendConfChangeResult(session ibabuza.Session, ctx ba
 	a.replier.SendResult(ctx.ReplyID, ar)
 }
 
-func (a *appliedFacadeImpl) handleSessionRegister(e raftpb.Entry, req babuzapb.NormalRequest, reqTime int64) ibabuza.ApplyResult {
-	a.sessionMgr.Register(e.Index, reqTime)
+func (a *appliedFacadeImpl) handleSessionRegister(e raftpb.Entry, reqTime int64, req *babuzapb.RegisterSessionRequest) ibabuza.ApplyResult {
+	var err error
+	if req.Unregister {
+		err = a.sessionManager.UnRegister(req.SessionID)
+	} else {
+		err = a.sessionManager.Register(e.Index, reqTime)
+	}
 	return ibabuza.ApplyResult{
 		LogIndex: e.Index,
+		Error:    err,
 	}
 }
 

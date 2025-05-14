@@ -8,6 +8,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"io"
+	"math"
 	"sync"
 	"time"
 )
@@ -45,38 +46,48 @@ func (m *ExpiredManager) SetResponseSerializer(rs ibabuza.ResponseSerializer) er
 	return nil
 }
 
-func (m *ExpiredManager) GetSession(sid uint64) (ibabuza.Session, error) {
-	if sid == NoOPSessionID {
+func (m *ExpiredManager) GetSession(sessionID uint64) (ibabuza.Session, error) {
+	if sessionID == NoOPSessionID {
 		return &noOpSession, nil
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	s, ok := m.sessions[sid]
+	s, ok := m.sessions[sessionID]
 	if !ok {
-		return nil, ErrSessionExpired
+		return nil, fmt.Errorf("expired session manager: session %d not found", sessionID)
 	}
 	return s, nil
 }
 
-func (m *ExpiredManager) Register(sId uint64, lastActivateTime int64) {
-	m.mu.RLock()
-	_, ok := m.sessions[sId]
-	if ok {
-		m.mu.RUnlock()
-		return
-	}
-	m.mu.RUnlock()
+func (m *ExpiredManager) Register(sessionID uint64, lastActivateTime int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.sessions[sId] = NewSession(sId, lastActivateTime)
+	_, ok := m.sessions[sessionID]
+	if ok {
+		return fmt.Errorf("expired session manager: session %d already exists", sessionID)
+	}
+	m.sessions[sessionID] = NewSession(sessionID, lastActivateTime)
+	return nil
+}
+
+func (m *ExpiredManager) UnRegister(sessionID uint64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[sessionID]
+	if !ok {
+		return fmt.Errorf("expired session manager: session %d not found", sessionID)
+	}
+	s.ClearResult(math.MaxInt64)
+	delete(m.sessions, sessionID)
+	return nil
 }
 
 func (m *ExpiredManager) ExpireSession(currentNanoseconds int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for sid, s := range m.sessions {
+	for sessionID, s := range m.sessions {
 		if s.LastActiveNanoseconds()+m.opts.expiredTime.Nanoseconds() <= currentNanoseconds {
-			delete(m.sessions, sid)
+			delete(m.sessions, sessionID)
 		}
 	}
 }

@@ -129,6 +129,15 @@ func (n *Node) RegisterSession(ctx context.Context, groupID ibabuza.RaftGroupID)
 	return r.RegisterSessionRequest(ctx)
 }
 
+func (n *Node) UnregisterSession(ctx context.Context, groupID ibabuza.RaftGroupID,
+	sessionID uint64) babuza.ProposedResult {
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	return r.UnregisterSessionRequest(ctx, sessionID)
+}
+
 func (n *Node) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession, log []byte) babuza.ProposedResult {
 	r, err := n.getReplica(groupID)
 	if err != nil {

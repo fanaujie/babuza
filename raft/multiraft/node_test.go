@@ -1184,4 +1184,21 @@ func TestRegisterSession(t *testing.T) {
 
 	time.Sleep(time.Second)
 	assert.NoError(t, verifyCounterValue(nm, raftGroup, 50))
+
+	// unregister session
+	res = leaderNode.UnregisterSession(ctx, raftGroup, sessionID1)
+	ar = res.WaitForApplyResult()
+	assert.Nil(t, ar.Error)
+	assert.True(t, ar.LogIndex > sessionID1)
+	res.Release()
+
+	// Propose a command with the unregistered session ID
+	session1.SequenceNumber = 3
+	cmd4 := CounterCommand{Operation: Increment, Value: 5}
+	cmdBytes4, err := json.Marshal(cmd4)
+	assert.NoError(t, err)
+	res = leaderNode.Propose(ctx, raftGroup, session1, cmdBytes4)
+	ar = res.WaitForApplyResult()
+	assert.Error(t, ar.Error)
+	res.Release()
 }

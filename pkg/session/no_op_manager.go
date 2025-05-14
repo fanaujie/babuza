@@ -25,7 +25,12 @@ func (m *NoOpManager) GetSession(sid uint64) (ibabuza.Session, error) {
 	return &noOpSession, nil
 }
 
-func (m *NoOpManager) Register(sid uint64, currentNanoseconds int64) {
+func (m *NoOpManager) Register(sid uint64, currentNanoseconds int64) error {
+	return nil
+}
+
+func (m *NoOpManager) UnRegister(sid uint64) error {
+	return nil
 }
 
 func (m *NoOpManager) ExpireSession(currentTime int64) {

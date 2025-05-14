@@ -18,7 +18,7 @@ func (r *replica) doApplyJob(applyData *applyEntry) {
 		return
 	}
 	term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
-	ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.session)
+	ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionManager)
 	if err != nil {
 		r.logger.Panicf("groupID[%d] raft[id=%d]: create snapshot context failed: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
@@ -34,7 +34,7 @@ func (r *replica) applySnapshot(snap raftpb.Snapshot) {
 		r.logger.Panicf("groupID[%d] raft[id=%d]: apply snapshot index %d <= applied index %d", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), snap.Metadata.Index, r.status.GetAppliedIndex())
 	}
-	if err := r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.session); err != nil {
+	if err := r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.sessionManager); err != nil {
 		r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.cluster.LocalPeerID(), err)
 	}
 	r.transport.RemovePeers()

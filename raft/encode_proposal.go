@@ -5,12 +5,16 @@ import (
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
-func EncodeRegisterSessionRequest(replyID uint64) ([]byte, error) {
+func EncodeRegisterSessionRequest(replyID uint64, unregisterSessionID uint64) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
 			ReplyID: replyID,
 		},
 		Register: &babuzapb.RegisterSessionRequest{},
+	}
+	if unregisterSessionID != 0 {
+		req.Register.Unregister = true
+		req.Register.SessionID = unregisterSessionID
 	}
 	data, err := req.Marshal()
 	if err != nil {

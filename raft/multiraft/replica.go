@@ -79,7 +79,7 @@ type replica struct {
 	cluster                   ibabuza.Cluster
 	transport                 ibabuza.MultiRaftTransport
 	status                    ibabuza.Status
-	session                   ibabuza.SessionManager
+	sessionManager            ibabuza.SessionManager
 	storage                   babuza.RaftStorage
 	appliedFacade             babuza.InternalAppliedFacade
 	idGenerator               babuza.InternalIdGenerator
@@ -162,7 +162,25 @@ func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 func (r *replica) RegisterSessionRequest(ctx context.Context) babuza.ProposedResult {
 
 	replyID := r.idGenerator.Next()
-	data, err := babuza.EncodeRegisterSessionRequest(replyID)
+	data, err := babuza.EncodeRegisterSessionRequest(replyID, 0)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	proposal := poolGetProposal()
+	proposal.replyID = replyID
+	proposal.data = data
+	if err = r.requestQueue.proposal.Put(proposal); err != nil {
+		poolReleaseProposal(proposal)
+		return babuza.NewErrorResult(err)
+	}
+	r.scheduler.EnqueueState(stateProposal, r.raftGroup.GroupID)
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
+	return babuza.NewProposalResult(ctx, r.closer, ch)
+}
+
+func (r *replica) UnregisterSessionRequest(ctx context.Context, sessionID uint64) babuza.ProposedResult {
+	replyID := r.idGenerator.Next()
+	data, err := babuza.EncodeRegisterSessionRequest(replyID, sessionID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
 	}

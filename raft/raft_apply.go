@@ -24,7 +24,7 @@ func (r *Raft) processStateMachine() {
 			return
 		case s := <-r.manualSnapshotCh:
 			term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
-			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionMgr)
+			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionManager)
 			if err != nil {
 				s.resultCh <- SnapshotResult{
 					err: err,
@@ -40,7 +40,7 @@ func (r *Raft) processStateMachine() {
 				continue
 			}
 			term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
-			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionMgr)
+			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionManager)
 			if err != nil {
 				r.logger.Panicf("raft[id=%d]: create snapshot context failed: %v", r.cluster.ClusterID(), err)
 			}
@@ -79,6 +79,7 @@ func (r *Raft) applyEntries(entries []raftpb.Entry) {
 						Index:   entry.Index,
 						Command: normalReq.StateMachineLog,
 					})
+					
 					r.metricsCollector.RecordApplySec(time.Since(now).Seconds())
 					if err := session.AddResult(normalReq.Context.SequenceNum, now.UnixNano(), ar); err != nil {
 						r.logger.Panicf("raft[id=%d]: add result failed: %v", r.cluster.LocalPeerID(), err)
@@ -112,7 +113,7 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 			r.metricsCollector.SetSnapshotApplyInProgress(0)
 			r.metricsCollector.RecordApplySnapshotSec(time.Since(now).Seconds())
 		}()
-		return r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.sessionMgr)
+		return r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.sessionManager)
 	}(); err != nil {
 		r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.cluster.LocalPeerID(), err)
 	}

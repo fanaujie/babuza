@@ -43,7 +43,7 @@ type KvStoreClient struct {
 	proxy          *leaderProxyClient
 	closeCh        chan struct{}
 	autoSyncDoneCh chan struct{}
-	mu             sync.Mutex
+	sessionMu      sync.RWMutex
 }
 
 func CreateKvStoreClient(cfg Config, session ISession) (*KvStoreClient, error) {
@@ -81,6 +81,16 @@ func CreateKvStoreClient(cfg Config, session ISession) (*KvStoreClient, error) {
 	return c, nil
 }
 
+func (c *KvStoreClient) UnregisterSession(ctx context.Context) error {
+	err := c.session.Unregister(ctx, c.proxy, api.SessionsHttpPath)
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	if err == nil {
+		c.session = nil
+	}
+	return err
+}
+
 func (c *KvStoreClient) Sync(ctx context.Context) error {
 	if c.isClosed() {
 		return ErrClientClosed
@@ -106,14 +116,23 @@ func (c *KvStoreClient) Close() error {
 	<-c.autoSyncDoneCh
 	return nil
 }
-
-func (c *KvStoreClient) Session() Session {
-	return c.session.ClientSession()
+func (c *KvStoreClient) Session() (Session, error) {
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return Session{}, errors.New("session is nil")
+	}
+	return c.session.ClientSession(), nil
 }
 
 func (c *KvStoreClient) Join(ctx context.Context, peerID uint64, raftListenAddr string, isLearner bool) error {
 	if c.isClosed() {
 		return ErrClientClosed
+	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return errors.New("session is nil")
 	}
 	s := c.session.ClientSession()
 	req := request.JoinPeerRequest{
@@ -148,6 +167,11 @@ func (c *KvStoreClient) Update(ctx context.Context, peerID uint64, raftListenAdd
 	if c.isClosed() {
 		return ErrClientClosed
 	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return errors.New("session is nil")
+	}
 	s := c.session.ClientSession()
 	req := request.UpdatePeerRequest{
 		SessionID:                         s.SessionID,
@@ -179,6 +203,11 @@ func (c *KvStoreClient) Remove(ctx context.Context, peerID uint64) error {
 	if c.isClosed() {
 		return ErrClientClosed
 	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return errors.New("session is nil")
+	}
 	s := c.session.ClientSession()
 	req := request.RemovePeerRequest{
 		SessionID:                         s.SessionID,
@@ -208,6 +237,11 @@ func (c *KvStoreClient) Remove(ctx context.Context, peerID uint64) error {
 func (c *KvStoreClient) PromoteLearner(ctx context.Context, peerID uint64) error {
 	if c.isClosed() {
 		return ErrClientClosed
+	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return errors.New("session is nil")
 	}
 	s := c.session.ClientSession()
 	req := request.PromoteLearnerRequest{
@@ -312,6 +346,11 @@ func (c *KvStoreClient) Set(ctx context.Context, key, value string) (*response.K
 	if c.isClosed() {
 		return nil, ErrClientClosed
 	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return nil, errors.New("session is nil")
+	}
 	s := c.session.ClientSession()
 	req := request.KvStoreSetRequest{
 		SessionID:                         s.SessionID,
@@ -335,6 +374,11 @@ func (c *KvStoreClient) Append(ctx context.Context, key, value string) (*respons
 	if c.isClosed() {
 		return nil, ErrClientClosed
 	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return nil, errors.New("session is nil")
+	}
 	s := c.session.ClientSession()
 	req := request.KvStoreAppendRequest{
 		SessionID:                         s.SessionID,
@@ -357,6 +401,11 @@ func (c *KvStoreClient) Append(ctx context.Context, key, value string) (*respons
 func (c *KvStoreClient) Delete(ctx context.Context, key string) (*response.KvStoreResponse, error) {
 	if c.isClosed() {
 		return nil, ErrClientClosed
+	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return nil, errors.New("session is nil")
 	}
 	s := c.session.ClientSession()
 	req := request.KvStoreDeleteRequest{

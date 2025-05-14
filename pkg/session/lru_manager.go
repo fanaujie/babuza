@@ -9,6 +9,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"io"
+	"math"
 	"sync"
 )
 
@@ -18,7 +19,7 @@ type LruManager struct {
 	lru          *list.List
 	arSerializer *applyResultSerializer
 	logger       ibabuza.Logger
-	mu           sync.RWMutex
+	mu           sync.Mutex
 }
 
 func NewLruManager(logger ibabuza.Logger, setOpts ...SetLruMgrOptions) *LruManager {
@@ -37,57 +38,68 @@ func NewLruManager(logger ibabuza.Logger, setOpts ...SetLruMgrOptions) *LruManag
 		logger:   logger,
 	}
 }
-func (m *LruManager) SetResponseSerializer(rs ibabuza.ResponseSerializer) error {
+func (l *LruManager) SetResponseSerializer(rs ibabuza.ResponseSerializer) error {
 	if rs == nil {
 		return fmt.Errorf("lru session manager: need response serializer to serialize response of state machiche")
 	}
-	m.arSerializer = newApplyResultSerializer(rs)
+	l.arSerializer = newApplyResultSerializer(rs)
 	return nil
 }
 
-func (m *LruManager) GetSession(sid uint64) (ibabuza.Session, error) {
-	if sid == NoOPSessionID {
+func (l *LruManager) GetSession(sessionID uint64) (ibabuza.Session, error) {
+	if sessionID == NoOPSessionID {
 		return &noOpSession, nil
 	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	s, ok := m.sessions[sid]
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	s, ok := l.sessions[sessionID]
 	if !ok {
-		return nil, ErrSessionExpired
+		return nil, fmt.Errorf("lru session manager: session %d not found", sessionID)
 	}
-	m.lru.MoveToFront(s)
+	l.lru.MoveToFront(s)
 	return s.Value.(ibabuza.Session), nil
 }
 
-func (m *LruManager) Register(sId uint64, lastActivateTime int64) {
-	m.mu.RLock()
-	_, ok := m.sessions[sId]
+func (l *LruManager) Register(sessionID uint64, lastActivateTime int64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, ok := l.sessions[sessionID]
 	if ok {
-		m.mu.RUnlock()
-		return
+		return fmt.Errorf("lru session manager: session id %d already registered", sessionID)
 	}
-	m.mu.RUnlock()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	ns := NewSession(sId, lastActivateTime)
-	nl := m.lru.PushFront(ns)
-	m.sessions[sId] = nl
-	if int64(m.lru.Len()) > m.opts.maxSessions {
-		tail := m.lru.Back()
+	ns := NewSession(sessionID, lastActivateTime)
+	nl := l.lru.PushFront(ns)
+	l.sessions[sessionID] = nl
+	if int64(l.lru.Len()) > l.opts.maxSessions {
+		tail := l.lru.Back()
 		if tail != nil {
-			m.lru.Remove(tail)
-			delete(m.sessions, tail.Value.(ibabuza.Session).Id())
+			l.lru.Remove(tail)
+			delete(l.sessions, tail.Value.(ibabuza.Session).Id())
 		}
 	}
+	return nil
 }
 
-func (m *LruManager) ExpireSession(currentTime int64) {
-
+func (l *LruManager) UnRegister(sessionID uint64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	s, ok := l.sessions[sessionID]
+	if !ok {
+		return fmt.Errorf("lru session manager: session id %d not registered", sessionID)
+	}
+	s.Value.(ibabuza.Session).ClearResult(math.MaxInt64)
+	l.lru.Remove(s)
+	delete(l.sessions, sessionID)
+	return nil
 }
 
-func (m *LruManager) Snapshot(w io.Writer) error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+func (l *LruManager) ExpireSession(currentTime int64) {
+	// not implemented
+}
+
+func (l *LruManager) Snapshot(w io.Writer) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	bs := allocator.Acquire(8)
 	defer allocator.Release(bs)
@@ -95,20 +107,20 @@ func (m *LruManager) Snapshot(w io.Writer) error {
 	if err := fileutil.FileWriteUint64(w, buf, uint64(fileVersion)<<32|uint64(lruManagerType)); err != nil {
 		return err
 	}
-	if err := fileutil.FileWriteUint64(w, buf, uint64(m.lru.Len())); err != nil {
+	if err := fileutil.FileWriteUint64(w, buf, uint64(l.lru.Len())); err != nil {
 		return err
 	}
-	for e := m.lru.Front(); e != nil; e = e.Next() {
-		if err := e.Value.(ibabuza.Session).Snapshot(w, m.arSerializer); err != nil {
+	for e := l.lru.Front(); e != nil; e = e.Next() {
+		if err := e.Value.(ibabuza.Session).Snapshot(w, l.arSerializer); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *LruManager) Restore(r io.Reader) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (l *LruManager) Restore(r io.Reader) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	bs := allocator.Acquire(8)
 	defer allocator.Release(bs)
 	buf := bs.Buffer[:8]
@@ -134,7 +146,7 @@ func (m *LruManager) Restore(r io.Reader) error {
 	lru := list.New()
 	for i := uint64(0); i < totalCount; i++ {
 		ns := &Session{}
-		if err = ns.Restore(r, m.arSerializer); err != nil {
+		if err = ns.Restore(r, l.arSerializer); err != nil {
 			return err
 		}
 		sessions[ns.Id()] = lru.PushBack(ns)
@@ -142,7 +154,7 @@ func (m *LruManager) Restore(r io.Reader) error {
 	if uint64(lru.Len()) != totalCount {
 		return errors.New(fmt.Sprintf("lru session manager: mismatched session count (expectd=%d) (real=%d)", totalCount, len(sessions)))
 	}
-	m.lru = lru
-	m.sessions = sessions
+	l.lru = lru
+	l.sessions = sessions
 	return nil
 }

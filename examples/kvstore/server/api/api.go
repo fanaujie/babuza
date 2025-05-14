@@ -1,8 +1,8 @@
 package api
 
 const (
-	LinearizableHeader = "X-Linearizable"
-
+	LinearizableHeader     = "X-Linearizable"
+	SessionIDHeader        = "X-Session-ID"
 	SessionsHttpPath       = "/sessions"
 	ClusterPeersHttpPath   = "/peers"
 	PromoteLearnerHttpPath = "/promote-learner"

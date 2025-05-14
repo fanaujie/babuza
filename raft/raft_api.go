@@ -85,7 +85,7 @@ type Raft struct {
 	cluster                   ibabuza.Cluster
 	walManager                ibabuza.WalManager
 	snapshotManager           ibabuza.SnapshotManager
-	sessionMgr                ibabuza.SessionManager
+	sessionManager            ibabuza.SessionManager
 	idGenerator               InternalIdGenerator
 	resultReplier             InternalResultReplier
 	completionReplier         InternalCompletionReplier
@@ -118,7 +118,7 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		cluster:                   bootstrap.cluster,
 		walManager:                bootstrap.walManager,
 		snapshotManager:           bootstrap.snapshotManager,
-		sessionMgr:                bootstrap.sessionMgr,
+		sessionManager:            bootstrap.sessionMgr,
 		idGenerator:               idgenerator.New(cfg.LocalPeerID, uint64(time.Now().Nanosecond())),
 		resultReplier:             replier.NewResult[ibabuza.ApplyResult](),
 		completionReplier:         replier.NewCompletion(),
@@ -164,7 +164,20 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 
 func (r *Raft) RegisterSession(ctx context.Context) ProposedResult {
 	replyID := r.idGenerator.Next()
-	proposalData, err := EncodeRegisterSessionRequest(replyID)
+	proposalData, err := EncodeRegisterSessionRequest(replyID, 0)
+	if err != nil {
+		return NewErrorResult(err)
+	}
+	ch, err := r.propose(ctx, replyID, proposalData)
+	if err != nil {
+		return NewErrorResult(err)
+	}
+	return NewProposalResult(ctx, r.closer, ch)
+}
+
+func (r *Raft) UnregisterSession(ctx context.Context, sessionID uint64) ProposedResult {
+	replyID := r.idGenerator.Next()
+	proposalData, err := EncodeRegisterSessionRequest(replyID, sessionID)
 	if err != nil {
 		return NewErrorResult(err)
 	}

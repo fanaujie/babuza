@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
 	"github.com/fanaujie/babuza/pkg/cluster"
-	"github.com/fanaujie/babuza/pkg/session"
 	"github.com/fanaujie/babuza/raft"
 	"io"
 	"net/http"
@@ -210,8 +209,6 @@ func convertError(errString string) error {
 		return cluster.ErrPeerNotLearner
 	case context.DeadlineExceeded.Error():
 		return context.DeadlineExceeded
-	case session.ErrSessionExpired.Error():
-		return session.ErrSessionExpired
 	default:
 		return errors.New(errString)
 	}
