@@ -23,8 +23,7 @@ func (p *peerFactory) CreatePeer(peerID uint64) peer.Peer {
 		LimiterMaxBatchMessageSize: p.t.options.PeerLimiterMaxBatchMessageSize,
 		SnapshotChunkSize:          p.t.options.PeerSnapshotChunkSize,
 		RaftMsgQueueSize:           p.t.options.PeerQueueSize,
-		DialTimeout:                p.t.options.DialTimeout,
-		QueuePoolSize:              p.t.options.PeerQueuePoolSize},
+		DialTimeout:                p.t.options.DialTimeout},
 		p.t.raftProcessor, p.t.memoryLimiter, p.t.chunkRateLimiter, p.t.breaker, c, p.t.logger)
 }
 

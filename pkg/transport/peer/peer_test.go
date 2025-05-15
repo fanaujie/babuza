@@ -310,7 +310,6 @@ func TestRaftPeerNew(t *testing.T) {
 		SnapshotChunkSize:          256,
 		RaftMsgQueueSize:           128,
 		DialTimeout:                time.Second,
-		QueuePoolSize:              3,
 	}
 
 	report := NewMockPeerRaftReport()
@@ -336,7 +335,6 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		SnapshotChunkSize:          256,
 		RaftMsgQueueSize:           128,
 		DialTimeout:                time.Second,
-		QueuePoolSize:              3,
 	}
 
 	t.Run("success case", func(t *testing.T) {
@@ -470,7 +468,6 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 			SnapshotChunkSize:          256,
 			RaftMsgQueueSize:           1, // Very small queue size
 			DialTimeout:                time.Second,
-			QueuePoolSize:              3,
 		}
 		report := NewMockPeerRaftReport()
 		memLimiter := NewMockMemoryLimiter(4096)
@@ -521,7 +518,6 @@ func TestRaftPeerMessageBatching(t *testing.T) {
 		SnapshotChunkSize:          256,
 		RaftMsgQueueSize:           128,
 		DialTimeout:                time.Second,
-		QueuePoolSize:              3,
 	}
 
 	report := NewMockPeerRaftReport()
@@ -567,7 +563,6 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		SnapshotChunkSize:          4, // Small chunk size for testing
 		RaftMsgQueueSize:           128,
 		DialTimeout:                time.Second,
-		QueuePoolSize:              3,
 	}
 
 	t.Run("success case", func(t *testing.T) {
@@ -716,7 +711,6 @@ func TestRaftPeerUpdateRaftReport(t *testing.T) {
 		SnapshotChunkSize:          256,
 		RaftMsgQueueSize:           128,
 		DialTimeout:                time.Second,
-		QueuePoolSize:              3,
 	}
 
 	report := NewMockPeerRaftReport()
@@ -749,7 +743,6 @@ func TestRaftPeerStop(t *testing.T) {
 		SnapshotChunkSize:          256,
 		RaftMsgQueueSize:           128,
 		DialTimeout:                time.Second,
-		QueuePoolSize:              3,
 	}
 
 	report := NewMockPeerRaftReport()
