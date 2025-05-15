@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
+	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
@@ -15,6 +16,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
+	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/testcontainers/testcontainers-go/modules/minio"
 	"io"
@@ -310,4 +312,119 @@ func newKvOperationOrderMap(reader io.Reader) (*kvstore.KvOperationOrderMap, err
 		batchKv = batchKv[:0]
 	}
 	return store, nil
+}
+
+type MyClient struct {
+	cs babuza.ClientSession
+}
+
+func NewMyClient(sessionId uint64) *MyClient {
+	return &MyClient{
+		cs: babuza.ClientSession{
+			SessionID:      sessionId,
+			SequenceNumber: 0,
+		},
+	}
+}
+
+func (c *MyClient) ClientSession() babuza.ClientSession {
+	c.cs.SequenceNumber++
+	return c.cs
+}
+
+func (c *MyClient) Response(sequenceNumber uint64) {
+
+}
+
+type raftKVDirectClient struct {
+	kvStores []*babuza.Raft
+	client   *MyClient
+	leader   int
+}
+
+func newDirectRaftKvClient(kvStoreCluster []*babuza.Raft) *raftKVDirectClient {
+	c := &raftKVDirectClient{
+		kvStores: kvStoreCluster,
+	}
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		res := c.kvStores[c.leader].RegisterSession(ctx)
+		result := res.WaitForApplyResult()
+		if result.Error == nil {
+			c.client = NewMyClient(result.LogIndex)
+			res.Release()
+			cancel()
+			break
+		}
+		res.Release()
+		cancel()
+		c.nextTryLeader()
+		time.Sleep(time.Millisecond * 300)
+	}
+	return c
+}
+
+func (c *raftKVDirectClient) Get(ctx context.Context, key string) (string, error) {
+	r := c.kvStores[c.leader]
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	err := r.LinearizableRead(ctx)
+	defer cancel()
+	if err == nil {
+		v, err := r.GetStateMachine().(*kvstore.MemoryStoreWithSession).Load(key)
+		if err != nil {
+			if errors.Is(err, kverror.ErrKeyNotFound) {
+				return "", nil
+			}
+			fmt.Println("raftKVDirectClient: failed to get key", err.Error())
+			return "", err
+		}
+		return v, nil
+	}
+	fmt.Println("raftKVDirectClient: failed to get key", err.Error())
+	return "", err
+}
+
+func (c *raftKVDirectClient) Set(ctx context.Context, key string, value string) {
+	var req kvstore.KvCommand
+	command, err := req.Set(key, value)
+	if err != nil {
+		panic("raftKVDirectClient: failed to set key")
+	}
+	c.command(command)
+}
+
+func (c *raftKVDirectClient) Append(ctx context.Context, key string, value string) {
+	var req kvstore.KvCommand
+	command, err := req.Append(key, value)
+	if err != nil {
+		panic("raftKVDirectClient: failed to append key")
+	}
+	c.command(command)
+}
+
+func (c *raftKVDirectClient) nextTryLeader() {
+	c.leader++
+	if c.leader == len(c.kvStores) {
+		c.leader = 0
+	}
+}
+
+func (c *raftKVDirectClient) command(command []byte) {
+	cs := c.client.ClientSession()
+	for {
+		r := c.kvStores[c.leader]
+		if r.Status().IsLeader() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+			result := r.ProposeThenWaitResponse(ctx, cs, command)
+			if result.Error == nil {
+				cancel()
+				c.client.Response(0)
+				return
+			}
+			cancel()
+			fmt.Println("raftKVDirectClient: failed to propose command, retrying...", result.Error)
+		}
+		c.nextTryLeader()
+		time.Sleep(time.Millisecond * 100)
+	}
 }
