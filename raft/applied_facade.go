@@ -157,11 +157,7 @@ func (a *appliedFacadeImpl) ApplyConfChangeEntry(entry raftpb.Entry) (babuzapb.R
 	if err = session.AddResult(confReq.Context.SequenceNum, reqTime, ar); err != nil {
 		a.log.Panicf("Failed to add result: %v", err)
 	}
-	return confReq.Context, ibabuza.ApplyResult{
-		LogIndex: entry.Index,
-		Response: confChange,
-		Error:    err,
-	}, removeSelf
+	return confReq.Context, ar, removeSelf
 }
 
 func (a *appliedFacadeImpl) SendAppliedResult(replyID uint64, ar ibabuza.ApplyResult) {
@@ -227,7 +223,7 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 		_, _ = a.raftNode.ApplyConfChange(uint64(a.cluster.GroupID()), cc)
 		return nil, false, err
 	}
-	applyResult, err := a.raftNode.ApplyConfChange(uint64(a.cluster.GroupID()), cc)
+	confState, err := a.raftNode.ApplyConfChange(uint64(a.cluster.GroupID()), cc)
 	if err != nil {
 		return nil, false, err
 	}
@@ -258,7 +254,7 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 		}
 	}
 
-	return applyResult, removeSelf, nil
+	return confState, removeSelf, nil
 }
 
 func (a *appliedFacadeImpl) sendConfChangeResult(session ibabuza.Session, ctx babuzapb.RequestContext, index uint64,

@@ -9,6 +9,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/cluster"
 	"github.com/fanaujie/babuza/raft"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -61,7 +62,8 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 		}
 		res, err := p.httpClient.Do(req)
 		if err != nil {
-			if err.(*url.Error).Timeout() {
+			var nErr net.Error
+			if errors.As(err, &nErr) && nErr.Timeout() {
 				return err
 			}
 			if err = p.moveNextLeader(); err != nil {
@@ -78,12 +80,6 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 		}
 		if res.StatusCode == http.StatusServiceUnavailable {
 			if err = p.moveNextLeader(); err != nil {
-				return err
-			}
-			continue
-		} else if res.StatusCode == http.StatusMovedPermanently {
-			newLeaderUrl, _ := url.Parse(res.Header["Location"][0])
-			if err = p.updateLeaderIndex(newLeaderUrl); err != nil {
 				return err
 			}
 			continue
@@ -130,7 +126,7 @@ func (p *leaderProxyClient) SendRequestWithPeerId(peerID uint64, makeRequest fun
 	if err = res.Body.Close(); err != nil {
 		return err
 	}
-	if res.StatusCode == http.StatusMovedPermanently {
+	if res.StatusCode == http.StatusServiceUnavailable {
 		return raft.ErrNotLeader
 	}
 	if res.StatusCode != http.StatusOK {

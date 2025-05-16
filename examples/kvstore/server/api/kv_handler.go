@@ -138,11 +138,10 @@ func (h *KvStoreResourceHandler) setKvStoreFunc(w http.ResponseWriter, r *http.R
 		processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}
-	proposalRes := ar.Response
 	res := response.KvStoreResponse{
 		SessionID:      req.SessionID,
 		SequenceNumber: req.SequenceNumber,
-		KvResult:       *(proposalRes.(*kvstore.KvResult)),
+		KvResult:       *(ar.Response.(*kvstore.KvResult)),
 	}
 
 	if err = writeHttpResponse(w, &res); err != nil {
@@ -191,15 +190,10 @@ func (h *KvStoreResourceHandler) appendKvStoreFunc(w http.ResponseWriter, r *htt
 		processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}
-	proposalRes := ar.Response
-	if err != nil {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
-		return
-	}
 	res := response.KvStoreResponse{
 		SessionID:      req.SessionID,
 		SequenceNumber: req.SequenceNumber,
-		KvResult:       *(proposalRes.(*kvstore.KvResult)),
+		KvResult:       *(ar.Response.(*kvstore.KvResult)),
 	}
 	if err = writeHttpResponse(w, &res); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -247,15 +241,10 @@ func (h *KvStoreResourceHandler) deleteKvStoreFunc(w http.ResponseWriter, r *htt
 		processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}
-	proposalRes := ar.Response
-	if err != nil {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
-		return
-	}
 	res := response.KvStoreResponse{
 		SessionID:      req.SessionID,
 		SequenceNumber: req.SequenceNumber,
-		KvResult:       *(proposalRes.(*kvstore.KvResult)),
+		KvResult:       *(ar.Response.(*kvstore.KvResult)),
 	}
 	if err = writeHttpResponse(w, &res); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

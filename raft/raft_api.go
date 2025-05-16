@@ -457,6 +457,5 @@ func (r *Raft) stop() {
 		r.closer.Close()
 		r.walManager.Close()
 		r.snapshotManager.Close()
-		r.storage.GetStateMachine().Close()
 	})
 }

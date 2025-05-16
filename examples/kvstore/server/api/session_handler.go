@@ -56,6 +56,10 @@ func (h *SessionResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		babuzaRes := h.r.UnregisterSession(r.Context(), sessionIdUint64)
 		defer babuzaRes.Release()
 		ar := babuzaRes.WaitForApplyResult()
+		if ar.Error != nil {
+			processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
+			return
+		}
 		if ar.Error == nil {
 			res.IsUnregistered = true
 		}

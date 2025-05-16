@@ -7,6 +7,7 @@ import (
 	"github.com/dgraph-io/badger/v4"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/utility/fileutil"
 	"github.com/fanaujie/babuza/pkg/wal/lsmtwal/storage"
 	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -78,6 +79,12 @@ var _ ibabuza.WalManager = (*BadgerWalManager)(nil)
 
 func NewBadgerWalManager(config Config, logger ibabuza.Logger) *BadgerWalManager {
 	stopCh := make(chan struct{})
+	if !fileutil.Exist(config.WalDir) {
+		err := fileutil.CreateDirAndTouch(config.WalDir)
+		if err != nil {
+			logger.Panicf("failed to create wal dir %s: %v", config.WalDir, err)
+		}
+	}
 	db, err := badger.Open(badger.DefaultOptions(config.WalDir).WithInMemory(config.InMemory))
 	if err != nil {
 		logger.Panicf("failed to open badger database: %v", err)

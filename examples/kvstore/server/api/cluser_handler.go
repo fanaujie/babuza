@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/fanaujie/babuza/examples/kvstore/server/request"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/raft"
@@ -170,7 +171,9 @@ func (h *ClusterPeerResourceHandler) removePeerFunc(w http.ResponseWriter, r *ht
 	}
 	removeRes := h.r.RemovePeer(r.Context(), session, req.RaftPeerId)
 	defer removeRes.Release()
-	if ar := removeRes.WaitForApplyResult(); ar.Error != nil {
+	ar := removeRes.WaitForApplyResult()
+	fmt.Printf("removeRes.WaitForApplyResult() = %v\n", ar)
+	if ar.Error != nil {
 		processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
 		return
 	}

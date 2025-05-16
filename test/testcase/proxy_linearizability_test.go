@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"github.com/anishathalye/porcupine"
+	"github.com/fanaujie/babuza/examples/kvstore/client"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
 	"github.com/fanaujie/babuza/pkg/session"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
-	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
 	"math/rand"
@@ -24,8 +24,8 @@ import (
 
 type linearizabilityKvClient interface {
 	Get(ctx context.Context, key string) (string, error)
-	Set(ctx context.Context, key string, value string)
-	Append(ctx context.Context, key string, value string)
+	Set(ctx context.Context, key string, value string) error
+	Append(ctx context.Context, key string, value string) error
 }
 
 // KvStoreInput defines the input model for KvStore operations
@@ -158,9 +158,22 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 	// Wait for leader election
 	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	var rs []*babuza.Raft
-	for _, r := range tc.GetAllRaft() {
-		rs = append(rs, r)
+
+	//createDirectRaftKvClient := func() linearizabilityKvClient {
+	//	var rs []*babuza.Raft
+	//	for _, r := range tc.GetAllRaft() {
+	//		rs = append(rs, r)
+	//	}
+	//	return newDirectRaftKvClient(rs)
+	//}
+	createHttpKvClient := func() linearizabilityKvClient {
+		s := client.NewManualIncrementSession()
+		cli, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), s)
+		if err != nil {
+			c.t.Logf("Error creating HTTP client: %v", err)
+			c.t.FailNow()
+		}
+		return newKvClientWrapper(10, cli, s)
 	}
 
 	// Storage for operations to check linearizability
@@ -175,7 +188,7 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 
 		var kvClient []linearizabilityKvClient
 		for index := 0; index < clients; index++ {
-			kvClient = append(kvClient, newDirectRaftKvClient(rs))
+			kvClient = append(kvClient, createHttpKvClient())
 		}
 
 		// Start client routines
@@ -200,24 +213,23 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 					value := fmt.Sprintf("c:%d v:%d ", clientId, it)
 
 					func() {
-						//ctx, cancel := context.WithTimeout(context.Background(), wait)
-						//defer cancel()
-
 						start := time.Now().UnixNano()
 
 						// Randomly select operation: 20% Set, 20% Append, 60% Get
 						if (rand.Int() % 1000) < 200 {
 							// Set operation
-							cli.Set(context.Background(), key, value)
+							if err = cli.Set(context.Background(), key, value); err != nil {
+								c.t.Logf("Error setting key %s: %v", key, err)
+								c.t.FailNow()
+							}
 							input = KvStoreInput{Command: 1, Key: key, Value: value}
-							//output = KvStoreOutput{Value: res.Value}
-
 						} else if (rand.Int() % 1000) < 400 {
 							// Append operation
-							cli.Append(context.Background(), key, value)
+							if err = cli.Append(context.Background(), key, value); err != nil {
+								c.t.Logf("Error appending key %s: %v", key, err)
+								c.t.FailNow()
+							}
 							input = KvStoreInput{Command: 2, Key: key, Value: value}
-							//output = KvStoreOutput{Value: res.Value}
-							//}
 						} else {
 							//Linearizable Get operation
 							res, err := cli.Get(context.Background(), key)

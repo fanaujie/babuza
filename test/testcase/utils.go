@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/fanaujie/babuza/examples/kvstore/client"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
@@ -84,27 +85,47 @@ func runWithCtxTimeout(timeout time.Duration, run func(ctx context.Context) erro
 }
 
 func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
+	testCases := []struct {
+		caseName            string
+		stateMachineCreator func(string) ibabuza.BaseStateMachine
+	}{
+		{
+			caseName: "memory state machine",
+			stateMachineCreator: func(storeDir string) ibabuza.BaseStateMachine {
+				return kvstore.NewMemoryStore()
+			},
+		},
+		{
+			caseName: "disk state machine",
+			stateMachineCreator: func(storeDir string) ibabuza.BaseStateMachine {
+				return kvstore.NewDisk(storeDir)
+			},
+		},
+	}
 	var components []BabuzaComponent
-	for _, walType := range []string{builder.BabuzaWal, builder.ETCDWal, builder.LsmtWalDisk} {
-		for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
-			components = append(components, BabuzaComponent{
-				CaseName:  fmt.Sprintf("BasicTest: 3nodes-%s-DiskStateMachine-(%s)-DurableSnapshot-NoOpSession", transportType, walType),
-				ClusterId: 1,
-				CreateStateMachine: func(storeDir string) ibabuza.BaseStateMachine {
-					return kvstore.NewDisk(storeDir)
-				},
-				CreateCustomComponent: func(walType, transportType string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
-					return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
-						config.BubuzaConfig.RaftConfig.DisableProposalForwarding = disableProposalForwarding
-						b := customBabuzaComponent(builder.NoOpSession, walType, builder.DurableSnapshot,
-							transportType, proxyNet).
-							SetClusterId(config.BubuzaConfig.ClusterID).
-							SetStorageRootDir(storageDir)
-						return *config, *b.Build()
-					}
-				}(walType, transportType),
-				ProxyNetwork: nil,
-			})
+	//// Create a BabuzaComponent for each test case
+	for _, tc := range testCases {
+		for _, walType := range []string{builder.BabuzaWal, builder.ETCDWal, builder.LsmtWalDisk} {
+			for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
+				components = append(components, BabuzaComponent{
+					CaseName:  fmt.Sprintf("BasicTest: 3nodes-(%s)-(%s)-(%s)-DurableSnapshot-NoOpSession", transportType, tc.caseName, walType),
+					ClusterId: 1,
+					CreateStateMachine: func(storeDir string) ibabuza.BaseStateMachine {
+						return tc.stateMachineCreator(storeDir)
+					},
+					CreateCustomComponent: func(walType, transportType string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+						return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+							config.BubuzaConfig.RaftConfig.DisableProposalForwarding = disableProposalForwarding
+							b := customBabuzaComponent(builder.NoOpSession, walType, builder.DurableSnapshot,
+								transportType, proxyNet).
+								SetClusterId(config.BubuzaConfig.ClusterID).
+								SetStorageRootDir(storageDir)
+							return *config, *b.Build()
+						}
+					}(walType, transportType),
+					ProxyNetwork: nil,
+				})
+			}
 		}
 	}
 	return components
@@ -384,22 +405,24 @@ func (c *raftKVDirectClient) Get(ctx context.Context, key string) (string, error
 	return "", err
 }
 
-func (c *raftKVDirectClient) Set(ctx context.Context, key string, value string) {
+func (c *raftKVDirectClient) Set(ctx context.Context, key string, value string) error {
 	var req kvstore.KvCommand
 	command, err := req.Set(key, value)
 	if err != nil {
-		panic("raftKVDirectClient: failed to set key")
+		return err
 	}
 	c.command(command)
+	return nil
 }
 
-func (c *raftKVDirectClient) Append(ctx context.Context, key string, value string) {
+func (c *raftKVDirectClient) Append(ctx context.Context, key string, value string) error {
 	var req kvstore.KvCommand
 	command, err := req.Append(key, value)
 	if err != nil {
-		panic("raftKVDirectClient: failed to append key")
+		return err
 	}
 	c.command(command)
+	return nil
 }
 
 func (c *raftKVDirectClient) nextTryLeader() {
@@ -428,3 +451,60 @@ func (c *raftKVDirectClient) command(command []byte) {
 		time.Sleep(time.Millisecond * 100)
 	}
 }
+
+type kvClientWrapper struct {
+	cli           *client.KvStoreClient
+	maxRetries    int
+	manualSession *client.ManualIncrementSession
+}
+
+func newKvClientWrapper(maxRetries int, cli *client.KvStoreClient, manualSession *client.ManualIncrementSession) *kvClientWrapper {
+	return &kvClientWrapper{
+		maxRetries:    maxRetries,
+		cli:           cli,
+		manualSession: manualSession,
+	}
+}
+
+func (k *kvClientWrapper) Get(ctx context.Context, key string) (string, error) {
+	v, err := k.cli.LinearizableGet(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	return v.Value, nil
+}
+
+func (k *kvClientWrapper) Set(ctx context.Context, key string, value string) error {
+	s := k.manualSession.ClientSession()
+	for i := 0; i < k.maxRetries; i++ {
+		ctx2, cancel := context.WithTimeout(ctx, time.Second)
+		k.manualSession.SetSequenceNumber(s.SequenceNumber + 1)
+		_, err := k.cli.Set(ctx2, key, value)
+		cancel()
+		if err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("kvClientWrapper failed to set value for key %s after %d retries", key, k.maxRetries)
+}
+
+func (k *kvClientWrapper) Append(ctx context.Context, key string, value string) error {
+	s := k.manualSession.ClientSession()
+	for i := 0; i < k.maxRetries; i++ {
+		ctx2, cancel := context.WithTimeout(ctx, time.Second)
+		k.manualSession.SetSequenceNumber(s.SequenceNumber + 1)
+		_, err := k.cli.Append(ctx2, key, value)
+		cancel()
+		if err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("kvClientWrapper failed to append value for key %s after %d retries", key, k.maxRetries)
+}
+
+//
+//type linearizabilityKvClient interface {
+//	Get(ctx context.Context, key string) (string, error)
+//	Set(ctx context.Context, key string, value string)
+//	Append(ctx context.Context, key string, value string)
+//}

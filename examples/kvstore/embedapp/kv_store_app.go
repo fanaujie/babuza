@@ -89,6 +89,10 @@ func (k *KvStoreApp) Stop() error {
 			me.Append(err)
 		}
 	}
+	// close state machine
+	if err := k.stateMachine.Close(); err != nil {
+		me.Append(err)
+	}
 	close(k.stopCh)
 	return me.Get()
 }

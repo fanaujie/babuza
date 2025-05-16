@@ -11,10 +11,6 @@ import (
 
 func processRaftProposeError(err error, w http.ResponseWriter, req *http.Request, redirectLeaderAddresses []string) {
 	if errors.Is(err, raft.ErrNotLeader) {
-		if redirectLeaderAddresses != nil {
-			http.Redirect(w, req, "http://"+redirectLeaderAddresses[0], http.StatusMovedPermanently)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	} else if errors.Is(err, context.DeadlineExceeded) {

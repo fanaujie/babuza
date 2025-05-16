@@ -13,9 +13,9 @@ const (
 )
 
 type KvResult struct {
-	Command uint64
-	Key     string
-	Value   string
+	Command uint64 `json:"command"`
+	Key     string `json:"key"`
+	Value   string `json:"value"`
 }
 
 type ResultSerializer struct {

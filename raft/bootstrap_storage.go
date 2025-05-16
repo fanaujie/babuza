@@ -90,7 +90,7 @@ func (s *bootstrapStorage) OpenStateMachine(snapshot *raftpb.Snapshot) error {
 		if err = s.stateMachine.RestoreFromSnapshot(reader); err != nil {
 			return err
 		}
-		s.bsmInfo.openAppliedIndex = snapshot.Metadata.Index
+		s.bsmInfo.SetOpenAppliedIndex(snapshot.Metadata.Index)
 		return nil
 	}
 	if s.bsmInfo.diskType {
@@ -101,7 +101,6 @@ func (s *bootstrapStorage) OpenStateMachine(snapshot *raftpb.Snapshot) error {
 					return err
 				}
 			}
-			s.bsmInfo.SetOpenAppliedIndex(diskAppliedIndex)
 			return nil
 		}
 		if snapshot != nil && diskAppliedIndex < snapshot.Metadata.Index {
