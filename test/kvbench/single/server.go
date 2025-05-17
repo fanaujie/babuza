@@ -1,4 +1,4 @@
-package server
+package single
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/transport"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
-	"github.com/fanaujie/babuza/test/kvbench/server/kvstore"
+	"github.com/fanaujie/babuza/test/kvbench/statemachine"
 	"net"
 	"sync"
 )
@@ -41,7 +41,7 @@ type Config struct {
 type Server struct {
 	cfg          Config
 	raft         *babuza.Raft
-	stateMachine *kvstore.MemoryStore
+	stateMachine *statemachine.MemoryStore
 	logger       ibabuza.Logger
 	closer       *syncutil.Closer
 	grpcServer   *GrpcServer
@@ -56,7 +56,7 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 
 	// Create state machine
-	s.stateMachine = kvstore.NewMemoryStore()
+	s.stateMachine = statemachine.NewMemoryStore()
 
 	return s, nil
 }
@@ -75,7 +75,7 @@ func (s *Server) Start() error {
 	babuzaCfg.Join = s.cfg.JoinCluster
 
 	// Set up State machine
-	s.stateMachine = kvstore.NewMemoryStore()
+	s.stateMachine = statemachine.NewMemoryStore()
 
 	// Create Babuza components
 	babuzaComponents := builder.NewBabuzaComponentBuilder(&builder.BabuzaComponentConfig{

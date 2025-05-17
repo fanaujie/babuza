@@ -1,10 +1,10 @@
-package server
+package single
 
 import (
 	"context"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/kvbench/kvbenchpb"
-	"github.com/fanaujie/babuza/test/kvbench/server/kvstore"
+	"github.com/fanaujie/babuza/test/kvbench/statemachine"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,7 +14,7 @@ import (
 // KVServiceServer is the gRPC server for the KV service
 type KVServiceServer struct {
 	raft         *babuza.Raft
-	stateMachine *kvstore.MemoryStore
+	stateMachine *statemachine.MemoryStore
 }
 
 // GrpcServer wraps the gRPC server
@@ -22,11 +22,11 @@ type GrpcServer struct {
 	server       *grpc.Server
 	kvService    *KVServiceServer
 	raft         *babuza.Raft
-	stateMachine *kvstore.MemoryStore
+	stateMachine *statemachine.MemoryStore
 }
 
 // NewGrpcServer creates a new gRPC server
-func NewGrpcServer(raft *babuza.Raft, stateMachine *kvstore.MemoryStore) *GrpcServer {
+func NewGrpcServer(raft *babuza.Raft, stateMachine *statemachine.MemoryStore) *GrpcServer {
 	server := grpc.NewServer()
 	kvService := &KVServiceServer{
 		raft:         raft,
@@ -86,12 +86,13 @@ func (s *KVServiceServer) Put(ctx context.Context, req *kvbenchpb.PutRequest) (*
 
 // Get implements the Get RPC
 func (s *KVServiceServer) Get(ctx context.Context, req *kvbenchpb.GetRequest) (*kvbenchpb.GetResponse, error) {
-
+	// not implemented yet
 	return &kvbenchpb.GetResponse{}, nil
 }
 
 // Delete implements the Delete RPC
 func (s *KVServiceServer) Delete(ctx context.Context, req *kvbenchpb.DeleteRequest) (*kvbenchpb.DeleteResponse, error) {
+	// not implemented yet
 	return &kvbenchpb.DeleteResponse{}, nil
 }
 

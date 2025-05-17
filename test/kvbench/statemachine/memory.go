@@ -1,4 +1,4 @@
-package kvstore
+package statemachine
 
 import (
 	"encoding/binary"

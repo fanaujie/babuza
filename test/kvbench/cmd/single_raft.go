@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/fanaujie/babuza/test/kvbench/server"
+	"github.com/fanaujie/babuza/test/kvbench/single"
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
@@ -70,7 +70,7 @@ func runServerFunc(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	cfg := server.Config{
+	cfg := single.Config{
 		DataDir:      dataDir,
 		ClusterID:    clusterID,
 		LocalPeerID:  localPeerID,
@@ -80,7 +80,7 @@ func runServerFunc(cmd *cobra.Command, args []string) {
 		InitialPeers: initialPeers,
 	}
 
-	srv, err := server.NewServer(cfg)
+	srv, err := single.NewServer(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create server: %v\n", err)
 		os.Exit(1)
