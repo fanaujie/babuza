@@ -14,7 +14,6 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"time"
 )
 
 // putCmd represents the put command
@@ -61,14 +60,14 @@ func putFunc(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	if shardCount > 1 && keySpaceSize < int(shardCount) {
+		fmt.Fprintf(os.Stderr, "Expected --key-space-size >= --shard-count (%v < %v)\n", keySpaceSize, shardCount)
+		os.Exit(1)
+	}
 	// Setup rate limiter
 	if putRate == 0 {
 		putRate = math.MaxInt32
 	}
-
-	// Create a channel for operations
-	requests := make(chan kvbenchpb.KvOP, totalClients)
-	limit := rate.NewLimiter(rate.Limit(putRate), 1)
 
 	// Create clients
 	config := client.Config{
@@ -77,17 +76,12 @@ func putFunc(cmd *cobra.Command, args []string) {
 		TargetLeader: targetLeader,
 		ShardCount:   shardCount,
 	}
-	factory, err := kvgrpc.NewGRPCFactory(clusterID, config)
+	factory, err := kvgrpc.NewGRPCFactory(clientClusterID, config)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create client factory: %v\n", err)
 		os.Exit(1)
 	}
 	defer factory.Close()
-
-	var clients []client.Client
-	for i := uint(0); i < totalClients; i++ {
-		clients = append(clients, factory.NewClient(config))
-	}
 
 	// Create progress bar
 	bar = pb.New(putTotal)
@@ -95,46 +89,123 @@ func putFunc(cmd *cobra.Command, args []string) {
 
 	// Initialize reporter
 	reporter = newReporter()
+	// for multiple shards
+	if shardCount > 1 {
+		shardClients := make(map[uint64][]client.Client)
+		shardRequests := make(map[uint64]chan kvbenchpb.KvOP)
 
-	// Start worker goroutines
-	for i := range clients {
-		wg.Add(1)
-		go func(c client.Client) {
-			defer wg.Done()
-			// Generate key
+		clientsPerShard := totalClients / shardCount
+		if clientsPerShard == 0 {
+			clientsPerShard = 1
+		}
 
-			for op := range requests {
-				// Wait for rate limiter
-				limit.Wait(context.Background())
+		for i := uint64(1); i <= uint64(shardCount); i++ {
+			shardRequests[i] = make(chan kvbenchpb.KvOP, 1024)
+			var shardClientsList []client.Client
 
-				startTime := time.Now()
-				res := c.Put(context.Background(), op.Key, op.Value)
-				reporter.Results() <- report.Result{
-					Err:   res.Error,
-					Start: startTime,
-					End:   res.EndTime,
-				}
-				bar.Increment()
+			for j := uint(0); j < clientsPerShard; j++ {
+				shardClientsList = append(shardClientsList, factory.NewClient(config))
 			}
-		}(clients[i])
-	}
+			shardClients[i] = shardClientsList
 
-	// Generate requests
-	go func() {
-		keyTemplate := make([]byte, keySize)
-		for i := 0; i < putTotal; i++ {
-			if seqKeys {
-				binary.PutVarint(keyTemplate, int64(i%keySpaceSize))
-			} else {
-				binary.PutVarint(keyTemplate, int64(rand.Intn(keySpaceSize)))
-			}
-			requests <- kvbenchpb.KvOP{
-				Key:   keyTemplate,
-				Value: mustRandBytes(valSize),
+			for _, c := range shardClientsList {
+				wg.Add(1)
+				go func(c client.Client, requests chan kvbenchpb.KvOP) {
+					defer wg.Done()
+					limit := rate.NewLimiter(rate.Limit(putRate), 1)
+
+					for op := range requests {
+						// Wait for rate limiter
+						limit.Wait(context.Background())
+						res := c.Put(context.Background(), op.GroupID, op.Key, op.Value)
+						if res.Error != nil {
+							fmt.Fprintf(os.Stderr, "Error in PUT operation: %v\n", res.Error)
+						}
+						reporter.Results() <- report.Result{
+							Err:   res.Error,
+							Start: res.StartTime,
+							End:   res.EndTime,
+						}
+						bar.Increment()
+					}
+				}(c, shardRequests[i])
 			}
 		}
-		close(requests)
-	}()
+		go func() {
+			for i := 0; i < putTotal; i++ {
+				keyTemplate := make([]byte, keySize)
+				var groupID uint64
+				if seqKeys {
+					rKey := i % keySpaceSize
+					groupID = uint64(uint(rKey)%shardCount) + 1
+					binary.PutVarint(keyTemplate, int64(rKey))
+				} else {
+					rKey := rand.Intn(keySpaceSize)
+					groupID = uint64(uint(rKey)%shardCount) + 1
+					binary.PutVarint(keyTemplate, int64(rKey))
+				}
+				shardRequests[groupID] <- kvbenchpb.KvOP{
+					GroupID: groupID,
+					Key:     keyTemplate,
+					Value:   mustRandBytes(valSize),
+				}
+			}
+
+			for i := uint64(1); i <= uint64(shardCount); i++ {
+				close(shardRequests[i])
+			}
+		}()
+	} else { // for single shard
+		requests := make(chan kvbenchpb.KvOP, 1024)
+		limit := rate.NewLimiter(rate.Limit(putRate), 1)
+
+		var clients []client.Client
+		for i := uint(0); i < totalClients; i++ {
+			clients = append(clients, factory.NewClient(config))
+		}
+
+		// Start worker goroutines
+		for i := range clients {
+			wg.Add(1)
+			go func(c client.Client) {
+				defer wg.Done()
+
+				for op := range requests {
+					// Wait for rate limiter
+					limit.Wait(context.Background())
+
+					res := c.Put(context.Background(), op.GroupID, op.Key, op.Value)
+					if res.Error != nil {
+						fmt.Fprintf(os.Stderr, "Error in PUT operation: %v\n", res.Error)
+					}
+					reporter.Results() <- report.Result{
+						Err:   res.Error,
+						Start: res.StartTime,
+						End:   res.EndTime,
+					}
+					bar.Increment()
+				}
+			}(clients[i])
+		}
+
+		// Generate requests
+		go func() {
+			for i := 0; i < putTotal; i++ {
+				keyTemplate := make([]byte, keySize)
+				if seqKeys {
+					binary.PutVarint(keyTemplate, int64(i%keySpaceSize))
+				} else {
+					binary.PutVarint(keyTemplate, int64(rand.Intn(keySpaceSize)))
+				}
+				requests <- kvbenchpb.KvOP{
+					GroupID: 0,
+					Key:     keyTemplate,
+					Value:   mustRandBytes(valSize),
+				}
+			}
+			close(requests)
+		}()
+	}
 
 	// Wait for report completion
 	rc := reporter.Run()

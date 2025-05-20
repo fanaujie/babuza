@@ -29,9 +29,10 @@ type schedulerConfig struct {
 }
 
 type sharder struct {
-	mu         sync.Mutex
-	queue      *queue.Queue[ibabuza.RaftGroupID]
-	groupState map[ibabuza.RaftGroupID]internalState
+	mu           sync.Mutex
+	queue        *queue.Queue[ibabuza.RaftGroupID]
+	groupState   map[ibabuza.RaftGroupID]internalState
+	inProcessing sync.Map
 }
 
 // raftScheduler manages the state processing of multiple Raft groups.
@@ -118,16 +119,20 @@ func (s *raftScheduler) EnqueueBatchState(state int, groupIDs []ibabuza.RaftGrou
 	return
 }
 
-func (s *raftScheduler) worker(shardID, workderID int, sh *sharder) {
-	s.log.Debugf("Node[%d] starting raftScheduler worker %d-%d", s.nodeID, shardID, workderID)
-	defer s.log.Debugf("Node[%d] stopping raftScheduler worker %d-%d", s.nodeID, shardID, workderID)
+func (s *raftScheduler) worker(shardID, workerID int, sh *sharder) {
+	s.log.Debugf("Node[%d] starting raftScheduler worker %d-%d", s.nodeID, shardID, workerID)
+	defer s.log.Debugf("Node[%d] stopping raftScheduler worker %d-%d", s.nodeID, shardID, workerID)
 	for {
 		groupID, err := sh.queue.GetOne()
 		if err != nil {
-			s.log.Debugf("Node[%d] raftScheduler worker %d-%d get error: %v", s.nodeID, shardID, workderID, err)
+			s.log.Debugf("Node[%d] raftScheduler worker %d-%d get error: %v", s.nodeID, shardID, workerID, err)
 			return
 		}
 		if groupID == 0 { // empty queue
+			continue
+		}
+		if _, loaded := sh.inProcessing.LoadOrStore(groupID, true); loaded {
+			// put back to queue if already in processing
 			continue
 		}
 		sh.mu.Lock()
@@ -160,6 +165,7 @@ func (s *raftScheduler) worker(shardID, workderID int, sh *sharder) {
 		if oldState.state&stateReady == stateReady {
 			s.raftProcessor.ProcessReady(groupID)
 		}
+		sh.inProcessing.Delete(groupID)
 		sh.mu.Lock()
 		newState, _ := sh.groupState[groupID]
 		if newState.state == stateQueue {

@@ -52,15 +52,15 @@ func (c *Client) execOperation(ctx context.Context) client.Response {
 	}
 }
 
-func (c *Client) Put(ctx context.Context, key, value []byte) client.Response {
+func (c *Client) Put(ctx context.Context, groupID uint64, key, value []byte) client.Response {
 	return c.execOperation(ctx)
 }
 
-func (c *Client) Get(ctx context.Context, key []byte) client.Response {
+func (c *Client) Get(ctx context.Context, groupID uint64, key []byte) client.Response {
 	return c.execOperation(ctx)
 }
 
-func (c *Client) Delete(ctx context.Context, key []byte) client.Response {
+func (c *Client) Delete(ctx context.Context, groupID uint64, key []byte) client.Response {
 	return c.execOperation(ctx)
 }
 

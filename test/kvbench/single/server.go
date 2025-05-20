@@ -30,10 +30,7 @@ type Config struct {
 	// RaftAddress is the address for Raft communication
 	RaftAddress string
 
-	// JoinCluster indicates whether to join an existing cluster
-	JoinCluster bool
-
-	// InitialPeers is a list of peers to connect to when joining a cluster
+	// InitialPeers is a list of peers to connect each other
 	InitialPeers map[uint64]string
 }
 
@@ -71,8 +68,6 @@ func (s *Server) Start() error {
 		s.cfg.LocalPeerID, s.cfg.RaftAddress)
 	babuzaCfg.SnapshotCount = 1000000
 	babuzaCfg.DisableProposalForwarding = false
-	// Set additional configuration options
-	babuzaCfg.Join = s.cfg.JoinCluster
 
 	// Set up State machine
 	s.stateMachine = statemachine.NewMemoryStore()

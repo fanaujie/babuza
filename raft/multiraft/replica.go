@@ -24,20 +24,6 @@ type leaderChange struct {
 	isLeader bool
 }
 
-type reportUnreachable struct {
-	NodeID uint64
-	Status raft.SnapshotStatus
-}
-
-type reportSnapshotStatus struct {
-	NodeID uint64
-	Status raft.SnapshotStatus
-}
-
-type raftStatus struct {
-	resultCh chan raft.Status
-}
-
 type replicaRequestQueue struct {
 	proposal     *queue.SwapBufferQueue[*proposalRequest]
 	configChange *queue.SwapBufferQueue[configChangeRequest]
@@ -100,8 +86,6 @@ type replica struct {
 		unreachable    map[uint64]struct{}
 		snapshotStatus map[uint64]raft.SnapshotStatus
 	}
-	unreachable map[uint64]struct{}
-
 	logger ibabuza.Logger
 	closer *syncutil.Closer
 }
@@ -122,9 +106,12 @@ func (r *replica) Stop() {
 }
 
 func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {
-
 	replyID := r.idGenerator.Next()
 	data, err := babuza.EncodeProposedLog(replyID, session, log)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
 	}
@@ -132,11 +119,11 @@ func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSess
 	proposal.replyID = replyID
 	proposal.data = data
 	if err = r.requestQueue.proposal.Put(proposal); err != nil {
+		r.resultReplier.CancelResult(replyID)
 		poolReleaseProposal(proposal)
 		return babuza.NewErrorResult(err)
 	}
 	r.scheduler.EnqueueState(stateProposal, r.raftGroup.GroupID)
-	ch, err := r.resultReplier.AcquireResultChan(replyID)
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
@@ -156,6 +143,9 @@ func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 	}
 	r.scheduler.EnqueueState(stateConfigChange, r.raftGroup.GroupID)
 	ch, err := r.resultReplier.AcquireResultChan(replyID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
@@ -175,6 +165,10 @@ func (r *replica) RegisterSessionRequest(ctx context.Context) babuza.ProposedRes
 	}
 	r.scheduler.EnqueueState(stateProposal, r.raftGroup.GroupID)
 	ch, err := r.resultReplier.AcquireResultChan(replyID)
+	if err != nil {
+		poolReleaseProposal(proposal)
+		return babuza.NewErrorResult(err)
+	}
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
@@ -193,6 +187,10 @@ func (r *replica) UnregisterSessionRequest(ctx context.Context, sessionID uint64
 	}
 	r.scheduler.EnqueueState(stateProposal, r.raftGroup.GroupID)
 	ch, err := r.resultReplier.AcquireResultChan(replyID)
+	if err != nil {
+		poolReleaseProposal(proposal)
+		return babuza.NewErrorResult(err)
+	}
 	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 

@@ -1,3 +1,3 @@
-kv1: ./kvbench server single --local-peer-id 1 --data-dir ./data1 --raft-address 127.0.0.1:14200 --grpc-address 127.0.0.1:24200 --initial-peers 1=127.0.0.1:14200,2=127.0.0.1:14201,3=127.0.0.1:14202
-kv2: ./kvbench server single --local-peer-id 2 --data-dir ./data2 --raft-address 127.0.0.1:14201 --grpc-address 127.0.0.1:24201 --initial-peers 1=127.0.0.1:14200,2=127.0.0.1:14201,3=127.0.0.1:14202
-kv3: ./kvbench server single --local-peer-id 3 --data-dir ./data3 --raft-address 127.0.0.1:14202 --grpc-address 127.0.0.1:24202 --initial-peers 1=127.0.0.1:14200,2=127.0.0.1:14201,3=127.0.0.1:14202
+kv1: ./kvbench server single --local-peer-id 1 --data-dir ./data1 --raft-address 127.0.0.1:14200 --grpc-address 127.0.0.1:24200 --initial-raft-peers 1=127.0.0.1:14200,2=127.0.0.1:14201,3=127.0.0.1:14202
+kv2: ./kvbench server single --local-peer-id 2 --data-dir ./data2 --raft-address 127.0.0.1:14201 --grpc-address 127.0.0.1:24201 --initial-raft-peers 1=127.0.0.1:14200,2=127.0.0.1:14201,3=127.0.0.1:14202
+kv3: ./kvbench server single --local-peer-id 3 --data-dir ./data3 --raft-address 127.0.0.1:14202 --grpc-address 127.0.0.1:24202 --initial-raft-peers 1=127.0.0.1:14200,2=127.0.0.1:14201,3=127.0.0.1:14202

@@ -7,20 +7,21 @@ import (
 
 // Response represents a response from the KV service
 type Response struct {
-	Error   error
-	EndTime time.Time
+	Error     error
+	StartTime time.Time
+	EndTime   time.Time
 }
 
 // Client defines the interface for interacting with the key-value store
 type Client interface {
 	// Put puts a key-value pair into the store
-	Put(ctx context.Context, key, value []byte) Response
+	Put(ctx context.Context, groupID uint64, key, value []byte) Response
 
 	// Get retrieves a value for the given key
-	Get(ctx context.Context, key []byte) Response
+	Get(ctx context.Context, groupID uint64, key []byte) Response
 
 	// Delete removes a key-value pair
-	Delete(ctx context.Context, key []byte) Response
+	Delete(ctx context.Context, groupID uint64, key []byte) Response
 }
 
 // Config stores configuration for creating a client

@@ -23,7 +23,8 @@ type GrpcServer struct {
 }
 
 // NewGrpcServer creates a new gRPC server for the KV service
-func NewGrpcServer(serverCfg Config, node *multiraft.Node, stores map[ibabuza.RaftGroupID]*statemachine.MemoryStore, logger ibabuza.Logger) *GrpcServer {
+func NewGrpcServer(serverCfg Config, node *multiraft.Node, stores map[ibabuza.RaftGroupID]*statemachine.MemoryStore,
+	logger ibabuza.Logger) *GrpcServer {
 	grpcServer := grpc.NewServer()
 	server := &GrpcServer{
 		serverCfg:     serverCfg,
@@ -128,7 +129,7 @@ func (s *GrpcServer) ClusterConfiguration(ctx context.Context, req *kvbenchpb.Cl
 			peers = append(peers, &kvbenchpb.RaftPeerAttribute{
 				PeerID:         peer.RaftPeerAttr.Id,
 				RaftListenAddr: peer.RaftPeerAttr.RaftListenAddr,
-				GrpcListenAddr: peer.AppServiceAddresses[0],
+				GrpcListenAddr: s.serverCfg.InitialGRPCPeers[peer.RaftPeerAttr.Id],
 				IsLearner:      peer.RaftPeerAttr.IsLearner,
 			})
 		}

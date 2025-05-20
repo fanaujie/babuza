@@ -25,8 +25,9 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 	if len(config.Endpoints) == 0 {
 		return nil, fmt.Errorf("no endpoints provided")
 	}
-	if config.ShardCount > config.Connections {
-		return nil, fmt.Errorf("shard count cannot exceed total connections")
+	if config.ShardCount > 1 && config.ShardCount > config.Connections && int(config.Connections) < len(config.Endpoints) {
+		return nil, fmt.Errorf("shard count %d cannot be greater than connections %d if connections are less than endpoints %d",
+			config.ShardCount, config.Connections, len(config.Endpoints))
 	}
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -102,28 +103,30 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 
 		// first round: allocate connections based on leader count (one connection per leader)
 		totalConns := uint(0)
-		for _, addr := range leaderAddrList {
-			if totalConns >= config.Connections {
-				break
-			}
-
-			leaderCount := leaderCountByAddr[addr]
-			connsForThisNode := uint(leaderCount)
-			if totalConns+connsForThisNode > config.Connections {
-				connsForThisNode = config.Connections - totalConns
-			}
-
-			nodeConns, _ := f.nodeClientMap.LoadOrStore(addr, []*grpc.ClientConn{})
-			for i := uint(0); i < connsForThisNode; i++ {
-				conn, err := grpc.NewClient(addr, opts...)
-				if err != nil {
-					fmt.Printf("failed to connect to %s: %v", addr, err)
-					return nil, err
+		if config.Connections > config.ShardCount {
+			for _, addr := range leaderAddrList {
+				if totalConns >= config.Connections {
+					break
 				}
-				nodeConns = append(nodeConns, conn)
-				totalConns++
+
+				leaderCount := leaderCountByAddr[addr]
+				connsForThisNode := uint(leaderCount)
+				if totalConns+connsForThisNode > config.Connections {
+					connsForThisNode = config.Connections - totalConns
+				}
+
+				nodeConns, _ := f.nodeClientMap.LoadOrStore(addr, []*grpc.ClientConn{})
+				for i := uint(0); i < connsForThisNode; i++ {
+					conn, err := grpc.NewClient(addr, opts...)
+					if err != nil {
+						fmt.Printf("failed to connect to %s: %v", addr, err)
+						return nil, err
+					}
+					nodeConns = append(nodeConns, conn)
+					totalConns++
+				}
+				f.nodeClientMap.Store(addr, nodeConns)
 			}
-			f.nodeClientMap.Store(addr, nodeConns)
 		}
 
 		// second round: distribute remaining connections in round-robin fashion
@@ -144,6 +147,7 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 				f.nodeClientMap.Store(addr, nodeConns)
 			}
 		}
+
 	} else {
 		// round-robin policy
 		totalConns := uint(0)
@@ -168,6 +172,7 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 	}
 	// 5. initialize connection usage stats
 	f.nodeClientMap.Range(func(k string, conns []*grpc.ClientConn) bool {
+		fmt.Printf("address %s has %d connections\n", k, len(conns))
 		for _, conn := range conns {
 			f.connUsageStats.Store(conn, uint(0))
 		}
@@ -205,7 +210,7 @@ func (f *Factory) getLeastUsedConn(conns []*grpc.ClientConn) *grpc.ClientConn {
 	}
 
 	leastUsedConn := conns[0]
-	minUsage := f.config.Connections
+	minUsage := ^uint(0)
 	for _, conn := range conns {
 		cUsage, ok := f.connUsageStats.Load(conn)
 		if !ok {
@@ -216,7 +221,6 @@ func (f *Factory) getLeastUsedConn(conns []*grpc.ClientConn) *grpc.ClientConn {
 			leastUsedConn = conn
 		}
 	}
-
 	return leastUsedConn
 }
 
@@ -224,6 +228,10 @@ func (f *Factory) getConnectionForClient(addr string) (*grpc.ClientConn, error) 
 
 	conns, ok := f.nodeClientMap.Load(addr)
 	if !ok {
+		f.nodeClientMap.Range(func(k string, conns []*grpc.ClientConn) bool {
+			fmt.Printf("address %s not found in nodeClientMap, available addresses: %v\n", addr, k)
+			return true
+		})
 		return nil, fmt.Errorf("no connections for %s", addr)
 	}
 

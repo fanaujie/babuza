@@ -42,8 +42,11 @@ type Config struct {
 	// RaftAddress is the address for Raft communication
 	RaftAddress string
 
-	// InitialPeers is a list of peers to connect to when joining a cluster
-	InitialPeers map[uint64]string
+	// InitialPeers is a list of peers to connect each other
+	InitialRaftPeers map[uint64]string
+
+	// InitialGRPCPeers is a list of gRPC peers for client connections
+	InitialGRPCPeers map[uint64]string
 
 	// ShardCount is the number of Raft groups (shards) to create
 	ShardCount uint
@@ -159,7 +162,7 @@ func (s *Server) Start() error {
 		breaker.NewNoOpBreaker(),
 		protocol.NewGrpcMultiRaft(s.logger),
 		s.logger,
-		transport.SetTransportOptionsWithPeerQueueSize(2048),
+		transport.SetTransportOptionsWithPeerQueueSize(2048*5),
 		transport.SetTransportOptionsWithHeartbeatBufferSize(2048),
 	)
 
@@ -183,7 +186,7 @@ func (s *Server) Start() error {
 		// Create peer configuration for this group
 		peersConfig := babuza.NewPeersConfiguration()
 
-		for peerID, addr := range s.cfg.InitialPeers {
+		for peerID, addr := range s.cfg.InitialRaftPeers {
 			if err = peersConfig.AddPeer(peerID, addr, false); err != nil {
 				return fmt.Errorf("failed to add peer %d: %w", peerID, err)
 			}
@@ -261,6 +264,11 @@ func (s *Server) WaitForLeadership(timeout time.Duration) error {
 		}
 
 		if allHaveLeader {
+			for i := uint(0); i < s.cfg.ShardCount; i++ {
+				groupID := ibabuza.RaftGroupID(i + 1)
+				status, _ := s.multiRaftNode.Status(groupID)
+				fmt.Printf("Leader %d: %d\n", groupID, status.LeaderID)
+			}
 			return nil
 		}
 

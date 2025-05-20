@@ -12,14 +12,14 @@ import (
 )
 
 var (
-	dataDir         string
-	clusterID       uint64
-	localPeerID     uint64
-	grpcAddr        string
-	raftAddr        string
-	joinCluster     bool
-	initialPeersRaw string
-	initialPeers    map[uint64]string
+	dataDir             string
+	clusterID           uint64
+	localPeerID         uint64
+	grpcAddr            string
+	raftAddr            string
+	joinCluster         bool
+	initialRaftPeersRaw string
+	initialGRPCPeersRaw string
 )
 
 // serverCmd represents the server command
@@ -32,13 +32,13 @@ var singleCmd = &cobra.Command{
 
 func init() {
 	serverCmd.AddCommand(singleCmd)
-
+	singleCmd.Flags().Uint64Var(&clusterID, "cluster-id", 1, "ID of the Raft cluster")
 	singleCmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Directory for storing server data")
 	singleCmd.Flags().Uint64Var(&localPeerID, "local-peer-id", 1, "ID of the local peer")
 	singleCmd.Flags().StringVar(&grpcAddr, "grpc-address", "127.0.0.1:24200", "Address for the gRPC service")
 	singleCmd.Flags().StringVar(&raftAddr, "raft-address", "127.0.0.1:14200", "Address for Raft communication")
 	singleCmd.Flags().BoolVar(&joinCluster, "join", false, "Join an existing cluster")
-	singleCmd.Flags().StringVar(&initialPeersRaw, "initial-peers", "", "List of initial peers to connect to when joining (e.g., 1=127.0.0.1:14200,2=127.0.0.1:14201)")
+	singleCmd.Flags().StringVar(&initialRaftPeersRaw, "initial-raft-peers", "", "List of initial raft peers to connect (e.g., 1=127.0.0.1:14200,2=127.0.0.1:14201)")
 }
 
 func parseInitialPeers(raw string) (map[uint64]string, error) {
@@ -64,7 +64,7 @@ func parseInitialPeers(raw string) (map[uint64]string, error) {
 
 func runServerFunc(cmd *cobra.Command, args []string) {
 	var err error
-	initialPeers, err = parseInitialPeers(initialPeersRaw)
+	initialRaftPeers, err := parseInitialPeers(initialRaftPeersRaw)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to parse initial peers: %v\n", err)
 		os.Exit(1)
@@ -76,8 +76,7 @@ func runServerFunc(cmd *cobra.Command, args []string) {
 		LocalPeerID:  localPeerID,
 		GrpcAddress:  grpcAddr,
 		RaftAddress:  raftAddr,
-		JoinCluster:  joinCluster,
-		InitialPeers: initialPeers,
+		InitialPeers: initialRaftPeers,
 	}
 
 	srv, err := single.NewServer(cfg)

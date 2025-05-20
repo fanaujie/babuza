@@ -12,10 +12,10 @@ import (
 
 var (
 	// Common flags
-	endpoints    []string
-	connections  uint
-	totalClients uint
-
+	clientClusterID uint64
+	endpoints       []string
+	connections     uint
+	totalClients    uint
 	// Shard related flags
 	shardCount   uint
 	targetLeader bool
@@ -35,7 +35,7 @@ var (
 var ClientCmd = &cobra.Command{
 	Use:   "client",
 	Short: "Execute client-side benchmark operations",
-	Long:  `Manages client connections and executes benchmark operations against key-value services.
+	Long: `Manages client connections and executes benchmark operations against key-value services.
 
 This command initializes client connections to target endpoints with configurable parameters including:
 - Connection pooling and client concurrency settings
@@ -53,7 +53,7 @@ func init() {
 	ClientCmd.PersistentFlags().StringSliceVar(&endpoints, "endpoints", []string{"127.0.0.1:24200"}, "Service endpoints")
 	ClientCmd.PersistentFlags().UintVar(&connections, "connections", 1, "Total number of connection")
 	ClientCmd.PersistentFlags().UintVar(&totalClients, "clients", 1, "Total number of clients")
-	ClientCmd.PersistentFlags().Uint64Var(&clusterID, "cluster-id", 1, "ID of the Raft cluster")
+	ClientCmd.PersistentFlags().Uint64Var(&clientClusterID, "cluster-id", 1, "ID of the Raft cluster")
 	// Shard related flags
 	ClientCmd.PersistentFlags().UintVar(&shardCount, "shards", 1, "Number of shards in the service")
 	ClientCmd.PersistentFlags().BoolVar(&targetLeader, "target-leader", false, "Send requests only to shard leaders")

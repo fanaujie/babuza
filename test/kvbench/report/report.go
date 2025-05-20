@@ -5,7 +5,6 @@ import (
 	"math"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -22,7 +21,6 @@ type Reporter struct {
 	sample  bool
 	precise bool
 
-	mu           sync.RWMutex
 	totalCount   int
 	errorCount   int
 	totalLatency time.Duration
@@ -35,11 +33,11 @@ type Reporter struct {
 // NewReporter creates a new Reporter instance
 func NewReporter(sample, precise bool) *Reporter {
 	return &Reporter{
-		results:        make(chan Result, 1024),
+		results:        make(chan Result, 4096),
 		sample:         sample,
 		precise:        precise,
 		secondResults:  make(map[int][]Result),
-		requestResults: make([]Result, 0, 10000),
+		requestResults: make([]Result, 0, 4096),
 		startTime:      time.Now(),
 	}
 }
@@ -56,7 +54,6 @@ func (r *Reporter) Run() <-chan string {
 		defer close(donec)
 
 		for res := range r.results {
-			r.mu.Lock()
 			r.totalCount++
 			if res.Err != nil {
 				r.errorCount++
@@ -71,7 +68,6 @@ func (r *Reporter) Run() <-chan string {
 				}
 				r.requestResults = append(r.requestResults, res)
 			}
-			r.mu.Unlock()
 		}
 
 		donec <- r.report()
@@ -81,9 +77,6 @@ func (r *Reporter) Run() <-chan string {
 
 // report generates the final report
 func (r *Reporter) report() string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	// Calculate overall statistics
 	successCount := r.totalCount - r.errorCount
 	total := float64(r.totalCount)

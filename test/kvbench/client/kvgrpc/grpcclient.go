@@ -38,12 +38,6 @@ func NewGRPCClientWithRouting(config client.Config, factory *Factory) *Client {
 	}
 }
 
-// getGroupID determines the group ID from a key using sharding
-func (c *Client) getGroupID(key []byte) uint64 {
-	shardID := client.GetShardForKey(key, c.shardCount)
-	return uint64(shardID)
-}
-
 func (c *Client) getClientForGroup(groupID uint64) (*grpc.ClientConn, error) {
 	var addr string
 
@@ -65,8 +59,7 @@ func (c *Client) getClientForGroup(groupID uint64) (*grpc.ClientConn, error) {
 }
 
 // Put puts a key-value pair into the store
-func (c *Client) Put(ctx context.Context, key, value []byte) client.Response {
-	groupID := c.getGroupID(key)
+func (c *Client) Put(ctx context.Context, groupID uint64, key, value []byte) client.Response {
 	conn, err := c.getClientForGroup(groupID)
 	if err != nil {
 		return client.Response{Error: err, EndTime: time.Now()}
@@ -77,17 +70,18 @@ func (c *Client) Put(ctx context.Context, key, value []byte) client.Response {
 		Key:     key,
 		Value:   value,
 	}
+	startTime := time.Now()
 	_, err = kvbenchpb.NewKVServiceClient(conn).Put(ctx, req)
 	endTime := time.Now()
 	return client.Response{
-		Error:   err,
-		EndTime: endTime,
+		Error:     err,
+		StartTime: startTime,
+		EndTime:   endTime,
 	}
 }
 
 // Get retrieves a value for the given key
-func (c *Client) Get(ctx context.Context, key []byte) client.Response {
-	groupID := c.getGroupID(key)
+func (c *Client) Get(ctx context.Context, groupID uint64, key []byte) client.Response {
 	conn, err := c.getClientForGroup(groupID)
 	if err != nil {
 		return client.Response{Error: err, EndTime: time.Now()}
@@ -106,8 +100,7 @@ func (c *Client) Get(ctx context.Context, key []byte) client.Response {
 }
 
 // Delete removes a key-value pair
-func (c *Client) Delete(ctx context.Context, key []byte) client.Response {
-	groupID := c.getGroupID(key)
+func (c *Client) Delete(ctx context.Context, groupID uint64, key []byte) client.Response {
 	conn, err := c.getClientForGroup(groupID)
 	if err != nil {
 		return client.Response{Error: err, EndTime: time.Now()}

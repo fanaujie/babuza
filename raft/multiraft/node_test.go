@@ -1068,6 +1068,8 @@ func TestMultipleGroup(t *testing.T) {
 		}(leaderNode, groupID)
 	}
 	wg.Wait()
+	// wait for the command to be applied
+	time.Sleep(time.Second)
 	// Verify the counter value for all groups
 	for i := 0; i < totalGroups; i++ {
 		groupID := ibabuza.RaftGroupID(i + 1)

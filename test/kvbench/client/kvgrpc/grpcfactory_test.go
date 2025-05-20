@@ -286,7 +286,7 @@ func TestNewGRPCFactory(t *testing.T) {
 			},
 		},
 		{
-			name: "error case-shard count exceeds connections",
+			name: "error case-shard count exceeds connections and connections less than endpoints",
 			config: client.Config{
 				Endpoints:    []string{"localhost:20051", "localhost:30051", "localhost:40051"},
 				Connections:  1,

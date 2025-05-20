@@ -94,6 +94,7 @@ enum KvCommand {
 
 message KvOP {
   KvCommand command = 1;
-  bytes key = 2;
-  bytes value = 3;
+  uint64  groupID = 2;
+  bytes key = 3;
+  bytes value = 4;
 }
