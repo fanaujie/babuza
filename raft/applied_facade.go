@@ -17,7 +17,7 @@ type AppliedStatus interface {
 }
 
 type AppliedFirstCommitInTermNotifier interface {
-	CloseAndRenew()
+	Reset()
 }
 
 type AppliedSessionManager interface {
@@ -93,7 +93,7 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 }
 
 func (a *appliedFacadeImpl) ApplyNilEntryInNewTerm(index, term uint64) {
-	a.firstCommitNotifier.CloseAndRenew()
+	a.firstCommitNotifier.Reset()
 }
 
 func (a *appliedFacadeImpl) ApplyNormalEntry(e raftpb.Entry) (babuzapb.NormalRequest, ibabuza.ApplyResult, ibabuza.Session) {

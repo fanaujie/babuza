@@ -14,20 +14,16 @@ import (
 func (r *replica) ProcessTick() {
 	r.mu.lock.Lock()
 	defer r.mu.lock.Unlock()
+	for nodeID, _ := range r.mu.unreachable {
+		r.mu.rawNode.ReportUnreachable(nodeID)
+		delete(r.mu.unreachable, nodeID)
+	}
 	r.mu.rawNode.Tick()
 }
 
 func (r *replica) ProcessReady() {
 	r.mu.lock.Lock()
 	defer r.mu.lock.Unlock()
-	for nodeID, _ := range r.mu.unreachable {
-		r.mu.rawNode.ReportUnreachable(nodeID)
-		delete(r.mu.unreachable, nodeID)
-	}
-	for nodeID, snapshotStatus := range r.mu.snapshotStatus {
-		r.mu.rawNode.ReportSnapshot(nodeID, snapshotStatus)
-		delete(r.mu.snapshotStatus, nodeID)
-	}
 	if r.mu.rawNode.HasReady() {
 		rd := r.mu.rawNode.Ready()
 		if rd.SoftState != nil {
@@ -293,7 +289,7 @@ func (r *replica) updateLeadership(currentState raft.SoftState) {
 		}
 	}
 	if newLeader {
-		r.leaderChangeNotifier.CloseAndRenew()
+		r.leaderChangeNotifier.Reset()
 	}
 
 }

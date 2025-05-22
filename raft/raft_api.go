@@ -104,9 +104,9 @@ type Raft struct {
 	removeSelfCh              chan struct{}
 	leaderCh                  chan bool
 	closeRaftOnce             sync.Once
-	linearizeReqNotifier      *syncutil.ErrNotifier
-	firstCommitInTermNotifier *syncutil.Notifier
-	leaderChangeNotifier      *syncutil.Notifier
+	linearizeReqNotifier      *syncutil.SignalManager
+	firstCommitInTermNotifier *syncutil.EventSignal
+	leaderChangeNotifier      *syncutil.EventSignal
 	closer                    *syncutil.Closer
 	shutdownMu                sync.Mutex
 }
@@ -135,9 +135,9 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		shutdownCh:                make(chan struct{}),
 		removeSelfCh:              make(chan struct{}),
 		leaderCh:                  make(chan bool, 1),
-		linearizeReqNotifier:      syncutil.NewErrNotifier(),
-		firstCommitInTermNotifier: syncutil.NewNotifier(),
-		leaderChangeNotifier:      syncutil.NewNotifier(),
+		linearizeReqNotifier:      syncutil.NewSignalManager(),
+		firstCommitInTermNotifier: syncutil.NewEventSignal(),
+		leaderChangeNotifier:      syncutil.NewEventSignal(),
 		closer:                    syncutil.NewCloser(),
 	}
 	r.appliedFacade = newAppliedFacadeFromRaft(r)
@@ -347,7 +347,7 @@ func (r *Raft) ManualSnapshot(ctx context.Context) ManualSnapshotResult {
 }
 
 func (r *Raft) LinearizableRead(ctx context.Context) error {
-	n := r.linearizeReqNotifier.Get()
+	n := r.linearizeReqNotifier.Current()
 	select {
 	case <-r.closer.CloseCh():
 		return ErrStopped
@@ -359,8 +359,8 @@ func (r *Raft) LinearizableRead(ctx context.Context) error {
 	select {
 	case <-r.closer.CloseCh():
 		return ErrStopped
-	case <-n.GetCh():
-		return n.GetError()
+	case <-n.Channel():
+		return n.Error()
 	case <-ctx.Done():
 		return ctx.Err()
 	}

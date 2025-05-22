@@ -243,7 +243,7 @@ func (n *Node) LinearizableRead(ctx context.Context, groupID ibabuza.RaftGroupID
 	if err != nil {
 		return err
 	}
-	chWithErr := r.linearizeReqNotifier.Get()
+	chWithErr := r.linearizeReqNotifier.Current()
 	select {
 	case <-r.closer.CloseCh():
 		return babuza.ErrStopped
@@ -255,8 +255,8 @@ func (n *Node) LinearizableRead(ctx context.Context, groupID ibabuza.RaftGroupID
 	select {
 	case <-r.closer.CloseCh():
 		return babuza.ErrStopped
-	case <-chWithErr.GetCh():
-		return chWithErr.GetError()
+	case <-chWithErr.Channel():
+		return chWithErr.Error()
 	case <-ctx.Done():
 		return ctx.Err()
 	}

@@ -156,7 +156,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		if err != nil {
 			return nil, err
 		}
-		firstCommitInTermNotifier := syncutil.NewNotifier()
+		firstCommitInTermNotifier := syncutil.NewEventSignal()
 		resultReplier := replier.NewResult[ibabuza.ApplyResult]()
 		appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
 			resultReplier, replicaCluster, n, trans, logger, metrics.NewMockMetricsCollector())
@@ -177,8 +177,8 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			resultReplier:             resultReplier,
 			completionReplier:         replier.NewCompletion(),
 			firstCommitInTermNotifier: firstCommitInTermNotifier,
-			leaderChangeNotifier:      syncutil.NewNotifier(),
-			linearizeReqNotifier:      syncutil.NewErrNotifier(),
+			leaderChangeNotifier:      syncutil.NewEventSignal(),
+			linearizeReqNotifier:      syncutil.NewSignalManager(),
 			leaderCh:                  nil,
 			replicaEventCh:            n.replicaEventCh,
 			receivedSnapshotMsgCh:     make(chan babuzapb.SnapshotMessage, 8),
@@ -189,14 +189,12 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			requestQueue:              newReplicaRequestQueue(),
 			coalescedHeartbeat:        n.coalescedHeartbeatQueue,
 			mu: struct {
-				lock           sync.Mutex
-				rawNode        *raft.RawNode
-				unreachable    map[uint64]struct{}
-				snapshotStatus map[uint64]raft.SnapshotStatus
+				lock        sync.Mutex
+				rawNode     *raft.RawNode
+				unreachable map[uint64]struct{}
 			}{
-				rawNode:        rawNode,
-				unreachable:    make(map[uint64]struct{}),
-				snapshotStatus: make(map[uint64]raft.SnapshotStatus),
+				rawNode:     rawNode,
+				unreachable: make(map[uint64]struct{}),
 			},
 			logger: logger,
 			closer: syncutil.NewCloser(),
@@ -321,7 +319,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 			return nil, err
 		}
 	}
-	firstCommitInTermNotifier := syncutil.NewNotifier()
+	firstCommitInTermNotifier := syncutil.NewEventSignal()
 	resultReplier := replier.NewResult[ibabuza.ApplyResult]()
 	replicaStorage, err := node.storage.GetReplicaStorage(groupID)
 	if err != nil {
@@ -346,8 +344,8 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		resultReplier:             resultReplier,
 		completionReplier:         replier.NewCompletion(),
 		firstCommitInTermNotifier: firstCommitInTermNotifier,
-		leaderChangeNotifier:      syncutil.NewNotifier(),
-		linearizeReqNotifier:      syncutil.NewErrNotifier(),
+		leaderChangeNotifier:      syncutil.NewEventSignal(),
+		linearizeReqNotifier:      syncutil.NewSignalManager(),
 		leaderCh:                  nil,
 		replicaEventCh:            node.replicaEventCh,
 		receivedSnapshotMsgCh:     make(chan babuzapb.SnapshotMessage, 8),
@@ -358,14 +356,12 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		requestQueue:              newReplicaRequestQueue(),
 		coalescedHeartbeat:        node.coalescedHeartbeatQueue,
 		mu: struct {
-			lock           sync.Mutex
-			rawNode        *raft.RawNode
-			unreachable    map[uint64]struct{}
-			snapshotStatus map[uint64]raft.SnapshotStatus
+			lock        sync.Mutex
+			rawNode     *raft.RawNode
+			unreachable map[uint64]struct{}
 		}{
-			rawNode:        rawNode,
-			unreachable:    make(map[uint64]struct{}),
-			snapshotStatus: make(map[uint64]raft.SnapshotStatus),
+			rawNode:     rawNode,
+			unreachable: make(map[uint64]struct{}),
 		},
 		logger: node.logger,
 		closer: syncutil.NewCloser(),

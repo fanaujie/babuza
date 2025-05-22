@@ -13,7 +13,7 @@ import (
 func (r *replica) processRaftLinearizedRead() {
 	readCtx := make([]byte, 8)
 	for {
-		leaderChangedCh := r.leaderChangeNotifier.Get()
+		leaderChangedCh := r.leaderChangeNotifier.Channel()
 		nextID := r.idGenerator.Next()
 		select {
 		case <-r.closer.CloseCh():
@@ -23,13 +23,13 @@ func (r *replica) processRaftLinearizedRead() {
 		case <-r.readIndexCh:
 			break
 		}
-		oldNotifier := r.linearizeReqNotifier.Renew()
+		oldNotifier := r.linearizeReqNotifier.Swap()
 		binary.BigEndian.PutUint64(readCtx, nextID)
 		if err := r.raftReadIndexRequest(readCtx); err != nil {
 			if errors.Is(err, raft.ErrStopped) {
 				return
 			}
-			oldNotifier.Close(err)
+			oldNotifier.CompleteWith(err)
 			continue
 		}
 		rs, err := r.readIndexResponse(readCtx, leaderChangedCh)
@@ -37,7 +37,7 @@ func (r *replica) processRaftLinearizedRead() {
 			if errors.Is(err, babuza.ErrStopped) {
 				return
 			} else {
-				oldNotifier.Close(err)
+				oldNotifier.CompleteWith(err)
 				continue
 			}
 		}
@@ -49,7 +49,7 @@ func (r *replica) processRaftLinearizedRead() {
 				return
 			}
 		}
-		oldNotifier.Close(nil)
+		oldNotifier.CompleteWith(nil)
 	}
 }
 
@@ -59,7 +59,7 @@ func (r *replica) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struc
 	defer retryTimer.Stop()
 	requestTimer := time.NewTimer(r.config.LinearizedReadRequestTimeout)
 	defer requestTimer.Stop()
-	firstCommitNotifier := r.firstCommitInTermNotifier.Get()
+	firstCommitNotifier := r.firstCommitInTermNotifier.Channel()
 	for {
 		select {
 		case rs = <-r.readStateCh:
@@ -85,7 +85,7 @@ func (r *replica) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struc
 			err = babuza.ErrLeaderChange
 			return
 		case <-firstCommitNotifier:
-			firstCommitNotifier = r.firstCommitInTermNotifier.Get()
+			firstCommitNotifier = r.firstCommitInTermNotifier.Channel()
 			if err = r.raftReadIndexRequest(readCtx); err != nil {
 				return
 			}

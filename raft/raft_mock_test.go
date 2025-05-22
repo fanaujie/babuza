@@ -510,9 +510,9 @@ func newTestRaft(nodeId uint64) *Raft {
 		readStateCh:               make(chan raft.ReadState, 1),
 		readIndexCh:               make(chan struct{}),
 		leaderCh:                  make(chan bool, 1),
-		linearizeReqNotifier:      syncutil.NewErrNotifier(),
-		firstCommitInTermNotifier: syncutil.NewNotifier(),
-		leaderChangeNotifier:      syncutil.NewNotifier(),
+		linearizeReqNotifier:      syncutil.NewSignalManager(),
+		firstCommitInTermNotifier: syncutil.NewEventSignal(),
+		leaderChangeNotifier:      syncutil.NewEventSignal(),
 		closer:                    syncutil.NewCloser(),
 	}
 }

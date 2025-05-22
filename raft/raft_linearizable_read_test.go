@@ -25,7 +25,7 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 			RequestCtx: readCtx,
 		}
 		tr.readStateCh <- readState
-		rs, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Get())
+		rs, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Channel())
 		assert.Nil(t, err)
 		assert.Equal(t, readState, rs)
 	})
@@ -33,7 +33,7 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 	t.Run("leader changed", func(t *testing.T) {
 		resultCh := make(chan error)
 		go func() {
-			_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Get())
+			_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Channel())
 			resultCh <- err
 		}()
 		time.Sleep(tr.config.LinearizedReadRequestTimeout / 2)
@@ -45,7 +45,7 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 	})
 
 	t.Run("internal request timeout", func(t *testing.T) {
-		_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Get())
+		_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Channel())
 		assert.ErrorIs(t, err, ErrReadIndexRequestTimeout)
 	})
 
@@ -53,7 +53,7 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 		raftNode.readIndexFunc = func(rctx []byte) error {
 			return raft.ErrStopped
 		}
-		_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Get())
+		_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Channel())
 		assert.ErrorIs(t, err, raft.ErrStopped)
 		raftNode.readIndexFunc = nil
 	})
@@ -78,13 +78,13 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 			return nil
 		}
 		tr.status.SetAppliedIndex(10)
-		n := tr.linearizeReqNotifier.Get()
+		n := tr.linearizeReqNotifier.Current()
 		select {
 		case tr.readIndexCh <- struct{}{}:
 		default:
 		}
-		<-n.GetCh()
-		assert.Nil(t, n.GetError())
+		<-n.Channel()
+		assert.Nil(t, n.Error())
 		etcdRaftNode.readIndexFunc = nil
 	})
 
@@ -98,7 +98,7 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 			etcdRaftNode.readIndexFunc = nil
 		}()
 		tr.status.SetAppliedIndex(5)
-		n := tr.linearizeReqNotifier.Get()
+		n := tr.linearizeReqNotifier.Current()
 		select {
 		case tr.readIndexCh <- struct{}{}:
 		default:
@@ -106,22 +106,22 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 		go func() {
 			tr.status.SetAppliedIndex(10)
 		}()
-		<-n.GetCh()
-		assert.Nil(t, n.GetError())
+		<-n.Channel()
+		assert.Nil(t, n.Error())
 	})
 
 	t.Run("request timeout", func(t *testing.T) {
-		n := tr.linearizeReqNotifier.Get()
+		n := tr.linearizeReqNotifier.Current()
 		select {
 		case tr.readIndexCh <- struct{}{}:
 		default:
 		}
-		<-n.GetCh()
-		assert.ErrorIs(t, n.GetError(), ErrReadIndexRequestTimeout)
+		<-n.Channel()
+		assert.ErrorIs(t, n.Error(), ErrReadIndexRequestTimeout)
 	})
 
 	t.Run("leader changed", func(t *testing.T) {
-		n := tr.linearizeReqNotifier.Get()
+		n := tr.linearizeReqNotifier.Current()
 		select {
 		case tr.readIndexCh <- struct{}{}:
 		default:
@@ -130,8 +130,8 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 			Lead:      localPeerID,
 			RaftState: raft.StateLeader,
 		})
-		<-n.GetCh()
-		assert.ErrorIs(t, n.GetError(), ErrLeaderChange)
+		<-n.Channel()
+		assert.ErrorIs(t, n.Error(), ErrLeaderChange)
 	})
 }
 
@@ -154,7 +154,7 @@ func TestRaft_ProcessRaftLinearizedRead_Timeout_AppliedIndexIsNotEqualToCommitte
 		return nil
 	}
 	tr.status.SetAppliedIndex(5)
-	n := tr.linearizeReqNotifier.Get()
+	n := tr.linearizeReqNotifier.Current()
 	select {
 	case tr.readIndexCh <- struct{}{}:
 	default:
@@ -162,7 +162,7 @@ func TestRaft_ProcessRaftLinearizedRead_Timeout_AppliedIndexIsNotEqualToCommitte
 	select {
 	case <-time.After(time.Second * 2):
 		return
-	case <-n.GetCh():
+	case <-n.Channel():
 		assert.Fail(t, "must be timeout")
 	}
 }

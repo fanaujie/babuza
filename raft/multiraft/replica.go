@@ -71,9 +71,9 @@ type replica struct {
 	idGenerator               babuza.InternalIdGenerator
 	resultReplier             babuza.InternalResultReplier
 	completionReplier         babuza.InternalCompletionReplier
-	firstCommitInTermNotifier *syncutil.Notifier
-	leaderChangeNotifier      *syncutil.Notifier
-	linearizeReqNotifier      *syncutil.ErrNotifier
+	firstCommitInTermNotifier *syncutil.EventSignal
+	leaderChangeNotifier      *syncutil.EventSignal
+	linearizeReqNotifier      *syncutil.SignalManager
 	leaderCh                  chan leaderChange
 	replicaEventCh            chan replicaEvent
 	receivedSnapshotMsgCh     chan babuzapb.SnapshotMessage
@@ -84,10 +84,9 @@ type replica struct {
 	requestQueue              *replicaRequestQueue
 	coalescedHeartbeat        *coalescedHeartbeatQueue
 	mu                        struct {
-		lock           sync.Mutex
-		rawNode        *raft.RawNode
-		unreachable    map[uint64]struct{}
-		snapshotStatus map[uint64]raft.SnapshotStatus
+		lock        sync.Mutex
+		rawNode     *raft.RawNode
+		unreachable map[uint64]struct{}
 	}
 	logger ibabuza.Logger
 	closer *syncutil.Closer
@@ -223,7 +222,7 @@ func (r *replica) ReportUnreachable(nodeID uint64) error {
 func (r *replica) ReportSnapshot(nodeID uint64, status raft.SnapshotStatus) error {
 	r.mu.lock.Lock()
 	defer r.mu.lock.Unlock()
-	r.mu.snapshotStatus[nodeID] = status
+	r.mu.rawNode.ReportSnapshot(nodeID, status)
 	return nil
 }
 
