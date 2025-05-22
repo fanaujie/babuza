@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/fanaujie/babuza/test/kvbench/multi"
+	"github.com/fanaujie/babuza/test/kvbench/server/multi"
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"

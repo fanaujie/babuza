@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/fanaujie/babuza/pkg/wal/lsmtwal/storage"
+	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 )
@@ -13,6 +14,7 @@ type BadgerWal struct {
 	es        *storage.EntryStorage
 	noFsync   bool
 	keyPrefix *keyPrefix
+	hardState raftpb.HardState
 }
 
 func NewBadgerWal(db *badger.DB, es *storage.EntryStorage, keyPrefix *keyPrefix) *BadgerWal {
@@ -33,6 +35,7 @@ func (w *BadgerWal) Save(hardState raftpb.HardState, entries []raftpb.Entry) err
 	defer wb.Cancel()
 
 	if !isEmptyHardState(hardState) {
+		w.hardState = hardState
 		data, err := hardState.Marshal()
 		if err != nil {
 			return err
@@ -59,10 +62,14 @@ func (w *BadgerWal) Save(hardState raftpb.HardState, entries []raftpb.Entry) err
 		return err
 	}
 
+	if raft.MustSync(hardState, w.hardState, len(entries)) == true {
+		if err := w.Sync(); err != nil {
+			return err
+		}
+	}
 	if len(entries) > 0 && w.es != nil {
 		w.es.AppendCache(entries)
 	}
-
 	return nil
 }
 
