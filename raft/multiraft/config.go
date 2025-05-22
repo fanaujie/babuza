@@ -6,6 +6,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
+	"time"
 )
 
 var (
@@ -21,11 +22,12 @@ type NodeConfig struct {
 	EnableWalNoSync   bool
 	SnapshotCount     uint64
 	babuza.RaftConfig
-	LearnerReadyPercent         float64
-	CoalescedHeartbeatTickMs    int
-	CoalescedHeartbeatQueueSize uint64
+	LearnerReadyPercent          float64
+	CoalescedHeartbeatTickMs     int
+	CoalescedHeartbeatQueueSize  uint64
+	LinearizedReadRequestTimeout time.Duration
+	LinearizedReadRetryTimeout   time.Duration
 	ibabuza.TLSConfig
-
 	// setup raftScheduler
 	SchedulerShardNum       int
 	SchedulerShardWorkerNum int
@@ -38,22 +40,24 @@ type NodeConfig struct {
 
 func DefaultNodeConfig(ClusterID, nodeID uint64, nodeHostDir string, raftListenAddr string) NodeConfig {
 	return NodeConfig{
-		ClusterID:                   ClusterID,
-		NodeID:                      nodeID,
-		NodeHostDir:                 nodeHostDir,
-		RaftListenAddress:           raftListenAddr,
-		EnableWalNoSync:             false,
-		SnapshotCount:               10000,
-		RaftConfig:                  babuza.DefaultRaftConfig(),
-		LearnerReadyPercent:         0.95,
-		CoalescedHeartbeatTickMs:    50,
-		CoalescedHeartbeatQueueSize: 512,
-		TLSConfig:                   ibabuza.TLSConfig{},
-		SchedulerShardNum:           2,
-		SchedulerShardWorkerNum:     3,
-		SchedulerQueueSize:          64,
-		SchedulerMaxTicks:           5,
-		JobQueueSize:                128,
+		ClusterID:                    ClusterID,
+		NodeID:                       nodeID,
+		NodeHostDir:                  nodeHostDir,
+		RaftListenAddress:            raftListenAddr,
+		EnableWalNoSync:              false,
+		SnapshotCount:                10000,
+		RaftConfig:                   babuza.DefaultRaftConfig(),
+		LearnerReadyPercent:          0.95,
+		CoalescedHeartbeatTickMs:     50,
+		CoalescedHeartbeatQueueSize:  512,
+		LinearizedReadRequestTimeout: time.Second * 3,
+		LinearizedReadRetryTimeout:   time.Millisecond * 500,
+		TLSConfig:                    ibabuza.TLSConfig{},
+		SchedulerShardNum:            2,
+		SchedulerShardWorkerNum:      3,
+		SchedulerQueueSize:           64,
+		SchedulerMaxTicks:            5,
+		JobQueueSize:                 128,
 	}
 }
 
@@ -72,8 +76,10 @@ type ReplicaRaftConfig struct {
 	EnableWalNoSync bool
 	SnapshotCount   uint64
 	babuza.RaftConfig
-	LearnerReadyPercent         float64
-	CoalescedHeartbeatQueueSize uint64
+	LearnerReadyPercent          float64
+	CoalescedHeartbeatQueueSize  uint64
+	LinearizedReadRequestTimeout time.Duration
+	LinearizedReadRetryTimeout   time.Duration
 }
 
 func (r *ReplicaRaftConfig) convertToRaftConfig(nodeID uint64, logger raft.Logger, ms raft.Storage) *raft.Config {

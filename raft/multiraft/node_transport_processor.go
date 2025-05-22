@@ -23,11 +23,12 @@ func (d *transportProcessor) ProcessMultiRaftMessage(batchMsg babuzapb.MultiRaft
 					return
 				}
 				if err = r.EnqueueStep(raftpb.Message{
-					Type:   raftpb.MsgHeartbeat,
-					To:     msg.Message.To,
-					From:   msg.Message.From,
-					Term:   m.Term,
-					Commit: m.Commit,
+					Type:    raftpb.MsgHeartbeat,
+					To:      msg.Message.To,
+					From:    msg.Message.From,
+					Term:    m.Term,
+					Commit:  m.Commit,
+					Context: m.Context,
 				}); err != nil {
 					d.logger.Warningf("Node[%d] ProcessBatchMessage[heartbeat] groupID[%d] enqueue step error: %v", d.config.NodeID, groupID, err)
 				}
@@ -40,11 +41,12 @@ func (d *transportProcessor) ProcessMultiRaftMessage(batchMsg babuzapb.MultiRaft
 					return
 				}
 				if err = r.EnqueueStep(raftpb.Message{
-					Type:   raftpb.MsgHeartbeatResp,
-					To:     msg.Message.To,
-					From:   msg.Message.From,
-					Term:   m.Term,
-					Commit: m.Commit,
+					Type:    raftpb.MsgHeartbeatResp,
+					To:      msg.Message.To,
+					From:    msg.Message.From,
+					Term:    m.Term,
+					Commit:  m.Commit,
+					Context: m.Context,
 				}); err != nil {
 					d.logger.Warningf("Node[%d] ProcessBatchMessage[heartbeat response] groupID[%d] enqueue step error: %v", d.config.NodeID, groupID, err)
 				}

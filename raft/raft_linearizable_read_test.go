@@ -46,7 +46,7 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 
 	t.Run("internal request timeout", func(t *testing.T) {
 		_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Get())
-		assert.ErrorIs(t, err, errReadIndexRequestTimeout)
+		assert.ErrorIs(t, err, ErrReadIndexRequestTimeout)
 	})
 
 	t.Run("raft stop", func(t *testing.T) {
@@ -117,7 +117,7 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 		default:
 		}
 		<-n.GetCh()
-		assert.ErrorIs(t, n.GetError(), errReadIndexRequestTimeout)
+		assert.ErrorIs(t, n.GetError(), ErrReadIndexRequestTimeout)
 	})
 
 	t.Run("leader changed", func(t *testing.T) {

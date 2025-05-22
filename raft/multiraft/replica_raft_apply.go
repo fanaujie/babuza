@@ -20,7 +20,7 @@ func (r *replica) doApplyJob(applyData *applyEntry) {
 	term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
 	ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionManager)
 	if err != nil {
-		r.logger.Panicf("groupID[%d] raft[id=%d]: create snapshot context failed: %v", r.cluster.GroupID(),
+		r.logger.Panicf("groupID[%d] nodeID[%d]: create snapshot context failed: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 	}
 	r.triggerSnapshot(ctx, nil)
@@ -31,7 +31,7 @@ func (r *replica) applySnapshot(snap raftpb.Snapshot) {
 		return
 	}
 	if snap.Metadata.Index <= r.status.GetAppliedIndex() {
-		r.logger.Panicf("groupID[%d] raft[id=%d]: apply snapshot index %d <= applied index %d", r.cluster.GroupID(),
+		r.logger.Panicf("groupID[%d] nodeID[%d]: apply snapshot index %d <= applied index %d", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), snap.Metadata.Index, r.status.GetAppliedIndex())
 	}
 	if err := r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.sessionManager); err != nil {
@@ -68,7 +68,7 @@ func (r *replica) applyEntries(entries []raftpb.Entry) {
 				if entry.Index <= bsmInfo.OpenAppliedIndex() {
 					// Skip applying if only the disk-based state machine was successfully opened
 					if !r.storage.GetBasedStateMachineInfo().IsDiskType() {
-						r.logger.Panicf("groupID[%d] raft[id=%d]: apply entry index %d <= opened applied index %d", r.cluster.GroupID(),
+						r.logger.Panicf("groupID[%d] nodeID[%d]: apply entry index %d <= opened applied index %d", r.cluster.GroupID(),
 							r.cluster.LocalPeerID(), entry.Index, r.status.GetAppliedIndex())
 					}
 					continue
@@ -81,7 +81,7 @@ func (r *replica) applyEntries(entries []raftpb.Entry) {
 						Command: normalReq.StateMachineLog,
 					})
 					if err := session.AddResult(normalReq.Context.SequenceNum, time.Now().UnixNano(), ar); err != nil {
-						r.logger.Panicf("groupID[%d] raft[id=%d]: add result failed: %v", r.cluster.GroupID(),
+						r.logger.Panicf("groupID[%d] nodeID[%d]: add result failed: %v", r.cluster.GroupID(),
 							r.cluster.LocalPeerID(), err)
 					}
 				}
@@ -89,7 +89,7 @@ func (r *replica) applyEntries(entries []raftpb.Entry) {
 			case raftpb.EntryConfChange:
 				// do nothing, just apply conf change entry before
 			default:
-				r.logger.Panicf("groupID[%d] raft[id=%d]: not support raft toApplyEntry type %d", r.cluster.GroupID(),
+				r.logger.Panicf("groupID[%d] nodeID[%d]: not support raft toApplyEntry type %d", r.cluster.GroupID(),
 					r.cluster.LocalPeerID(), uint64(entry.Type))
 			}
 		}
@@ -105,7 +105,7 @@ func (r *replica) triggerSnapshot(snapCtx babuza.StorageSnapshotContext, snapsho
 	doSnapshot := func() {
 		metadata, err := r.doSnapshot(snapCtx)
 		if err != nil {
-			r.logger.Panicf("groupID[%d] raft[id=%d]: do snapshot failed: %v", r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+			r.logger.Panicf("groupID[%d] nodeID[%d]: do snapshot failed: %v", r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 		}
 		r.logger.Infof("raft[id=%d]: do snapshot done (index=%d)", r.cluster.LocalPeerID(), metadata.Snapshot.Metadata.Index)
 		if snapshotResultCh != nil {

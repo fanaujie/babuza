@@ -144,11 +144,13 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			return nil, err
 		}
 		replicaRaftConfig := ReplicaRaftConfig{
-			EnableWalNoSync:             config.EnableWalNoSync,
-			SnapshotCount:               config.SnapshotCount,
-			RaftConfig:                  config.RaftConfig,
-			LearnerReadyPercent:         config.LearnerReadyPercent,
-			CoalescedHeartbeatQueueSize: config.CoalescedHeartbeatQueueSize,
+			EnableWalNoSync:              config.EnableWalNoSync,
+			SnapshotCount:                config.SnapshotCount,
+			RaftConfig:                   config.RaftConfig,
+			LearnerReadyPercent:          config.LearnerReadyPercent,
+			CoalescedHeartbeatQueueSize:  config.CoalescedHeartbeatQueueSize,
+			LinearizedReadRetryTimeout:   config.LinearizedReadRetryTimeout,
+			LinearizedReadRequestTimeout: config.LinearizedReadRequestTimeout,
 		}
 		rawNode, err := raft.NewRawNode(replicaRaftConfig.convertToRaftConfig(replicaCluster.LocalPeerID(), logger, entryStorage))
 		if err != nil {
@@ -171,14 +173,17 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			sessionManager:            replicaSession,
 			storage:                   replicaStorage,
 			appliedFacade:             appliedFacade,
-			idGenerator:               idgenerator.New(replicaCluster.LocalPeerID(), uint64(time.Now().Nanosecond())),
+			idGenerator:               n.idGenerator,
 			resultReplier:             resultReplier,
 			completionReplier:         replier.NewCompletion(),
 			firstCommitInTermNotifier: firstCommitInTermNotifier,
 			leaderChangeNotifier:      syncutil.NewNotifier(),
+			linearizeReqNotifier:      syncutil.NewErrNotifier(),
 			leaderCh:                  nil,
 			replicaEventCh:            n.replicaEventCh,
 			receivedSnapshotMsgCh:     make(chan babuzapb.SnapshotMessage, 8),
+			readStateCh:               make(chan raft.ReadState, 1),
+			readIndexCh:               make(chan struct{}, 1),
 			scheduler:                 n.scheduler,
 			applyJobQueue:             newJobQueue(groupID, n.config.JobQueueSize, n.logger),
 			requestQueue:              newReplicaRequestQueue(),
@@ -216,6 +221,7 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 			heartbeatRespMsg:           xsync.NewMap[uint64, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
 			heartbeatLastActiveUnixSec: xsync.NewMap[uint64, int64](),
 		},
+		idGenerator: idgenerator.New(config.NodeID, uint64(time.Now().Nanosecond())),
 	}
 	scheduler := newScheduler(config.NodeID, schedulerConfig{
 		shardNum:       config.SchedulerShardNum,
@@ -287,11 +293,13 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		return nil, err
 	}
 	replicaRaftConfig := ReplicaRaftConfig{
-		EnableWalNoSync:             node.config.EnableWalNoSync,
-		SnapshotCount:               node.config.SnapshotCount,
-		RaftConfig:                  node.config.RaftConfig,
-		LearnerReadyPercent:         node.config.LearnerReadyPercent,
-		CoalescedHeartbeatQueueSize: node.config.CoalescedHeartbeatQueueSize,
+		EnableWalNoSync:              node.config.EnableWalNoSync,
+		SnapshotCount:                node.config.SnapshotCount,
+		RaftConfig:                   node.config.RaftConfig,
+		LearnerReadyPercent:          node.config.LearnerReadyPercent,
+		CoalescedHeartbeatQueueSize:  node.config.CoalescedHeartbeatQueueSize,
+		LinearizedReadRetryTimeout:   node.config.LinearizedReadRetryTimeout,
+		LinearizedReadRequestTimeout: node.config.LinearizedReadRequestTimeout,
 	}
 
 	raftCfg := replicaRaftConfig.convertToRaftConfig(node.config.NodeID, node.logger, entryStorage)
@@ -334,14 +342,17 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		sessionManager:            replicaSession,
 		storage:                   replicaStorage,
 		appliedFacade:             appliedFacade,
-		idGenerator:               idgenerator.New(replicaCluster.LocalPeerID(), uint64(time.Now().Nanosecond())),
+		idGenerator:               node.idGenerator,
 		resultReplier:             resultReplier,
 		completionReplier:         replier.NewCompletion(),
 		firstCommitInTermNotifier: firstCommitInTermNotifier,
 		leaderChangeNotifier:      syncutil.NewNotifier(),
+		linearizeReqNotifier:      syncutil.NewErrNotifier(),
 		leaderCh:                  nil,
 		replicaEventCh:            node.replicaEventCh,
 		receivedSnapshotMsgCh:     make(chan babuzapb.SnapshotMessage, 8),
+		readStateCh:               make(chan raft.ReadState, 1),
+		readIndexCh:               make(chan struct{}, 1),
 		scheduler:                 node.scheduler,
 		applyJobQueue:             newJobQueue(groupID, node.config.JobQueueSize, node.logger),
 		requestQueue:              newReplicaRequestQueue(),

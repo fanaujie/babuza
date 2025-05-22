@@ -73,9 +73,12 @@ type replica struct {
 	completionReplier         babuza.InternalCompletionReplier
 	firstCommitInTermNotifier *syncutil.Notifier
 	leaderChangeNotifier      *syncutil.Notifier
+	linearizeReqNotifier      *syncutil.ErrNotifier
 	leaderCh                  chan leaderChange
 	replicaEventCh            chan replicaEvent
 	receivedSnapshotMsgCh     chan babuzapb.SnapshotMessage
+	readStateCh               chan raft.ReadState
+	readIndexCh               chan struct{}
 	scheduler                 Scheduler
 	applyJobQueue             JobQueue
 	requestQueue              *replicaRequestQueue
@@ -95,14 +98,19 @@ func (r *replica) Status() ibabuza.Status {
 }
 
 func (r *replica) Start() error {
-	return r.applyJobQueue.Start()
+	if err := r.applyJobQueue.Start(); err != nil {
+		return err
+	}
+	r.closer.Run(func() {
+		r.processRaftLinearizedRead()
+	})
+	return nil
 }
 
 func (r *replica) Stop() {
 	r.closer.Close()
 	r.requestQueue.Dispose()
 	r.applyJobQueue.Stop()
-	r.storage.GetStateMachine().Close()
 }
 
 func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {

@@ -35,7 +35,14 @@ func (r *replica) ProcessReady() {
 		}
 		isLeader := r.status.IsLeader()
 		if len(rd.ReadStates) != 0 {
-			//TODO: implement read state
+			select {
+			case r.readStateCh <- rd.ReadStates[len(rd.ReadStates)-1]:
+			case <-time.After(time.Second):
+				r.logger.Warningf("groupID[%d] nodeID[%d]: timed out sending read state. timeout=%d",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), time.Second)
+			case <-r.closer.CloseCh():
+				return
+			}
 		}
 		if raft.IsEmptyHardState(rd.HardState) {
 			r.status.SetHardStateTerm(rd.HardState.Term)
@@ -44,7 +51,7 @@ func (r *replica) ProcessReady() {
 		waitWALSync := shouldWaitWALSync(rd)
 		if waitWALSync {
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-				r.logger.Panicf("groupID[%d] raft[id=%d] save hard state, entries and snapshot failed: %v",
+				r.logger.Panicf("groupID[%d] nodeID[%d] save hard state, entries and snapshot failed: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 		}
@@ -57,7 +64,7 @@ func (r *replica) ProcessReady() {
 			if err := r.applyJobQueue.Put(func() {
 				r.doApplyJob(applyData)
 			}); err != nil {
-				r.logger.Panicf("groupID[%d] raft[id=%d]: error putting apply job: %v",
+				r.logger.Panicf("groupID[%d] nodeID[%d]: error putting apply job: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 		}
@@ -67,19 +74,19 @@ func (r *replica) ProcessReady() {
 
 		if !waitWALSync {
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-				r.logger.Panicf("groupID[%d] raft[id=%d] save hard state, entries and snapshot failed: %v",
+				r.logger.Panicf("groupID[%d] nodeID[%d] save hard state, entries and snapshot failed: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 		}
 
 		if !emptySnapshot {
 			if err := r.storage.ApplyAndReleaseSnapshot(rd.Snapshot); err != nil {
-				r.logger.Panicf("groupID[%d] raft[id=%d]: apply snapshot failed: %v", r.cluster.GroupID(),
+				r.logger.Panicf("groupID[%d] nodeID[%d]: apply snapshot failed: %v", r.cluster.GroupID(),
 					r.cluster.LocalPeerID(), err)
 			}
 		}
 		if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
-			r.logger.Panicf("groupID[%d] raft[id=%d]: append entries failed: %v", r.cluster.GroupID(),
+			r.logger.Panicf("groupID[%d] nodeID[%d]: append entries failed: %v", r.cluster.GroupID(),
 				r.cluster.LocalPeerID(), err)
 		}
 		// The applyConfChangeEntry must be handled here to ensure the leader sends out messages (e.g., removing a follower) first.
@@ -104,7 +111,7 @@ func (r *replica) ProcessStep() {
 	}
 	items, err := r.requestQueue.step.Get()
 	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting step: %v", r.cluster.GroupID(),
+		r.logger.Warningf("groupID[%d] nodeID[%d]: error getting step: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 		return
 	}
@@ -114,7 +121,7 @@ func (r *replica) ProcessStep() {
 	for _, msg := range items.Data {
 
 		if err = r.mu.rawNode.Step(msg); err != nil {
-			r.logger.Warningf("groupID[%d] raft[id=%d]: error stepping message: %v", r.cluster.GroupID(),
+			r.logger.Warningf("groupID[%d] nodeID[%d]: error stepping message: %v", r.cluster.GroupID(),
 				r.cluster.LocalPeerID(), err)
 		}
 
@@ -127,7 +134,7 @@ func (r *replica) ProcessProposal() {
 	}
 	items, err := r.requestQueue.proposal.Get()
 	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting proposals: %v", r.cluster.GroupID(),
+		r.logger.Warningf("groupID[%d] nodeID[%d]: error getting proposals: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 		return
 	}
@@ -157,7 +164,7 @@ func (r *replica) ProcessConfigChange() {
 	}
 	items, err := r.requestQueue.configChange.Get()
 	if err != nil {
-		r.logger.Warningf("groupID[%d] raft[id=%d]: error getting config change: %v", r.cluster.GroupID(),
+		r.logger.Warningf("groupID[%d] nodeID[%d]: error getting config change: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 		return
 	}
@@ -184,7 +191,7 @@ func (r *replica) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
 	for _, entry := range committedEntries {
 		if entry.Type == raftpb.EntryConfChange {
 			reqCtx, ar, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
-			if ar.Error != nil {
+			if ar.Error == nil {
 				state, ok := ar.Response.(*raftpb.ConfState)
 				if ok && state != nil {
 					r.status.SetConfState(*state)
@@ -213,8 +220,9 @@ func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
 				GroupID: uint64(r.cluster.GroupID()),
 				Term:    m.Term,
 				Commit:  m.Commit,
+				Context: m.Context,
 			}); err != nil {
-				r.logger.Panicf("groupID[%d] raft[id=%d]: error putting heartbeat message: %v",
+				r.logger.Panicf("groupID[%d] nodeID[%d]: error putting heartbeat message: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(m.To, time.Now().Unix())
@@ -225,8 +233,9 @@ func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
 				GroupID: uint64(r.cluster.GroupID()),
 				Term:    m.Term,
 				Commit:  m.Commit,
+				Context: m.Context,
 			}); err != nil {
-				r.logger.Panicf("groupID[%d] raft[id=%d]: error putting heartbeat response message: %v",
+				r.logger.Panicf("groupID[%d] nodeID[%d]: error putting heartbeat response message: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(m.To, time.Now().Unix())

@@ -1,20 +1,16 @@
-package raft
+package multiraft
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"errors"
+	babuza "github.com/fanaujie/babuza/raft"
 	"go.etcd.io/etcd/raft/v3"
+	"go.etcd.io/etcd/raft/v3/raftpb"
 	"time"
 )
 
-var (
-	ErrLeaderChange            = errors.New("ErrLeaderChange")
-	ErrReadIndexRequestTimeout = errors.New("errReadIndexRequestTimeout")
-)
-
-func (r *Raft) processRaftLinearizedRead() {
+func (r *replica) processRaftLinearizedRead() {
 	readCtx := make([]byte, 8)
 	for {
 		leaderChangedCh := r.leaderChangeNotifier.Get()
@@ -33,16 +29,14 @@ func (r *Raft) processRaftLinearizedRead() {
 			if errors.Is(err, raft.ErrStopped) {
 				return
 			}
-			r.metricsCollector.IncrementReadIndexFailed()
 			oldNotifier.Close(err)
 			continue
 		}
 		rs, err := r.readIndexResponse(readCtx, leaderChangedCh)
 		if err != nil {
-			if errors.Is(err, raft.ErrStopped) || errors.Is(err, ErrStopped) {
+			if errors.Is(err, babuza.ErrStopped) {
 				return
 			} else {
-				r.metricsCollector.IncrementReadIndexFailed()
 				oldNotifier.Close(err)
 				continue
 			}
@@ -59,7 +53,7 @@ func (r *Raft) processRaftLinearizedRead() {
 	}
 }
 
-func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}) (rs raft.ReadState, err error) {
+func (r *replica) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}) (rs raft.ReadState, err error) {
 
 	retryTimer := time.NewTimer(r.config.LinearizedReadRetryTimeout)
 	defer retryTimer.Stop()
@@ -82,13 +76,13 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 				if len(rs.RequestCtx) == 8 {
 					id2 = binary.BigEndian.Uint64(rs.RequestCtx)
 				}
-				r.logger.Warningf("raft[%d] ignored out-of-date read index response; local node read indexes queueing up and waiting to be in sync with leader, id1: %d, id2: %d", r.cluster.ClusterID(), id1, id2)
-				r.metricsCollector.IncrementSlowReadIndex()
+				r.logger.Warningf("groupID[%d] nodeID[%d] ignored out-of-date read index response; local node read indexes queueing up and waiting to be in sync with leader, id1: %d, id2: %d",
+					r.cluster.LocalPeerID(), r.cluster.GroupID(), id1, id2)
 				continue
 			}
 			return
 		case <-leaderChangedCh:
-			err = ErrLeaderChange
+			err = babuza.ErrLeaderChange
 			return
 		case <-firstCommitNotifier:
 			firstCommitNotifier = r.firstCommitInTermNotifier.Get()
@@ -102,18 +96,26 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 			}
 			retryTimer.Reset(r.config.LinearizedReadRetryTimeout)
 		case <-requestTimer.C:
-			err = ErrReadIndexRequestTimeout
-			r.metricsCollector.IncrementSlowReadIndex()
+			err = babuza.ErrReadIndexRequestTimeout
 			return
 		case <-r.closer.CloseCh():
-			err = ErrStopped
+			err = babuza.ErrStopped
 			return
 		}
 	}
 }
 
-func (r *Raft) raftReadIndexRequest(rctx []byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	return r.raftNode.ReadIndex(ctx, rctx)
+func (r *replica) raftReadIndexRequest(readCtx []byte) error {
+	if err := r.EnqueueStep(raftpb.Message{
+		Type: raftpb.MsgReadIndex,
+		Entries: []raftpb.Entry{
+			{
+				Data: readCtx,
+			},
+		},
+	}); err != nil {
+		return err
+	}
+	r.scheduler.EnqueueState(stateStep, r.raftGroup.GroupID)
+	return nil
 }

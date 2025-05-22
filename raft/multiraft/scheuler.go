@@ -132,7 +132,7 @@ func (s *raftScheduler) worker(shardID, workerID int, sh *sharder) {
 			continue
 		}
 		if _, loaded := sh.inProcessing.LoadOrStore(groupID, true); loaded {
-			// put back to queue if already in processing
+			// drop the message if already in processing
 			continue
 		}
 		sh.mu.Lock()

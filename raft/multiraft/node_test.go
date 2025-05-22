@@ -1204,3 +1204,87 @@ func TestRegisterSession(t *testing.T) {
 	assert.Error(t, ar.Error)
 	res.Release()
 }
+
+func TestLinearizableRead(t *testing.T) {
+	totalGroups := 10
+	peersConfig := babuza.NewPeersConfiguration()
+	assert.NoError(t, peersConfig.AddPeer(1, "localhost:14201", false))
+	assert.NoError(t, peersConfig.AddPeer(2, "localhost:14202", false))
+	assert.NoError(t, peersConfig.AddPeer(3, "localhost:14203", false))
+	rootDir := t.TempDir()
+	cConfig := defaultCustomConfig()
+	nm, err := createNodeManager(cConfig, rootDir, peersConfig, newComponentFactory(NoOPSessionType))
+	assert.NoError(t, err)
+	assert.NotNil(t, nm)
+	assert.Equal(t, 3, len(nm.GetAllNodes()))
+	node1, err := nm.GetNode(1)
+	assert.NoError(t, err)
+	node2, err := nm.GetNode(2)
+	assert.NoError(t, err)
+	node3, err := nm.GetNode(3)
+	assert.NoError(t, err)
+	assert.NoError(t, node1.Start())
+	assert.NoError(t, node2.Start())
+	assert.NoError(t, node3.Start())
+	defer func() {
+		node1.Stop()
+		node2.Stop()
+		node3.Stop()
+	}()
+	for i := 0; i < totalGroups; i++ {
+		groupID := ibabuza.RaftGroupID(i + 1)
+		group1PeersConfig := peersConfig.Clone()
+		assert.NoError(t, node1.CreateRaftGroup(groupID, group1PeersConfig, false))
+		assert.NoError(t, node2.CreateRaftGroup(groupID, group1PeersConfig, false))
+		assert.NoError(t, node3.CreateRaftGroup(groupID, group1PeersConfig, false))
+	}
+	time.Sleep(time.Second * 3)
+	leaderIDs := make(map[ibabuza.RaftGroupID]uint64)
+	for i := 0; i < totalGroups; i++ {
+		groupID := ibabuza.RaftGroupID(i + 1)
+		groupIDs := node1.GetGroupIDs()
+		assert.Equal(t, totalGroups, len(groupIDs))
+		groupIDs = node2.GetGroupIDs()
+		assert.Equal(t, totalGroups, len(groupIDs))
+		groupIDs = node3.GetGroupIDs()
+		assert.Equal(t, totalGroups, len(groupIDs))
+
+		group1LeaderID, err := nm.CheckSameLeader(groupID)
+		assert.NoError(t, err)
+		leaderIDs[groupID] = group1LeaderID
+		t.Logf("group%d leader: %d", groupID, group1LeaderID)
+	}
+	// Propose commands to all groups
+	proposeCount := 100
+	wg := sync.WaitGroup{}
+	for i := 0; i < totalGroups; i++ {
+		groupID := ibabuza.RaftGroupID(i + 1)
+		leaderNode, err := nm.GetNode(leaderIDs[groupID])
+		assert.NoError(t, err)
+		wg.Add(1)
+		go func(node *Node, gid ibabuza.RaftGroupID) {
+			defer wg.Done()
+			result, err := proposeCommand(node, gid, CounterCommand{Operation: Reset, Value: 0})
+			assert.NoError(t, err)
+			assert.Equal(t, int64(0), result.Value)
+			for j := 0; j < proposeCount; j++ {
+				r, pErr := proposeCommand(node, gid, CounterCommand{Operation: Increment, Value: 1})
+				assert.NoError(t, pErr)
+				assert.Equal(t, int64(j+1), r.Value)
+			}
+		}(leaderNode, groupID)
+	}
+	wg.Wait()
+	// wait for the command to be applied
+	time.Sleep(time.Second)
+	for i := 0; i < totalGroups; i++ {
+		groupID := ibabuza.RaftGroupID(i + 1)
+		assert.NoError(t, verifyCounterValue(nm, groupID, int64(proposeCount)))
+		leaderNode, err := nm.GetNode(leaderIDs[groupID])
+		assert.NoError(t, err)
+		assert.Nil(t, leaderNode.LinearizableRead(context.Background(), groupID))
+		fsm, err := leaderNode.StateMachine(groupID)
+		assert.NoError(t, err)
+		assert.Equal(t, int64(proposeCount), fsm.(*SimpleStateMachine).Counter())
+	}
+}

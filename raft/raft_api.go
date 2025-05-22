@@ -352,6 +352,8 @@ func (r *Raft) LinearizableRead(ctx context.Context) error {
 	case <-r.closer.CloseCh():
 		return ErrStopped
 	case r.readIndexCh <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
 	default:
 	}
 	select {

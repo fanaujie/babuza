@@ -25,6 +25,7 @@ type Node struct {
 	closer                  *syncutil.Closer
 	replicaSet              *xsync.Map[ibabuza.RaftGroupID, *replica]
 	coalescedHeartbeatQueue *coalescedHeartbeatQueue
+	idGenerator             babuza.InternalIdGenerator
 }
 
 func (n *Node) Start() error {
@@ -209,15 +210,9 @@ func (n *Node) PromoteLearner(ctx context.Context, groupID ibabuza.RaftGroupID, 
 		return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddNode, p.RaftPeerAttr, true), nil
 	}()
 	if err != nil {
-		if !errors.Is(err, babuza.ErrNotLeader) {
-			return babuza.NewErrorResult(err)
-		}
-		// forward request to leader
-	} else {
-		return result
+		return babuza.NewErrorResult(err)
 	}
-	//TODO: forward request to leader when current node is not the leader
-	return babuza.NewErrorResult(babuza.ErrNotLeader)
+	return result
 }
 
 func (n *Node) TransferLeader(ctx context.Context, groupID ibabuza.RaftGroupID, transferee uint64) babuza.TransferLeaderResult {
@@ -241,6 +236,30 @@ func (n *Node) TransferLeader(ctx context.Context, groupID ibabuza.RaftGroupID, 
 			})
 	}
 	return babuza.NewErrorResult(babuza.ErrNoLeader)
+}
+
+func (n *Node) LinearizableRead(ctx context.Context, groupID ibabuza.RaftGroupID) error {
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return err
+	}
+	chWithErr := r.linearizeReqNotifier.Get()
+	select {
+	case <-r.closer.CloseCh():
+		return babuza.ErrStopped
+	case <-ctx.Done():
+		return ctx.Err()
+	case r.readIndexCh <- struct{}{}:
+	default:
+	}
+	select {
+	case <-r.closer.CloseCh():
+		return babuza.ErrStopped
+	case <-chWithErr.GetCh():
+		return chWithErr.GetError()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (n *Node) Configuration(groupID ibabuza.RaftGroupID) (babuza.ClusterConfiguration, error) {
