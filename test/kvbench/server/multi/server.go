@@ -211,7 +211,7 @@ func (s *Server) startGrpcServer() error {
 		return fmt.Errorf("failed to listen on %s: %w", s.cfg.GrpcAddress, err)
 	}
 
-	s.grpcServer = NewGrpcServer(s.cfg, s.multiRaftNode, s.stateMachines, s.logger)
+	s.grpcServer = NewGrpcServer(s.cfg, s.multiRaftNode, s.logger)
 
 	s.closer.Run(func() {
 		if err := s.grpcServer.Serve(lis); err != nil {

@@ -1,11 +1,9 @@
-package multi
+package dragonboat
 
 import (
 	"context"
-	"github.com/fanaujie/babuza/ibabuza"
-	babuza "github.com/fanaujie/babuza/raft"
-	"github.com/fanaujie/babuza/raft/multiraft"
 	"github.com/fanaujie/babuza/test/kvbench/kvbenchpb"
+	"github.com/lni/dragonboat/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,20 +12,18 @@ import (
 
 // GrpcServer implements the KVService gRPC service
 type GrpcServer struct {
-	serverCfg     Config
-	multiRaftNode *multiraft.Node
-	grpcServer    *grpc.Server
-	logger        ibabuza.Logger
+	serverCfg  Config
+	nh         *dragonboat.NodeHost
+	grpcServer *grpc.Server
 }
 
 // NewGrpcServer creates a new gRPC server for the KV service
-func NewGrpcServer(serverCfg Config, node *multiraft.Node, logger ibabuza.Logger) *GrpcServer {
+func NewGrpcServer(serverCfg Config, nh *dragonboat.NodeHost) *GrpcServer {
 	grpcServer := grpc.NewServer()
 	server := &GrpcServer{
-		serverCfg:     serverCfg,
-		multiRaftNode: node,
-		grpcServer:    grpcServer,
-		logger:        logger,
+		serverCfg:  serverCfg,
+		nh:         nh,
+		grpcServer: grpcServer,
 	}
 	kvbenchpb.RegisterKVServiceServer(grpcServer, server)
 	return server
@@ -50,12 +46,6 @@ func (s *GrpcServer) Put(ctx context.Context, req *kvbenchpb.PutRequest) (*kvben
 		return nil, status.Error(codes.InvalidArgument, "invalid put request")
 	}
 
-	// Check if the group exists
-	groupID := ibabuza.RaftGroupID(req.GroupID)
-	if !s.multiRaftNode.HasGroupID(groupID) {
-		return nil, status.Errorf(codes.NotFound, "raft group %d not found", req.GroupID)
-	}
-
 	// Create the operation
 	op := &kvbenchpb.KvOP{
 		Command: kvbenchpb.KvCommand_PUT,
@@ -69,21 +59,15 @@ func (s *GrpcServer) Put(ctx context.Context, req *kvbenchpb.PutRequest) (*kvben
 		return nil, status.Errorf(codes.Internal, "failed to marshal request: %v", err)
 	}
 
-	// Propose the change to the Raft group
-	result := s.multiRaftNode.Propose(ctx, groupID, babuza.ClientSession{}, data)
-	defer result.Release()
-	applyResult := result.WaitForApplyResult()
-	if applyResult.Error != nil {
-		return nil, status.Errorf(codes.Internal, "failed to apply command: %v", applyResult.Error)
+	_, err = s.nh.SyncPropose(ctx, s.nh.GetNoOPSession(req.GroupID), data)
+	if err != nil {
+		return nil, err
 	}
-	// Get the status to include in the response
-	sta, _ := s.multiRaftNode.Status(groupID)
-	// Return the response
+
 	return &kvbenchpb.PutResponse{
 		Header: &kvbenchpb.ResponseHeader{
-			ClusterID: sta.ClusterID,
-			PeerID:    sta.LocalPeerID,
-			RaftTerm:  sta.RaftTerm,
+			ClusterID: s.serverCfg.ClusterID,
+			PeerID:    s.serverCfg.LocalPeerID,
 		},
 	}, nil
 }
@@ -102,41 +86,30 @@ func (s *GrpcServer) Delete(ctx context.Context, req *kvbenchpb.DeleteRequest) (
 
 // ClusterConfiguration implements the ClusterConfiguration RPC
 func (s *GrpcServer) ClusterConfiguration(ctx context.Context, req *kvbenchpb.ClusterPeersRequest) (*kvbenchpb.ClusterPeersResponse, error) {
-	groups := s.multiRaftNode.GetGroupIDs()
-	if len(groups) == 0 {
-		return nil, status.Error(codes.NotFound, "no raft groups found")
-	}
 
 	resp := &kvbenchpb.ClusterPeersResponse{
 		ClusterID: req.ClusterID,
 		PeerID:    s.serverCfg.LocalPeerID,
 	}
 
-	// Get configuration for each group
-	for _, groupID := range groups {
-		config, err := s.multiRaftNode.Configuration(groupID)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get configuration for group %d: %v", groupID, err)
-		}
-
-		// Create peer attributes for this group
-		peers := make([]*kvbenchpb.RaftPeerAttribute, 0, len(config.Peers))
-		for _, peer := range config.Peers {
+	info := s.nh.GetNodeHostInfo(dragonboat.DefaultNodeHostInfoOption)
+	for _, shardInfo := range info.ShardInfoList {
+		peers := make([]*kvbenchpb.RaftPeerAttribute, 0)
+		for replicaID, raftAddr := range shardInfo.Replicas {
 			peers = append(peers, &kvbenchpb.RaftPeerAttribute{
-				PeerID:         peer.RaftPeerAttr.Id,
-				RaftListenAddr: peer.RaftPeerAttr.RaftListenAddr,
-				GrpcListenAddr: s.serverCfg.InitialGRPCPeers[peer.RaftPeerAttr.Id],
-				IsLearner:      peer.RaftPeerAttr.IsLearner,
+				PeerID:         replicaID,
+				RaftListenAddr: raftAddr,
+				GrpcListenAddr: s.serverCfg.InitialGRPCPeers[replicaID],
+				IsLearner:      false,
 			})
 		}
 
 		// Add this group to the response
 		resp.GroupPeers = append(resp.GroupPeers, &kvbenchpb.GroupRaftPeerAttribute{
-			GroupID:  uint64(groupID),
-			LeaderID: config.LeaderID,
+			GroupID:  shardInfo.ShardID,
+			LeaderID: shardInfo.LeaderID,
 			Peers:    peers,
 		})
 	}
-
 	return resp, nil
 }

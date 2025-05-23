@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"time"
 )
 
 // putCmd represents the put command
@@ -117,10 +118,13 @@ func putFunc(cmd *cobra.Command, args []string) {
 					for op := range requests {
 						// Wait for rate limiter
 						limit.Wait(context.Background())
-						res := c.Put(context.Background(), op.GroupID, op.Key, op.Value)
+						ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+						res := c.Put(ctx, op.GroupID, op.Key, op.Value)
 						if res.Error != nil {
+							cancel()
 							fmt.Fprintf(os.Stderr, "Error in PUT operation: %v\n", res.Error)
 						}
+						cancel()
 						reporter.Results() <- report.Result{
 							Err:   res.Error,
 							Start: res.StartTime,

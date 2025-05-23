@@ -12,6 +12,7 @@ require (
     github.com/cheggaaa/pb/v3 v3.0.5
 	github.com/testcontainers/testcontainers-go/modules/minio v0.35.0
 	github.com/puzpuzpuz/xsync/v4 v4.1.0
+	github.com/lni/dragonboat/v4 v4.0.0-20230917160253-d9f49378cd2d
 )
 
 require (
