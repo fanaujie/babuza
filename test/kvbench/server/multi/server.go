@@ -122,7 +122,7 @@ func (s *Server) Start() error {
 
 	// Create node configuration
 	nodeConfig := multiraft.DefaultNodeConfig(s.cfg.ClusterID, s.cfg.LocalPeerID, s.cfg.DataDir, s.cfg.RaftAddress)
-	nodeConfig.EnableWalNoSync = false
+	nodeConfig.EnableWalNoSync = true
 	nodeConfig.SnapshotCount = 100000000
 	nodeConfig.DisableProposalForwarding = false
 	nodeConfig.LearnerReadyPercent = 0.95
@@ -162,7 +162,7 @@ func (s *Server) Start() error {
 		breaker.NewNoOpBreaker(),
 		protocol.NewGrpcMultiRaft(s.logger),
 		s.logger,
-		transport.SetTransportOptionsWithPeerQueueSize(2048*5),
+		transport.SetTransportOptionsWithPeerQueueSize(2048*10),
 		transport.SetTransportOptionsWithHeartbeatBufferSize(2048),
 	)
 

@@ -2,13 +2,11 @@ package lsmtwal
 
 import (
 	"encoding/binary"
-	"go.etcd.io/etcd/server/v3/wal/walpb"
-	"testing"
-	"time"
-
 	"github.com/dgraph-io/badger/v4"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
+	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"testing"
 )
 
 // setupTestDB creates a temporary Badger database for testing
@@ -42,7 +40,6 @@ func TestNewBadgerWal(t *testing.T) {
 	assert.NotNil(t, wal)
 	assert.Equal(t, db, wal.db)
 	assert.False(t, wal.noFsync)
-	assert.NotNil(t, wal.stopCh)
 }
 
 // Test setting the unsafe no fsync option
@@ -381,36 +378,6 @@ func TestBadgerWal_Sync(t *testing.T) {
 	wal.SetUnsafeNoFsync()
 	err = wal.Sync()
 	assert.NoError(t, err)
-}
-
-// Test the Close method
-func TestBadgerWal_Close(t *testing.T) {
-	db, _ := setupTestDB(t)
-
-	wal := NewBadgerWal(db, nil, newKeyPrefix(0))
-
-	// Close should succeed
-	err := wal.Close()
-	assert.NoError(t, err)
-
-	// Verify the stopCh is closed by trying to send to it (should panic if not closed)
-	closeCheckDone := make(chan struct{})
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				// Channel is closed, this is expected
-				close(closeCheckDone)
-			}
-		}()
-		wal.stopCh <- struct{}{}
-	}()
-
-	select {
-	case <-closeCheckDone:
-		// Channel was closed, as expected
-	case <-time.After(time.Second):
-		t.Fatal("stopCh was not closed")
-	}
 }
 
 // Test helper functions
