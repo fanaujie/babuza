@@ -87,13 +87,13 @@ func (nm *NodeManager) CheckSameLeader(groupID ibabuza.RaftGroupID) (uint64, err
 			return 0, err
 		}
 		if s.LeaderID == 0 {
-			return 0, fmt.Errorf("node %d has no leader", nodeID)
+			return 0, fmt.Errorf("groupID %d has no leader", groupID)
 		}
 		if leaderID == 0 {
 			leaderID = s.LeaderID
 		}
 		if s.LeaderID != leaderID {
-			return 0, fmt.Errorf("node %d has different leader %d", nodeID, s.LeaderID)
+			return 0, fmt.Errorf("groupID %d has different leader %d", groupID, s.LeaderID)
 		}
 	}
 	return leaderID, nil

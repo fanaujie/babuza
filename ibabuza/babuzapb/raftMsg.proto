@@ -28,10 +28,12 @@ message BatchMessage {
 }
 
 message MultiRaftHeartbeatMessage {
-  uint64   groupID = 1;
-  uint64   term    = 2;
-  uint64   commit   = 3;
-  bytes    context  = 4;
+  uint64   groupID     = 1;
+  uint64   fromPeerID  = 2;
+  uint64   toPeerID    = 3;
+  uint64   term        = 4;
+  uint64   commit      = 5;
+  bytes    context     = 6;
 }
 
 message MultiRaftMessage {

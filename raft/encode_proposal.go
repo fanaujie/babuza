@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
@@ -41,11 +42,12 @@ func EncodePubAppServiceAddressesRequest(replyID, peerID uint64, addresses []str
 }
 
 func EncodeClusterConfigurationChange(replyID uint64, session ClientSession, changeType raftpb.ConfChangeType,
-	raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) (raftpb.ConfChange, error) {
+	groupID ibabuza.RaftGroupID, raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) (raftpb.ConfChange, error) {
 	req := babuzapb.ConfChangeRequest{
 		Context: babuzapb.RequestContext{
 			ReplyID: replyID,
 		},
+		GroupID:        uint64(groupID),
 		RaftPeerAttr:   raftPeerAttr,
 		PromoteLearner: promoteLearner,
 	}
@@ -58,7 +60,7 @@ func EncodeClusterConfigurationChange(replyID uint64, session ClientSession, cha
 	if err != nil {
 		return raftpb.ConfChange{}, err
 	}
-	return raftpb.ConfChange{Type: changeType, NodeID: raftPeerAttr.Id, Context: data}, nil
+	return raftpb.ConfChange{Type: changeType, NodeID: raftPeerAttr.PeerID, Context: data}, nil
 }
 
 func EncodeProposedLog(replyID uint64, session ClientSession, log []byte) ([]byte, error) {

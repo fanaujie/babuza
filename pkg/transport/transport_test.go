@@ -7,6 +7,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio"
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
@@ -96,13 +97,13 @@ func (mr *mockRaftProcessor) GetClusterPeer(req babuzapb.GetClusterPeersRequest)
 		Peers: []babuzapb.Peer{
 			{
 				RaftPeerAttr: babuzapb.RaftPeerAttribute{
-					Id:             1,
+					PeerID:         1,
 					RaftListenAddr: "localhost:14200",
 				},
 			},
 			{
 				RaftPeerAttr: babuzapb.RaftPeerAttribute{
-					Id:             2,
+					PeerID:         2,
 					RaftListenAddr: "localhost:14201",
 				},
 			},
@@ -200,21 +201,21 @@ func (mr *mockSnapshotReader) CreateTarArchiveReader() (io.ReadCloser, error) {
 // Test transport creation with different protocols
 func TestTransport_Create(t *testing.T) {
 	// Test TCP protocol
-	peerManager := NewPeerManager()
+	peerManager := NewPeerManager[peer.Peer, ibabuza.RaftStatusReporter]()
 	tcpProtocol := protocol.NewTcp(networkio.NewTcpPhysicalIO(), &logger.Mock{})
 	tcpTrans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), tcpProtocol, &logger.Mock{})
 	assert.NotNil(t, tcpTrans)
 
 	// Test HTTP protocol
-	peerManager = NewPeerManager()
+	peerManager = NewPeerManager[peer.Peer, ibabuza.RaftStatusReporter]()
 	httpProtocol := protocol.NewHttp(&logger.Mock{})
 	httpTrans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), httpProtocol, &logger.Mock{})
 	assert.NotNil(t, httpTrans)
 
 	// Test GRPC protocol
-	peerManager = NewPeerManager()
+	peerManager = NewPeerManager[peer.Peer, ibabuza.RaftStatusReporter]()
 	grpcProtocol := protocol.NewGrpc(&logger.Mock{})
 	grpcTrans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), grpcProtocol, &logger.Mock{})
@@ -254,12 +255,12 @@ func newTestTransport(t *testing.T, transType int, nodeId uint64, listenAddress 
 		assert.Fail(t, "unknown transport type")
 	}
 
-	peerManager := NewPeerManager()
+	peerManager := NewPeerManager[peer.Peer, ibabuza.RaftStatusReporter]()
 	trans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), tranProtocol, &logger.Mock{}, SetTransportOptionsWithPeerSnapshotChunkSize(8))
 
 	err := trans.SetupTransportConfig(ibabuza.TransportConfig{
-		PeerId:      nodeId,
+		LocalNodeID: nodeId,
 		PeerAddress: listenAddress,
 	})
 	assert.NoError(t, err)
@@ -392,7 +393,7 @@ func TestTransport_PeerManagement(t *testing.T) {
 			trans.AddPeer(3, "localhost:14202")
 
 			// Verify peer was added correctly
-			addr, err := trans.peerMgr.ResolvePeerAddress(2)
+			addr, err := trans.peerMgr.ResolvePeerAddress(0, 2)
 			assert.Nil(t, err, "Should be able to get peer address")
 			assert.Equal(t, "localhost:14201", addr)
 
@@ -400,7 +401,7 @@ func TestTransport_PeerManagement(t *testing.T) {
 			trans.UpdatePeer(2, "localhost:14203")
 
 			// Verify peer was updated
-			addr, err = trans.peerMgr.ResolvePeerAddress(2)
+			addr, err = trans.peerMgr.ResolvePeerAddress(0, 2)
 			assert.Nil(t, err)
 			assert.Equal(t, "localhost:14203", addr)
 
@@ -408,14 +409,14 @@ func TestTransport_PeerManagement(t *testing.T) {
 			trans.RemovePeer(3)
 
 			// Verify peer was removed
-			_, err = trans.peerMgr.ResolvePeerAddress(3)
+			_, err = trans.peerMgr.ResolvePeerAddress(0, 3)
 			assert.NotNil(t, err, "Peer should be removed")
 
 			// Test removing all peers
 			trans.RemovePeers()
 
 			// Verify all peers were removed
-			_, err = trans.peerMgr.ResolvePeerAddress(2)
+			_, err = trans.peerMgr.ResolvePeerAddress(0, 2)
 			assert.NotNil(t, err, "All peers should be removed")
 		})
 	}

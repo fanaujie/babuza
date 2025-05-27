@@ -304,7 +304,6 @@ func (r *MockSnapshotFileReader) ForEachFile(visitor func(reader io.Reader, meta
 
 // Test cases for ToRaftPeer
 func TestRaftPeerNew(t *testing.T) {
-	peerID := uint64(2)
 	cfg := RaftPeerConfig{
 		LimiterMaxBatchMessageSize: 1024,
 		SnapshotChunkSize:          256,
@@ -319,7 +318,7 @@ func TestRaftPeerNew(t *testing.T) {
 	clientFactory := NewMockTransportClientFactory(false)
 	transportClient, err := clientFactory.CreateTransportClient()
 	assert.NoError(t, err)
-	peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+	peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 	assert.NotNil(t, peer, "Peer should not be nil")
 	// Sleep briefly to allow goroutine to start
 	time.Sleep(100 * time.Millisecond)
@@ -345,7 +344,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
@@ -394,7 +393,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		// Set breaker to not ready
 		breaker.Fail()
 
-		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
@@ -419,7 +418,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
@@ -445,7 +444,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		// Stop the peer
 		peer.Stop()
@@ -476,7 +475,7 @@ func TestRaftPeerSendRaftMessage(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
@@ -527,7 +526,7 @@ func TestRaftPeerMessageBatching(t *testing.T) {
 	clientFactory := NewMockTransportClientFactory(false)
 	transportClient, err := clientFactory.CreateTransportClient()
 	assert.NoError(t, err)
-	peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+	peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 	defer peer.Stop()
 
@@ -556,6 +555,7 @@ func TestRaftPeerMessageBatching(t *testing.T) {
 	sentBatches := mockClient.GetSentBatchMessages()
 	assert.GreaterOrEqual(t, len(sentBatches), 2, "Should have sent at least two batches")
 }
+
 func TestRaftPeerSendSnapshot(t *testing.T) {
 	peerID := uint64(2)
 	cfg := RaftPeerConfig{
@@ -573,7 +573,7 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(false)
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		// Create snapshot message and reader
 		snapReader := NewMockSnapshotFileReader(1, 100)
@@ -633,7 +633,7 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		clientFactory := NewMockTransportClientFactory(true) // Use failing clientFactory
 		transportClient, err := clientFactory.CreateTransportClient()
 		assert.NoError(t, err)
-		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
@@ -675,7 +675,7 @@ func TestRaftPeerSendSnapshot(t *testing.T) {
 		chunkLimiter := NewMockRateLimiter()
 		breaker := NewMockBreaker()
 		transportClient := &MockStatusFailClient{}
-		peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+		peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 		defer peer.Stop()
 
@@ -720,7 +720,7 @@ func TestRaftPeerUpdateRaftReport(t *testing.T) {
 	clientFactory := NewMockTransportClientFactory(false)
 	transportClient, err := clientFactory.CreateTransportClient()
 	assert.NoError(t, err)
-	peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+	peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 	defer peer.Stop()
 
@@ -752,7 +752,7 @@ func TestRaftPeerStop(t *testing.T) {
 	clientFactory := NewMockTransportClientFactory(false)
 	transportClient, err := clientFactory.CreateTransportClient()
 	assert.NoError(t, err)
-	peer := New(100, 0, peerID, cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
+	peer := New(100, 0, "", cfg, report, memLimiter, chunkLimiter, breaker, transportClient, &logger.Mock{})
 
 	// Stop the peer
 	peer.Stop()

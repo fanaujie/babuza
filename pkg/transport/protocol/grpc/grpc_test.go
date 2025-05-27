@@ -324,14 +324,14 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				Peers: []babuzapb.Peer{
 					{
 						RaftPeerAttr: babuzapb.RaftPeerAttribute{
-							Id:             uint64(index),
+							PeerID:         uint64(index),
 							RaftListenAddr: c.PeerAddress,
 							IsLearner:      false,
 						},
 					},
 					{
 						RaftPeerAttr: babuzapb.RaftPeerAttribute{
-							Id:             uint64(index + 1),
+							PeerID:         uint64(index + 1),
 							RaftListenAddr: "localhost:14299",
 							IsLearner:      true,
 						},

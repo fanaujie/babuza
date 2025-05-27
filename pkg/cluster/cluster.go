@@ -162,10 +162,10 @@ func (c *Cluster) LocalPeerID() uint64 {
 func (c *Cluster) Add(peer babuzapb.RaftPeerAttribute) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.store.Peers[peer.Id]; ok {
+	if _, ok := c.store.Peers[peer.PeerID]; ok {
 		return ErrPeerIDExists
 	}
-	if _, ok := c.store.RemovedIds[peer.Id]; ok {
+	if _, ok := c.store.RemovedIds[peer.PeerID]; ok {
 		return ErrPeerIDRemoved
 	}
 	for _, m := range c.store.Peers {
@@ -173,7 +173,7 @@ func (c *Cluster) Add(peer babuzapb.RaftPeerAttribute) error {
 			return ErrPeerRaftListenAddrExists
 		}
 	}
-	c.store.Peers[peer.Id] = babuzapb.Peer{
+	c.store.Peers[peer.PeerID] = babuzapb.Peer{
 		RaftPeerAttr: peer,
 	}
 	return nil
@@ -182,7 +182,7 @@ func (c *Cluster) Add(peer babuzapb.RaftPeerAttribute) error {
 func (c *Cluster) Update(peer babuzapb.RaftPeerAttribute) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	p, ok := c.store.Peers[peer.Id]
+	p, ok := c.store.Peers[peer.PeerID]
 	if !ok {
 		return ErrPeerIDNotFound
 	}
@@ -192,7 +192,7 @@ func (c *Cluster) Update(peer babuzapb.RaftPeerAttribute) error {
 		}
 	}
 	p.RaftPeerAttr.RaftListenAddr = peer.RaftListenAddr
-	c.store.Peers[peer.Id] = p
+	c.store.Peers[peer.PeerID] = p
 	return nil
 }
 
@@ -238,4 +238,4 @@ type clusterPeers []babuzapb.Peer
 
 func (a clusterPeers) Len() int           { return len(a) }
 func (a clusterPeers) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a clusterPeers) Less(i, j int) bool { return a[i].RaftPeerAttr.Id < a[j].RaftPeerAttr.Id }
+func (a clusterPeers) Less(i, j int) bool { return a[i].RaftPeerAttr.PeerID < a[j].RaftPeerAttr.PeerID }

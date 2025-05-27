@@ -9,6 +9,17 @@ import (
 
 type RaftGroupID uint64
 
+type MultiRaftTransportResolver interface {
+	ResolvePeerAddress(groupID RaftGroupID, peerID uint64) (string, error)
+}
+
+type MultiRaftTransportClient interface {
+	SendMultiRaftMessage(babuzapb.MultiRaftBatchMessage) error
+	SendSnapshotMessage(babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error)
+	GetClusterPeers(babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error)
+	Close() error
+}
+
 type MultiRaftTransport interface {
 	SetupTransportConfig(cfg TransportConfig) error
 	SetupTransportRaft(MultiRaftNodeHandler) error
@@ -16,12 +27,20 @@ type MultiRaftTransport interface {
 	Stop() error
 	Send(RaftGroupID, raftpb.Message)
 	SendSnapshot(RaftGroupID, raftpb.Message)
-	SendHeartbeat(to uint64, heartbeats []babuzapb.MultiRaftHeartbeatMessage, heartbeatResponse []babuzapb.MultiRaftHeartbeatMessage)
-	CreateTransportClient() (TransportClient, error)
-	AddPeer(uint64, string)
-	UpdatePeer(uint64, string)
-	RemovePeer(uint64)
+	SendHeartbeat(toAddress string, heartbeats []babuzapb.MultiRaftHeartbeatMessage, heartbeatResponse []babuzapb.MultiRaftHeartbeatMessage)
+	CreateTransportClient() (MultiRaftTransportClient, error)
+	AddPeer(RaftGroupID, uint64, string)
+	UpdatePeer(RaftGroupID, uint64, string)
+	RemovePeer(RaftGroupID, uint64)
 	RemovePeers()
+	ResolvePeerAddress(groupID RaftGroupID, peerID uint64) (string, error)
+}
+
+type MultiRaftTransportProtocol interface {
+	Setup(TransportConfig) error
+	CreateServer(MultiRaftNodeHandler) (TransportServer, error)
+	CreateClient(MultiRaftTransportResolver) (MultiRaftTransportClient, error)
+	Close() error
 }
 
 type MultiSnapshotStorage interface {
@@ -29,11 +48,14 @@ type MultiSnapshotStorage interface {
 }
 
 type MultiRaftStatusReporter interface {
-	ReportUnreachable(groupID RaftGroupID, nodeID uint64)
-	ReportSnapshot(groupID RaftGroupID, nodeID uint64, status raft.SnapshotStatus)
+	ReportUnreachable(groupID RaftGroupID, peerID uint64)
+	ReportSnapshot(groupID RaftGroupID, peerID uint64, status raft.SnapshotStatus)
 }
+
 type MultiRaftNodeHandler interface {
-	RaftMessageHandler
+	ProcessMultiRaftMessage(babuzapb.MultiRaftBatchMessage)
+	ProcessSnapshotMessage(babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse
+	GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse
 	MultiRaftStatusReporter
 	MultiSnapshotStorage
 }

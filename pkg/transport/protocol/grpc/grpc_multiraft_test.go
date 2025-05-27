@@ -9,6 +9,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/transport/protocol/grpc/networkio"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/grpc/pb"
 	"github.com/stretchr/testify/assert"
+	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -21,7 +22,7 @@ import (
 
 type multiRaftResolver string
 
-func (r multiRaftResolver) ResolvePeerAddress(peerID uint64) (string, error) {
+func (r multiRaftResolver) ResolvePeerAddress(groupID ibabuza.RaftGroupID, peerID uint64) (string, error) {
 	return string(r), nil
 }
 
@@ -30,6 +31,17 @@ type mockMultiRaftNodeHandler struct {
 	notifyNodeDoneCh chan *nodeMultiMsg
 	clusterRes       babuzapb.GetClusterPeersResponse
 	mu               sync.Mutex
+}
+
+func (m *mockMultiRaftNodeHandler) ReportUnreachable(groupID ibabuza.RaftGroupID, peerID uint64) {
+}
+
+func (m *mockMultiRaftNodeHandler) ReportSnapshot(groupID ibabuza.RaftGroupID, peerID uint64, status raft.SnapshotStatus) {
+
+}
+
+func (m *mockMultiRaftNodeHandler) CreateSnapshotReader(groupID ibabuza.RaftGroupID, snapshotIndex uint64) (ibabuza.SnapshotReader, error) {
+	return nil, nil
 }
 
 func newMockMultiRaftNodeHandler(nodes int) *mockMultiRaftNodeHandler {
@@ -48,10 +60,6 @@ func (m *mockMultiRaftNodeHandler) setupMsgCount(node uint64, msgCount int) {
 		snapshotMsg:   make(map[uint64]babuzapb.SnapshotMessage),
 		totalMsgCount: msgCount,
 	}
-}
-
-func (m *mockMultiRaftNodeHandler) ProcessBatchMessage(message babuzapb.BatchMessage) {
-
 }
 
 func (m *mockMultiRaftNodeHandler) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
@@ -155,7 +163,7 @@ func TestMultiRaftNewServerClient(t *testing.T) {
 		creator := NewConnectionCreator(c.NetworkIO, c.clientTls, defaultPoolCfg)
 		pool := connpool.NewConnectionPool(creator, defaultPoolCfg)
 		client := NewMultiRaftMsgClient(pool, multiRaftResolver(c.PeerAddress), defaultGrpcCfg, &logger.Mock{})
-		_, err := client.getConnection(0)
+		_, err := client.getConnection(c.PeerAddress)
 		assert.Nil(t, err, identify)
 		pool.Close()
 		srv.Stop()
@@ -262,14 +270,14 @@ func TestMultiRaftSingleServerClient_SendAndReceive(t *testing.T) {
 				Peers: []babuzapb.Peer{
 					{
 						RaftPeerAttr: babuzapb.RaftPeerAttribute{
-							Id:             uint64(index),
+							PeerID:         uint64(index),
 							RaftListenAddr: c.PeerAddress,
 							IsLearner:      false,
 						},
 					},
 					{
 						RaftPeerAttr: babuzapb.RaftPeerAttribute{
-							Id:             uint64(index + 1),
+							PeerID:         uint64(index + 1),
 							RaftListenAddr: "localhost:15299",
 							IsLearner:      true,
 						},
@@ -408,7 +416,7 @@ func TestMultiRaftMessageStream(t *testing.T) {
 
 	srv := NewMultiRaftMsgServer(ibabuza.TransportConfig{
 		PeerAddress: local,
-		PeerId:      1,
+		LocalNodeID: 1,
 	}, n, mockTransport, &logger.Mock{})
 
 	assert.Nil(t, srv.Start())
@@ -419,17 +427,17 @@ func TestMultiRaftMessageStream(t *testing.T) {
 	client := NewMultiRaftMsgClient(pool, multiRaftResolver(local), defaultGrpcCfg, &logger.Mock{})
 	defer client.Close()
 
-	stream1, err := client.GetStream(2)
+	stream1, err := client.getStream(local)
 	assert.Nil(t, err)
 	assert.NotNil(t, stream1)
 
-	stream2, err := client.GetStream(2)
+	stream2, err := client.getStream(local)
 	assert.Nil(t, err)
 	assert.Equal(t, stream1, stream2)
 
-	client.closeStream(2)
+	client.closeStream(local)
 
-	stream3, err := client.GetStream(2)
+	stream3, err := client.getStream(local)
 	assert.Nil(t, err)
 	assert.NotNil(t, stream3)
 	assert.NotEqual(t, stream1, stream3)
@@ -493,7 +501,7 @@ func TestMultiRaftClient_ErrorHandling(t *testing.T) {
 
 		srv := NewMultiRaftMsgServer(ibabuza.TransportConfig{
 			PeerAddress: local,
-			PeerId:      1,
+			LocalNodeID: 1,
 		}, networkIO, nil, &logger.Mock{})
 
 		var err error
@@ -514,7 +522,7 @@ func TestMultiRaftClient_ErrorHandling(t *testing.T) {
 
 		msg := babuzapb.MultiRaftBatchMessage{
 			ClusterID: 1,
-			Messages: []babuzapb.MultiRaftMessage{
+			Messages: []*babuzapb.MultiRaftMessage{
 				{
 					GroupID: 1,
 					Message: raftpb.Message{
@@ -537,8 +545,8 @@ func TestMultiRaftClient_ErrorHandling(t *testing.T) {
 		time.Sleep(time.Second)
 
 		client.streamMu.RLock()
-		_, streamExists := client.streamCache[2]
-		_, connExists := client.streamConn[2]
+		_, streamExists := client.streamCache[local]
+		_, connExists := client.streamConn[local]
 		client.streamMu.RUnlock()
 
 		assert.False(t, streamExists, "Stream should be removed after failure")
@@ -558,7 +566,7 @@ func TestMultiRaftClient_ErrorHandling(t *testing.T) {
 
 		msg := babuzapb.MultiRaftBatchMessage{
 			ClusterID: 1,
-			Messages: []babuzapb.MultiRaftMessage{
+			Messages: []*babuzapb.MultiRaftMessage{
 				{
 					GroupID: 1,
 					Message: raftpb.Message{
@@ -641,10 +649,10 @@ func genTestMultiMsg(totalMsgs, maxRaftMsgs int, fromNode uint64) []*testMultiMs
 	return r
 }
 
-func genMultiRaftMsg(maxMsgs int, startIndex, fromNode uint64) []babuzapb.MultiRaftMessage {
-	r := make([]babuzapb.MultiRaftMessage, maxMsgs)
+func genMultiRaftMsg(maxMsgs int, startIndex, fromNode uint64) []*babuzapb.MultiRaftMessage {
+	r := make([]*babuzapb.MultiRaftMessage, maxMsgs)
 	for i := 0; i < maxMsgs; i++ {
-		r[i] = babuzapb.MultiRaftMessage{
+		r[i] = &babuzapb.MultiRaftMessage{
 			GroupID: 1,
 			Message: raftpb.Message{
 				From:  fromNode,

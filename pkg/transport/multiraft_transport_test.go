@@ -7,6 +7,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
@@ -48,10 +49,6 @@ func (mr *mockMultiRaftProcessor) ProcessMultiRaftMessage(message babuzapb.Multi
 	for _, msg := range message.Messages {
 		mr.receivedMsg[msg.GroupID] = append(mr.receivedMsg[msg.GroupID], msg.Message)
 	}
-}
-
-func (mr *mockMultiRaftProcessor) ProcessBatchMessage(message babuzapb.BatchMessage) {
-	// not implemented
 }
 
 func (mr *mockMultiRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
@@ -105,13 +102,13 @@ func (mr *mockMultiRaftProcessor) GetClusterPeer(req babuzapb.GetClusterPeersReq
 		Peers: []babuzapb.Peer{
 			{
 				RaftPeerAttr: babuzapb.RaftPeerAttribute{
-					Id:             1,
+					PeerID:         1,
 					RaftListenAddr: "localhost:14200",
 				},
 			},
 			{
 				RaftPeerAttr: babuzapb.RaftPeerAttribute{
-					Id:             2,
+					PeerID:         2,
 					RaftListenAddr: "localhost:14201",
 				},
 			},
@@ -192,7 +189,7 @@ func (mr *mockMultiRaftSnapshotReader) CreateTarArchiveReader() (io.ReadCloser, 
 
 // Helper function to create a new MultiRaftTransport for testing
 func newTestMultiRaftTransport(t *testing.T, nodeId uint64, listenAddress string) (*MultiRaftTransport, *mockMultiRaftProcessor) {
-	var tranProtocol ibabuza.TransportProtocol
+	var tranProtocol ibabuza.MultiRaftTransportProtocol
 	mockProc := newMockMultiRaftProcessor()
 
 	mockProc.snapshotReader = newMockMultiRaftSnapshotReader(1, 1, map[string]babuzapb.SnapshotFileDesc{
@@ -211,12 +208,12 @@ func newTestMultiRaftTransport(t *testing.T, nodeId uint64, listenAddress string
 		protocol.SetGrpcMultiRaftOptsWithDialTimeout(time.Second),
 		protocol.SetGrpcMultiRaftOptsWithIdleTimeout(time.Second))
 
-	peerManager := NewMultiRaftPeerManager()
+	peerManager := NewPeerManager[peer.MultiRaftPeer, ibabuza.MultiRaftStatusReporter]()
 	trans := NewMultiRaftTransport(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), tranProtocol, &logger.Mock{}, SetTransportOptionsWithPeerSnapshotChunkSize(8))
 
 	err := trans.SetupTransportConfig(ibabuza.TransportConfig{
-		PeerId:      nodeId,
+		LocalNodeID: nodeId,
 		PeerAddress: listenAddress,
 	})
 	assert.NoError(t, err)
@@ -229,7 +226,7 @@ func newTestMultiRaftTransport(t *testing.T, nodeId uint64, listenAddress string
 
 // Test MultiRaftTransport creation
 func TestMultiRaftTransport_Create(t *testing.T) {
-	peerManager := NewMultiRaftPeerManager()
+	peerManager := NewPeerManager[peer.MultiRaftPeer, ibabuza.MultiRaftStatusReporter]()
 	grpcMultiRaftProtocol := protocol.NewGrpcMultiRaft(&logger.Mock{})
 	grpcMultiRaftTrans := NewMultiRaftTransport(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), grpcMultiRaftProtocol, &logger.Mock{})
@@ -245,11 +242,11 @@ func TestMultiRaftTransport_Send(t *testing.T) {
 	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, node2ListenAddr)
 	defer trans2.Stop()
 
+	groupID := ibabuza.RaftGroupID(101)
 	// Test sending from node 1 to node 2
-	trans1.AddPeer(2, node2ListenAddr)
+	trans1.AddPeer(groupID, 2, node2ListenAddr)
 
 	// Create a MultiRaftMessage to send
-	groupID := ibabuza.RaftGroupID(101)
 	msg1To2 := raftpb.Message{
 		Type:  raftpb.MsgApp,
 		To:    2,
@@ -268,8 +265,8 @@ func TestMultiRaftTransport_Send(t *testing.T) {
 	assert.Equal(t, msg1To2, trans2RecMsg[0])
 
 	// Test sending from node 2 to node 1
-	trans2.AddPeer(1, node1ListenAddr)
 	groupID = ibabuza.RaftGroupID(102)
+	trans2.AddPeer(groupID, 1, node1ListenAddr)
 	msg2To1 := raftpb.Message{
 		Type: raftpb.MsgApp,
 		To:   1,
@@ -296,12 +293,11 @@ func TestMultiRaftTransport_SendSnapshot(t *testing.T) {
 
 	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, node2ListenAddr)
 	defer trans2.Stop()
-
+	groupID := ibabuza.RaftGroupID(201)
 	// Add peer and prepare for snapshot
-	trans1.AddPeer(2, node2ListenAddr)
+	trans1.AddPeer(groupID, 2, node2ListenAddr)
 
 	// Create and send a snapshot message
-	groupID := ibabuza.RaftGroupID(201)
 	snapMsg := raftpb.Message{
 		Type: raftpb.MsgSnap,
 		To:   2,
@@ -337,34 +333,34 @@ func TestMultiRaftTransport_PeerManagement(t *testing.T) {
 	defer trans.Stop()
 
 	// Test adding peers
-	trans.AddPeer(2, node2ListenAddr)
-	trans.AddPeer(3, node3ListenAddr)
+	trans.AddPeer(1, 2, node2ListenAddr)
+	trans.AddPeer(1, 3, node3ListenAddr)
 
 	// Verify peer was added correctly
-	addr, err := trans.peerMgr.ResolvePeerAddress(2)
+	addr, err := trans.peerMgr.ResolvePeerAddress(1, 2)
 	assert.Nil(t, err, "Should be able to get peer address")
 	assert.Equal(t, node2ListenAddr, addr)
 
 	// Test updating peer
-	trans.UpdatePeer(2, "localhost:14203")
+	trans.UpdatePeer(1, 2, "localhost:14203")
 
 	// Verify peer was updated
-	addr, err = trans.peerMgr.ResolvePeerAddress(2)
+	addr, err = trans.peerMgr.ResolvePeerAddress(1, 2)
 	assert.Nil(t, err)
 	assert.Equal(t, "localhost:14203", addr)
 
 	// Test removing a specific peer
-	trans.RemovePeer(3)
+	trans.RemovePeer(1, 3)
 
 	// Verify peer was removed
-	_, err = trans.peerMgr.ResolvePeerAddress(3)
+	_, err = trans.peerMgr.ResolvePeerAddress(1, 3)
 	assert.NotNil(t, err, "Peer should be removed")
 
 	// Test removing all peers
 	trans.RemovePeers()
 
 	// Verify all peers were removed
-	_, err = trans.peerMgr.ResolvePeerAddress(2)
+	_, err = trans.peerMgr.ResolvePeerAddress(1, 2)
 	assert.NotNil(t, err, "All peers should be removed")
 }
 
@@ -372,12 +368,11 @@ func TestMultiRaftTransport_PeerManagement(t *testing.T) {
 func TestMultiRaftTransport_UnreachablePeer(t *testing.T) {
 	trans1, mockRaft1 := newTestMultiRaftTransport(t, 1, "localhost:14200")
 	defer trans1.Stop()
+	groupID := ibabuza.RaftGroupID(301)
 
 	// Add a non-existent peer to test unreachable reporting
-	trans1.AddPeer(99, "localhost:99999")
-
+	trans1.AddPeer(groupID, 99, "localhost:99999")
 	// Send a message to the unreachable peer
-	groupID := ibabuza.RaftGroupID(301)
 	msg := raftpb.Message{
 		Type:  raftpb.MsgApp,
 		To:    99,
@@ -406,15 +401,14 @@ func TestMultiRaftTransport_UpdatePeerAndCommunicate(t *testing.T) {
 	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, "localhost:14201")
 	defer trans2.Stop()
 
+	groupID := ibabuza.RaftGroupID(401)
 	// First add the peer with a wrong address
-	trans1.AddPeer(2, "localhost:12345")
+	trans1.AddPeer(groupID, 2, "localhost:12345")
 
 	// Update the peer with the correct address
-	trans1.UpdatePeer(2, "localhost:14201")
-	time.Sleep(time.Second) // Allow update to take effect
+	trans1.UpdatePeer(groupID, 2, "localhost:14201")
 
 	// Send a message to the updated peer
-	groupID := ibabuza.RaftGroupID(401)
 	msg := raftpb.Message{
 		Type:  raftpb.MsgApp,
 		To:    2,

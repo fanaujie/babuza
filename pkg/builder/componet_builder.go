@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"path/filepath"
 
 	"github.com/fanaujie/babuza/pkg/metrics"
@@ -342,7 +343,7 @@ func (b *BabuzaComponentBuilder) createSnapshotManager(logger ibabuza.Logger) ib
 }
 
 func (b *BabuzaComponentBuilder) createTransport(logger ibabuza.Logger) ibabuza.Transport {
-	peerManager := transport.NewPeerManager()
+	peerManager := transport.NewPeerManager[peer.Peer]()
 	resourceLimiter := b.config.transportMemoryLimiter
 	rateLimiter := b.config.snapshotChuckRateLimiter
 	circuitBreaker := b.config.peerCircuitBreaker

@@ -93,11 +93,11 @@ func (g *GrpcMultiRaft) Setup(cfg ibabuza.TransportConfig) error {
 	return nil
 }
 
-func (g *GrpcMultiRaft) CreateServer(handler ibabuza.RaftMessageHandler) (ibabuza.TransportServer, error) {
+func (g *GrpcMultiRaft) CreateServer(handler ibabuza.MultiRaftNodeHandler) (ibabuza.TransportServer, error) {
 	return transGrpc.NewMultiRaftMsgServer(g.config, g.network, handler, g.logger), nil
 }
 
-func (g *GrpcMultiRaft) CreateClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
+func (g *GrpcMultiRaft) CreateClient(resolver ibabuza.MultiRaftTransportResolver) (ibabuza.MultiRaftTransportClient, error) {
 	return transGrpc.NewMultiRaftMsgClient(g.pool, resolver, transGrpc.ClientConfig{
 		GrpcDeadline: g.options.GrpcDeadline,
 	}, g.logger), nil
@@ -108,7 +108,7 @@ func (g *GrpcMultiRaft) Close() error {
 }
 
 func (g *GrpcMultiRaft) Dial(address string) (*grpc.ClientConn, error) {
-	grpcConn, err := g.network.DialWithTimeout(g.config.TLSConfig, g.config.PeerId, address, g.options.DialTimeout)
+	grpcConn, err := g.network.DialWithTimeout(g.config.TLSConfig, g.config.LocalNodeID, address, g.options.DialTimeout)
 	if err != nil {
 		return nil, err
 	}

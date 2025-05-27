@@ -12,10 +12,6 @@ type transportProcessor struct {
 	*Raft
 }
 
-func (d *transportProcessor) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
-	// not implemented
-}
-
 func (d *transportProcessor) ProcessBatchMessage(msg babuzapb.BatchMessage) {
 	for i := 0; i < len(msg.Messages); i++ {
 		if err := d.validateRequest(msg.ClusterID, msg.Messages[i].To); err != nil {
@@ -136,16 +132,16 @@ func (d *transportProcessor) PublishApplicationService(req babuzapb.PublishAppli
 		Message: "success"}
 }
 
-func (d *transportProcessor) ReportUnreachable(id uint64) {
-	d.raftNode.ReportUnreachable(id)
+func (d *transportProcessor) ReportUnreachable(peerID uint64) {
+	d.raftNode.ReportUnreachable(peerID)
 }
-func (d *transportProcessor) ReportSnapshot(id uint64, status raft.SnapshotStatus) {
+func (d *transportProcessor) ReportSnapshot(peerID uint64, status raft.SnapshotStatus) {
 	d.status.AddInflightSnapshots(-1)
 	d.metricsCollector.DecrementInflightSnapshots()
 	if status == raft.SnapshotFinish {
-		d.logger.Infof("raft[id=%d] finish to send snapshot to peer(id=%d)", d.cluster.LocalPeerID(), id)
+		d.logger.Infof("raft[id=%d] finish to send snapshot to peer(id=%d)", d.cluster.LocalPeerID(), peerID)
 	}
-	d.raftNode.ReportSnapshot(id, status)
+	d.raftNode.ReportSnapshot(peerID, status)
 }
 
 func (d *transportProcessor) CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error) {

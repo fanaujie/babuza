@@ -39,10 +39,10 @@ func (r *replica) applySnapshot(snap raftpb.Snapshot) {
 	}
 	r.transport.RemovePeers()
 	for _, p := range r.cluster.Peers() {
-		if p.RaftPeerAttr.Id == r.cluster.LocalPeerID() {
+		if p.RaftPeerAttr.PeerID == r.cluster.LocalPeerID() {
 			continue
 		}
-		r.transport.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)
+		r.transport.AddPeer(r.cluster.GroupID(), p.RaftPeerAttr.PeerID, p.RaftPeerAttr.RaftListenAddr)
 	}
 	r.logger.Infof("raft[id=%d]: applyEntry done for apply snapshot to storage (snapshot index=%d)",
 		r.cluster.LocalPeerID(), snap.Metadata.Index)

@@ -12,19 +12,19 @@ import (
 )
 
 type MultiRaftMsgClient struct {
-	resolver ibabuza.TransportResolver
+	resolver ibabuza.MultiRaftTransportResolver
 	pool     connpool.Pool[*grpc.ClientConn]
 	cfg      ClientConfig
 	logger   ibabuza.Logger
 
 	streamMu    sync.RWMutex
-	streamCache map[uint64]pb.MultiRaftTransport_SendMultiRaftMessageClient
-	streamConn  map[uint64]*grpc.ClientConn
+	streamCache map[string]pb.MultiRaftTransport_SendMultiRaftMessageClient
+	streamConn  map[string]*grpc.ClientConn
 }
 
 func NewMultiRaftMsgClient(
 	pool connpool.Pool[*grpc.ClientConn],
-	resolver ibabuza.TransportResolver,
+	resolver ibabuza.MultiRaftTransportResolver,
 	cfg ClientConfig,
 	logger ibabuza.Logger,
 ) *MultiRaftMsgClient {
@@ -33,16 +33,12 @@ func NewMultiRaftMsgClient(
 		pool:        pool,
 		cfg:         cfg,
 		logger:      logger,
-		streamCache: make(map[uint64]pb.MultiRaftTransport_SendMultiRaftMessageClient),
-		streamConn:  make(map[uint64]*grpc.ClientConn),
+		streamCache: make(map[string]pb.MultiRaftTransport_SendMultiRaftMessageClient),
+		streamConn:  make(map[string]*grpc.ClientConn),
 	}
 }
 
-func (r *MultiRaftMsgClient) getConnection(peerID uint64) (*grpc.ClientConn, error) {
-	addr, err := r.resolver.ResolvePeerAddress(peerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve peer address: %w", err)
-	}
+func (r *MultiRaftMsgClient) getConnection(addr string) (*grpc.ClientConn, error) {
 	conn, err := r.pool.Get(addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection from pool: %w", err)
@@ -50,16 +46,16 @@ func (r *MultiRaftMsgClient) getConnection(peerID uint64) (*grpc.ClientConn, err
 	return conn, nil
 }
 
-func (r *MultiRaftMsgClient) GetStream(peerID uint64) (pb.MultiRaftTransport_SendMultiRaftMessageClient, error) {
+func (r *MultiRaftMsgClient) getStream(addr string) (pb.MultiRaftTransport_SendMultiRaftMessageClient, error) {
 	r.streamMu.RLock()
 
-	if stream, ok := r.streamCache[peerID]; ok {
+	if stream, ok := r.streamCache[addr]; ok {
 		r.streamMu.RUnlock()
 		return stream, nil
 	}
 	r.streamMu.RUnlock()
 
-	conn, err := r.getConnection(peerID)
+	conn, err := r.getConnection(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -71,33 +67,33 @@ func (r *MultiRaftMsgClient) GetStream(peerID uint64) (pb.MultiRaftTransport_Sen
 		return nil, fmt.Errorf("failed to create stream: %w", err)
 	}
 	r.streamMu.Lock()
-	r.streamConn[peerID] = conn
+	r.streamConn[addr] = conn
 	r.streamMu.Unlock()
-	r.streamCache[peerID] = stream
-	go r.receiveResponses(peerID, stream)
+	r.streamCache[addr] = stream
+	go r.receiveResponses(addr, stream)
 	return stream, nil
 }
 
-func (r *MultiRaftMsgClient) receiveResponses(peerID uint64, stream pb.MultiRaftTransport_SendMultiRaftMessageClient) {
+func (r *MultiRaftMsgClient) receiveResponses(addr string, stream pb.MultiRaftTransport_SendMultiRaftMessageClient) {
 	for {
 		_, err := stream.Recv()
 		if err != nil {
-			r.logger.Errorf("Error receiving from stream for peer %d: %v", peerID, err)
-			r.closeStream(peerID)
+			r.logger.Errorf("Error receiving from stream for %s: %v", addr, err)
+			r.closeStream(addr)
 			return
 		}
 	}
 }
 
-func (r *MultiRaftMsgClient) closeStream(peerID uint64) {
+func (r *MultiRaftMsgClient) closeStream(addr string) {
 	r.streamMu.Lock()
 	defer r.streamMu.Unlock()
-	if s, ok := r.streamCache[peerID]; ok {
+	if s, ok := r.streamCache[addr]; ok {
 		s.CloseSend()
-		delete(r.streamCache, peerID)
-		if conn, ok := r.streamConn[peerID]; ok {
+		delete(r.streamCache, addr)
+		if conn, ok := r.streamConn[addr]; ok {
 			r.pool.Remove(conn)
-			delete(r.streamConn, peerID)
+			delete(r.streamConn, addr)
 		}
 	}
 
@@ -108,25 +104,32 @@ func (r *MultiRaftMsgClient) SendMultiRaftMessage(batchMsg babuzapb.MultiRaftBat
 		return fmt.Errorf("batch message is empty")
 	}
 
+	// Get the first message to determine the peerID and groupID,
+	// and use it to get the stream. Because the batch message is sent to the same node.
+	groupID := ibabuza.RaftGroupID(batchMsg.Messages[0].GroupID)
 	peerID := batchMsg.Messages[0].Message.To
-	stream, err := r.GetStream(peerID)
+	addr, err := r.resolver.ResolvePeerAddress(groupID, peerID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve peer address: %w", err)
+	}
+	stream, err := r.getStream(addr)
 	if err != nil {
 		return err
 	}
 
 	if err = stream.Send(&batchMsg); err != nil {
-		r.closeStream(peerID)
+		r.closeStream(addr)
 		return fmt.Errorf("failed to send batch message: %w", err)
 	}
 	return nil
 }
 
-func (r *MultiRaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
-	return nil
-}
-
 func (r *MultiRaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
-	conn, err := r.getConnection(snapMsg.To)
+	addr, err := r.resolver.ResolvePeerAddress(ibabuza.RaftGroupID(snapMsg.GroupID), snapMsg.To)
+	if err != nil {
+		return babuzapb.SnapshotMessageResponse{}, fmt.Errorf("failed to resolve peer address: %w", err)
+	}
+	conn, err := r.getConnection(addr)
 	if err != nil {
 		return babuzapb.SnapshotMessageResponse{}, err
 	}
@@ -144,8 +147,11 @@ func (r *MultiRaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessag
 
 func (r *MultiRaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
 	var res babuzapb.GetClusterPeersResponse
-
-	conn, err := r.getConnection(request.To)
+	addr, err := r.resolver.ResolvePeerAddress(ibabuza.RaftGroupID(request.GroupID), request.To)
+	if err != nil {
+		return res, fmt.Errorf("failed to resolve peer address: %w", err)
+	}
+	conn, err := r.getConnection(addr)
 	if err != nil {
 		res.Status = babuzapb.FAILED
 		res.Message = err.Error()
@@ -169,11 +175,6 @@ func (r *MultiRaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersReq
 	return *response, nil
 }
 
-func (r *MultiRaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
-	// No implementation needed
-	return babuzapb.PublishApplicationServiceResponse{}, nil
-}
-
 func (r *MultiRaftMsgClient) Close() error {
 	r.streamMu.Lock()
 	defer r.streamMu.Unlock()
@@ -184,7 +185,7 @@ func (r *MultiRaftMsgClient) Close() error {
 	for _, conn := range r.streamConn {
 		r.pool.Put(conn)
 	}
-	r.streamCache = make(map[uint64]pb.MultiRaftTransport_SendMultiRaftMessageClient)
+	r.streamCache = make(map[string]pb.MultiRaftTransport_SendMultiRaftMessageClient)
 	return nil
 }
 

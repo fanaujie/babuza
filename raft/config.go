@@ -25,7 +25,7 @@ func (c *PeersConfiguration) AddPeer(id uint64, raftListenAddr string, isLearner
 		return fmt.Errorf("peer already exists: %d", id)
 	}
 	c.raftPeersAttr[id] = babuzapb.RaftPeerAttribute{
-		Id:             id,
+		PeerID:         id,
 		RaftListenAddr: raftListenAddr,
 		IsLearner:      isLearner,
 	}
@@ -52,10 +52,14 @@ func (c *PeersConfiguration) RaftPeersAttribute() []babuzapb.RaftPeerAttribute {
 	return raftPeersAttr
 }
 
+func (c *PeersConfiguration) RaftPeerAttributeMap() map[uint64]babuzapb.RaftPeerAttribute {
+	return c.raftPeersAttr
+}
+
 func (c *PeersConfiguration) PeerIds() []uint64 {
 	var raftPeers []uint64
 	for _, raftPeerAttr := range c.raftPeersAttr {
-		raftPeers = append(raftPeers, raftPeerAttr.Id)
+		raftPeers = append(raftPeers, raftPeerAttr.PeerID)
 	}
 	return raftPeers
 }
@@ -63,19 +67,15 @@ func (c *PeersConfiguration) PeerIds() []uint64 {
 func (c *PeersConfiguration) ToRaftPeers() ([]raft.Peer, error) {
 	var peers []raft.Peer
 	for _, raftPeerAttr := range c.raftPeersAttr {
-		data, err := raftPeerAttr.Marshal()
-		if err != nil {
-			return nil, err
-		}
 		req := babuzapb.ConfChangeRequest{
 			RaftPeerAttr: raftPeerAttr,
 		}
-		data, err = req.Marshal()
+		data, err := req.Marshal()
 		if err != nil {
 			return nil, err
 		}
 		peers = append(peers, raft.Peer{
-			ID:      raftPeerAttr.Id,
+			ID:      raftPeerAttr.PeerID,
 			Context: data,
 		})
 	}
@@ -94,16 +94,16 @@ func (c *PeersConfiguration) Validate() error {
 	idSet := make(map[uint64]struct{})
 	endpointSet := make(map[string]struct{})
 	for _, raftPeerAttr := range c.raftPeersAttr {
-		if raftPeerAttr.Id == 0 {
+		if raftPeerAttr.PeerID == 0 {
 			return fmt.Errorf("PeersConfiguration: empty peer id in config: %v", *c)
 		}
 		if raftPeerAttr.RaftListenAddr == "" {
 			return fmt.Errorf("PeersConfiguration: empty RaftListenAddr in config: %v", *c)
 		}
-		if _, ok := idSet[raftPeerAttr.Id]; ok {
+		if _, ok := idSet[raftPeerAttr.PeerID]; ok {
 			return fmt.Errorf("PeersConfiguration: found duplicate ID in config: %v", *c)
 		}
-		idSet[raftPeerAttr.Id] = struct{}{}
+		idSet[raftPeerAttr.PeerID] = struct{}{}
 		if _, ok := endpointSet[raftPeerAttr.RaftListenAddr]; ok {
 			return fmt.Errorf("PeersConfiguration: found duplicate RaftListenAddr in config: %v", *c)
 		}
@@ -129,7 +129,7 @@ func (c *PeersConfiguration) MatchRemoteCluster(remoteCtx context.Context, clust
 		From:      fromID,
 	}
 	for _, raftPeerAttr := range c.RaftPeersAttribute() {
-		if raftPeerAttr.Id == fromID {
+		if raftPeerAttr.PeerID == fromID {
 			continue
 		}
 		select {
@@ -140,7 +140,7 @@ func (c *PeersConfiguration) MatchRemoteCluster(remoteCtx context.Context, clust
 		res, err := func(to uint64) (babuzapb.GetClusterPeersResponse, error) {
 			req.To = to
 			return client.GetClusterPeers(req)
-		}(raftPeerAttr.Id)
+		}(raftPeerAttr.PeerID)
 		if err != nil || res.Status != babuzapb.SUCCESS {
 			continue
 		}
@@ -156,7 +156,12 @@ func (c *PeersConfiguration) equal(other []babuzapb.Peer) bool {
 		return false
 	}
 	for _, peer := range other {
-		if _, ok := c.raftPeersAttr[peer.RaftPeerAttr.Id]; !ok {
+		if _, ok := c.raftPeersAttr[peer.RaftPeerAttr.PeerID]; !ok {
+			return false
+		}
+		peerAttr, ok := c.raftPeersAttr[peer.RaftPeerAttr.PeerID]
+		if !ok || peerAttr.RaftListenAddr != peer.RaftPeerAttr.RaftListenAddr ||
+			peerAttr.IsLearner != peer.RaftPeerAttr.IsLearner {
 			return false
 		}
 	}

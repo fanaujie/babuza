@@ -30,9 +30,10 @@ type Node struct {
 
 func (n *Node) Start() error {
 	var err error
-	if err = n.trans.SetupTransportRaft(&transportProcessor{
+	tp := &transportProcessor{
 		Node: n,
-	}); err != nil {
+	}
+	if err = n.trans.SetupTransportRaft(tp); err != nil {
 		return err
 	}
 	defer func() {
@@ -85,15 +86,16 @@ func (n *Node) Stop() {
 	n.replicaSet = nil
 }
 
-func (n *Node) CreateRaftGroup(groupID ibabuza.RaftGroupID, peersConfig *babuza.PeersConfiguration, join bool) error {
-	if _, ok := n.replicaSet.Load(groupID); ok {
-		return errors.Errorf("Node[%d] raft group %d already exists", n.config.NodeID, groupID)
+func (n *Node) CreateRaftGroup(peersConfig *PeersConfiguration, join bool) error {
+	if _, ok := n.replicaSet.Load(peersConfig.GroupID()); ok {
+		return errors.Errorf("Node[%d] raft group %d already exists", n.config.NodeID, peersConfig.GroupID())
 	}
-	r, err := bootstrapReplicaWithConfiguration(n, groupID, peersConfig, join)
+	r, err := bootstrapReplicaWithConfiguration(n, peersConfig, join)
 	if err != nil {
-		return errors.Errorf("Node[%d] failed to bootstrap new replica(raft group id=%d): %v", n.config.NodeID, groupID, err)
+		return errors.Errorf("Node[%d] failed to bootstrap new replica(raft group id=%d): %v", n.config.NodeID,
+			peersConfig.GroupID(), err)
 	}
-	n.replicaSet.Store(groupID, r)
+	n.replicaSet.Store(peersConfig.GroupID(), r)
 	return r.Start()
 }
 
@@ -171,7 +173,7 @@ func (n *Node) RemovePeer(ctx context.Context, groupID ibabuza.RaftGroupID, sess
 	if n.config.DisableProposalForwarding && r.Status().IsLeader() == false {
 		return babuza.NewErrorResult(babuza.ErrNotLeader)
 	}
-	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeRemoveNode, babuzapb.RaftPeerAttribute{Id: peerID}, false)
+	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeRemoveNode, babuzapb.RaftPeerAttribute{PeerID: peerID}, false)
 }
 
 func (n *Node) AddLearner(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,

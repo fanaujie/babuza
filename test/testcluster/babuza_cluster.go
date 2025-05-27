@@ -382,7 +382,7 @@ func (c *BabuzaCluster) CheckPeerExists(ctx context.Context, ClusterID uint64, p
 				return fmt.Errorf("test cluster: leader id mismatch. expected=%d, actual=%d", ClusterID, clusterCfg.LeaderID)
 			}
 			for _, p := range clusterCfg.Peers {
-				if p.RaftPeerAttr.Id == peer.ID() && p.RaftPeerAttr.IsLearner == peer.IsPeerLearner() &&
+				if p.RaftPeerAttr.PeerID == peer.ID() && p.RaftPeerAttr.IsLearner == peer.IsPeerLearner() &&
 					p.RaftPeerAttr.RaftListenAddr == raftListenAddr {
 					return nil
 				}

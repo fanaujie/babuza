@@ -47,9 +47,25 @@ type AppliedRaftNode interface {
 }
 
 type AppliedTransport interface {
-	AddPeer(uint64, string)
-	UpdatePeer(uint64, string)
-	RemovePeer(uint64)
+	AddPeer(ibabuza.RaftGroupID, uint64, string)
+	UpdatePeer(ibabuza.RaftGroupID, uint64, string)
+	RemovePeer(ibabuza.RaftGroupID, uint64)
+}
+
+type appliedTransportAdaptor struct {
+	trans ibabuza.Transport
+}
+
+func (m *appliedTransportAdaptor) AddPeer(id ibabuza.RaftGroupID, peerID uint64, raftListenAddr string) {
+	m.trans.AddPeer(peerID, raftListenAddr)
+}
+
+func (m *appliedTransportAdaptor) UpdatePeer(id ibabuza.RaftGroupID, peerID uint64, raftListenAddr string) {
+	m.trans.UpdatePeer(peerID, raftListenAddr)
+}
+
+func (m *appliedTransportAdaptor) RemovePeer(id ibabuza.RaftGroupID, peerID uint64) {
+	m.trans.RemovePeer(peerID)
 }
 
 type appliedFacadeImpl struct {
@@ -86,9 +102,11 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 		replier:             r.resultReplier,
 		cluster:             r.cluster,
 		raftNode:            r,
-		trans:               r.trans,
-		log:                 r.logger,
-		metricsCollector:    r.metricsCollector,
+		trans: &appliedTransportAdaptor{
+			r.trans,
+		},
+		log:              r.logger,
+		metricsCollector: r.metricsCollector,
 	}
 }
 
@@ -185,13 +203,13 @@ func (a *appliedFacadeImpl) clusterValidateAndApply(changeType raftpb.ConfChange
 	switch changeType {
 	case raftpb.ConfChangeAddNode, raftpb.ConfChangeAddLearnerNode:
 		if req.PromoteLearner {
-			return a.cluster.Promote(req.RaftPeerAttr.Id)
+			return a.cluster.Promote(req.RaftPeerAttr.PeerID)
 		} else {
 			return a.cluster.Add(req.RaftPeerAttr)
 		}
 
 	case raftpb.ConfChangeRemoveNode:
-		return a.cluster.Remove(req.RaftPeerAttr.Id)
+		return a.cluster.Remove(req.RaftPeerAttr.PeerID)
 	case raftpb.ConfChangeUpdateNode:
 		return a.cluster.Update(req.RaftPeerAttr)
 	}
@@ -210,8 +228,9 @@ func (a *appliedFacadeImpl) parseConfChangeEntry(entry raftpb.Entry) (raftpb.Con
 		return cc, confReq, fmt.Errorf("unmarshal conf request: %w", err)
 	}
 
-	if cc.NodeID != confReq.RaftPeerAttr.Id {
-		return cc, confReq, fmt.Errorf("node ID mismatch: %d != %d", cc.NodeID, confReq.RaftPeerAttr.Id)
+	if cc.NodeID != confReq.RaftPeerAttr.PeerID {
+		return cc, confReq, fmt.Errorf("node ID mismatch: %d != %d", cc.NodeID,
+			confReq.RaftPeerAttr.PeerID)
 	}
 
 	return cc, confReq, nil
@@ -231,10 +250,11 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 
 	switch cc.Type {
 	case raftpb.ConfChangeAddNode, raftpb.ConfChangeAddLearnerNode:
-		if !confReq.PromoteLearner && confReq.RaftPeerAttr.Id != a.cluster.LocalPeerID() {
-			a.trans.AddPeer(confReq.RaftPeerAttr.Id, confReq.RaftPeerAttr.RaftListenAddr)
+		if !confReq.PromoteLearner && confReq.RaftPeerAttr.PeerID != a.cluster.LocalPeerID() {
+			a.trans.AddPeer(ibabuza.RaftGroupID(confReq.GroupID), confReq.RaftPeerAttr.PeerID,
+				confReq.RaftPeerAttr.RaftListenAddr)
 		}
-		if confReq.RaftPeerAttr.Id == a.cluster.LocalPeerID() {
+		if confReq.RaftPeerAttr.PeerID == a.cluster.LocalPeerID() {
 			if cc.Type == raftpb.ConfChangeAddLearnerNode {
 				a.metricsCollector.SetIsLearner(1)
 			} else {
@@ -246,11 +266,12 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 		if cc.NodeID == a.cluster.LocalPeerID() {
 			removeSelf = true
 		} else {
-			a.trans.RemovePeer(confReq.RaftPeerAttr.Id)
+			a.trans.RemovePeer(ibabuza.RaftGroupID(confReq.GroupID), confReq.RaftPeerAttr.PeerID)
 		}
 	case raftpb.ConfChangeUpdateNode:
-		if confReq.RaftPeerAttr.Id != a.cluster.LocalPeerID() {
-			a.trans.UpdatePeer(confReq.RaftPeerAttr.Id, confReq.RaftPeerAttr.RaftListenAddr)
+		if confReq.RaftPeerAttr.PeerID != a.cluster.LocalPeerID() {
+			a.trans.UpdatePeer(ibabuza.RaftGroupID(confReq.GroupID),
+				confReq.RaftPeerAttr.PeerID, confReq.RaftPeerAttr.RaftListenAddr)
 		}
 	}
 

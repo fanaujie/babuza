@@ -8,15 +8,14 @@ import (
 
 type RaftMessageHandler interface {
 	ProcessBatchMessage(babuzapb.BatchMessage)
-	ProcessMultiRaftMessage(babuzapb.MultiRaftBatchMessage)
 	ProcessSnapshotMessage(babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse
 	GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse
 	PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse
 }
 
 type RaftStatusReporter interface {
-	ReportUnreachable(id uint64)
-	ReportSnapshot(id uint64, status raft.SnapshotStatus)
+	ReportUnreachable(peerID uint64)
+	ReportSnapshot(peerID uint64, status raft.SnapshotStatus)
 }
 
 type SnapshotStorage interface {
@@ -54,7 +53,6 @@ type TransportServer interface {
 
 type TransportClient interface {
 	SendBatchMessage(babuzapb.BatchMessage) error
-	SendMultiRaftMessage(babuzapb.MultiRaftBatchMessage) error
 	SendSnapshotMessage(babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error)
 	GetClusterPeers(babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error)
 	PublishApplicationService(babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error)
@@ -70,7 +68,7 @@ type TLSConfig struct {
 }
 
 type TransportConfig struct {
-	PeerId      uint64
+	LocalNodeID uint64
 	PeerAddress string
 	TLSConfig
 }

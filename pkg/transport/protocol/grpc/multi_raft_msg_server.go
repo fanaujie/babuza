@@ -16,7 +16,7 @@ type MultiRaftMsgServer struct {
 	pb.MultiRaftTransportServer
 	cfg         ibabuza.TransportConfig
 	grpcNetwork NetworkIO
-	raft        ibabuza.RaftMessageHandler
+	raft        ibabuza.MultiRaftNodeHandler
 	logger      ibabuza.Logger
 	server      *grpc.Server
 	listener    net.Listener
@@ -25,7 +25,7 @@ type MultiRaftMsgServer struct {
 func NewMultiRaftMsgServer(
 	cfg ibabuza.TransportConfig,
 	grpcNetwork NetworkIO,
-	raft ibabuza.RaftMessageHandler,
+	raft ibabuza.MultiRaftNodeHandler,
 	logger ibabuza.Logger,
 ) *MultiRaftMsgServer {
 	return &MultiRaftMsgServer{
@@ -38,7 +38,7 @@ func NewMultiRaftMsgServer(
 
 func (r *MultiRaftMsgServer) Start() error {
 	var err error
-	r.logger.Infof("grpc[multi-raft server] peerID(%d) Start", r.cfg.PeerId)
+	r.logger.Infof("grpc[multi-raft server] peerID(%d) Start", r.cfg.LocalNodeID)
 
 	r.server, err = r.grpcNetwork.NewServer(r.cfg.TLSConfig)
 	if err != nil {
@@ -61,14 +61,14 @@ func (r *MultiRaftMsgServer) Start() error {
 }
 
 func (r *MultiRaftMsgServer) Stop() error {
-	r.logger.Infof("grpc[multi-raft server] peerID(%d) Stop", r.cfg.PeerId)
+	r.logger.Infof("grpc[multi-raft server] peerID(%d) Stop", r.cfg.LocalNodeID)
 
 	r.server.Stop()
 
 	if r.listener != nil {
 		if err := r.listener.Close(); err != nil {
 			r.logger.Warningf("grpc[multi-raft server]: failed to close listener. peerID(%d) endpoint(%s) err(%s)",
-				r.cfg.PeerId, r.cfg.PeerAddress, err.Error())
+				r.cfg.LocalNodeID, r.cfg.PeerAddress, err.Error())
 		}
 	}
 	return nil
@@ -100,9 +100,5 @@ func (r *MultiRaftMsgServer) SendSnapshotMessage(ctx context.Context, msg *babuz
 
 func (r *MultiRaftMsgServer) GetClusterPeers(ctx context.Context, req *babuzapb.GetClusterPeersRequest) (*babuzapb.GetClusterPeersResponse, error) {
 	res := r.raft.GetClusterPeer(*req)
-	return &res, nil
-}
-func (r *MultiRaftMsgServer) PublishApplicationService(ctx context.Context, req *babuzapb.PublishApplicationServiceRequest) (*babuzapb.PublishApplicationServiceResponse, error) {
-	res := r.raft.PublishApplicationService(*req)
 	return &res, nil
 }

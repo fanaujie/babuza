@@ -38,7 +38,7 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig PeersConfigurat
 		return nil, err
 	}
 	if err = trans.SetupTransportConfig(ibabuza.TransportConfig{
-		PeerId:      cfg.LocalPeerID,
+		LocalNodeID: cfg.LocalPeerID,
 		PeerAddress: cfg.RaftListenAddress,
 		TLSConfig:   cfg.TLSConfig,
 	}); err != nil {
@@ -192,8 +192,8 @@ func startNode(cfg BabuzaConfig, configuration PeersConfiguration, raftNode ibab
 		return nil, err
 	}
 	for _, raftPeerAttr := range configuration.RaftPeersAttribute() {
-		if raftPeerAttr.Id != cfg.LocalPeerID {
-			trans.AddPeer(raftPeerAttr.Id, raftPeerAttr.RaftListenAddr)
+		if raftPeerAttr.PeerID != cfg.LocalPeerID {
+			trans.AddPeer(raftPeerAttr.PeerID, raftPeerAttr.RaftListenAddr)
 		}
 	}
 	if cfg.Join {
@@ -263,6 +263,7 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 	if err = metadata.Unmarshal(walReplayResult.Metadata()); err != nil {
 		return nil, err
 	}
+	cluster.SetClusterID(metadata.ClusterID)
 	cluster.SetLocalPeerID(metadata.LocalPeerID)
 	entryStorage, err := bootstrapStorage.GetEntryStorage()
 	if err != nil {
@@ -293,7 +294,7 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 				cfg.ClusterID, cluster.ClusterID(), cfg.LocalPeerID, cluster.LocalPeerID())
 		}
 		for _, p := range cluster.Peers() {
-			trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)
+			trans.AddPeer(p.RaftPeerAttr.PeerID, p.RaftPeerAttr.RaftListenAddr)
 		}
 		status.SetAppliedIndex(snap.Metadata.Index)
 		status.SetAppliedTerm(snap.Metadata.Term)
@@ -341,7 +342,7 @@ func listRaftConfChangeAddNodeIds(snap *raftpb.Snapshot, result ibabuza.ReplayWa
 	sort.Sort(ids)
 	return ids, nil
 }
-func createRaftConfigChangeEntries(newLocalId uint64, newRaftListenAddr string, confChangeIds UInt64Slice,
+func createRaftConfigChangeEntries(newLocalPeerID uint64, newRaftListenAddr string, confChangeIds UInt64Slice,
 	state *raftpb.HardState) ([]raftpb.Entry, error) {
 
 	if state == nil || raft.IsEmptyHardState(*state) {
@@ -349,7 +350,7 @@ func createRaftConfigChangeEntries(newLocalId uint64, newRaftListenAddr string, 
 	}
 	match := false
 	for _, id := range confChangeIds {
-		if id == newLocalId {
+		if id == newLocalPeerID {
 			match = true
 		}
 	}
@@ -359,7 +360,7 @@ func createRaftConfigChangeEntries(newLocalId uint64, newRaftListenAddr string, 
 	if !match {
 
 		raftPeerAttr := babuzapb.RaftPeerAttribute{
-			Id:             newLocalId,
+			PeerID:         newLocalPeerID,
 			RaftListenAddr: newRaftListenAddr,
 		}
 		req := babuzapb.ConfChangeRequest{
@@ -370,7 +371,7 @@ func createRaftConfigChangeEntries(newLocalId uint64, newRaftListenAddr string, 
 			return nil, err
 		}
 		cc.Type = raftpb.ConfChangeAddNode
-		cc.NodeID = newLocalId
+		cc.NodeID = newLocalPeerID
 		cc.Context = data
 		ccData, err := cc.Marshal()
 		if err != nil {
@@ -387,7 +388,7 @@ func createRaftConfigChangeEntries(newLocalId uint64, newRaftListenAddr string, 
 	}
 
 	for _, id := range confChangeIds {
-		if id == newLocalId {
+		if id == newLocalPeerID {
 			continue
 		}
 		cc.Type = raftpb.ConfChangeRemoveNode

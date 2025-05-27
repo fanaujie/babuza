@@ -34,7 +34,7 @@ func convertRaftClusterPeersToResponse(babuza *raft.Raft, sessionId, sessionSeqN
 	}
 	for _, peer := range babuzaResponse.Peers {
 		r := response.ClusterPeer{
-			Id:             peer.RaftPeerAttr.Id,
+			Id:             peer.RaftPeerAttr.PeerID,
 			RaftListenAddr: peer.RaftPeerAttr.RaftListenAddr,
 			IsLearner:      peer.RaftPeerAttr.IsLearner,
 		}

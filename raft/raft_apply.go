@@ -79,7 +79,7 @@ func (r *Raft) applyEntries(entries []raftpb.Entry) {
 						Index:   entry.Index,
 						Command: normalReq.StateMachineLog,
 					})
-					
+
 					r.metricsCollector.RecordApplySec(time.Since(now).Seconds())
 					if err := session.AddResult(normalReq.Context.SequenceNum, now.UnixNano(), ar); err != nil {
 						r.logger.Panicf("raft[id=%d]: add result failed: %v", r.cluster.LocalPeerID(), err)
@@ -119,10 +119,10 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 	}
 	r.trans.RemovePeers()
 	for _, p := range r.cluster.Peers() {
-		if p.RaftPeerAttr.Id == r.cluster.LocalPeerID() {
+		if p.RaftPeerAttr.PeerID == r.cluster.LocalPeerID() {
 			continue
 		}
-		r.trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)
+		r.trans.AddPeer(p.RaftPeerAttr.PeerID, p.RaftPeerAttr.RaftListenAddr)
 	}
 	r.logger.Infof("raft[id=%d]: snapshot applied to storage successfully (index=%d)",
 		r.cluster.LocalPeerID(), snap.Metadata.Index)

@@ -63,7 +63,7 @@ func (h *ClusterPeerResourceHandler) joinPeerFunc(w http.ResponseWriter, r *http
 		LowestSequenceNumberNotYetReplied: req.LowestSequenceNumberNotYetReplied,
 	}
 	peerAttr := babuzapb.RaftPeerAttribute{
-		Id:             req.RaftPeerId,
+		PeerID:         req.RaftPeerId,
 		RaftListenAddr: req.RaftListenAddr,
 		IsLearner:      req.IsLearner,
 	}
@@ -126,7 +126,7 @@ func (h *ClusterPeerResourceHandler) updatePeerFunc(w http.ResponseWriter, r *ht
 		LowestSequenceNumberNotYetReplied: req.LowestSequenceNumberNotYetReplied,
 	}
 	peerAttr := babuzapb.RaftPeerAttribute{
-		Id:             req.RaftPeerId,
+		PeerID:         req.RaftPeerId,
 		RaftListenAddr: req.RaftListenAddr,
 	}
 	updateRes := h.r.UpdatePeer(r.Context(), session, peerAttr)

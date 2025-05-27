@@ -31,9 +31,9 @@ type replicaRequestQueue struct {
 }
 
 type coalescedHeartbeatQueue struct {
-	heartbeatMsg               *xsync.Map[uint64, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]]
-	heartbeatRespMsg           *xsync.Map[uint64, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]]
-	heartbeatLastActiveUnixSec *xsync.Map[uint64, int64]
+	heartbeatMsg               *xsync.Map[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]]
+	heartbeatRespMsg           *xsync.Map[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]]
+	heartbeatLastActiveUnixSec *xsync.Map[string, int64]
 }
 
 func newReplicaRequestQueue() *replicaRequestQueue {
@@ -138,7 +138,8 @@ func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.Client
 	raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) babuza.ProposedResult {
 
 	replyID := r.idGenerator.Next()
-	config, err := babuza.EncodeClusterConfigurationChange(replyID, session, changeType, raftPeerAttr, promoteLearner)
+	config, err := babuza.EncodeClusterConfigurationChange(replyID, session, changeType,
+		r.cluster.GroupID(), raftPeerAttr, promoteLearner)
 	if err != nil {
 		return babuza.NewErrorResult(err)
 	}

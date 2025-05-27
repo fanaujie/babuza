@@ -43,9 +43,9 @@ func (n *Node) replicaRaftTick() {
 func (n *Node) replicaCoalescedHeartbeat() {
 	n.logger.Debugf("Node[%d] coalesced heartbeat start", n.config.NodeID)
 	defer n.logger.Debugf("Node[%d] coalesced heartbeat end", n.config.NodeID)
-	ticker := time.NewTicker(time.Duration(n.config.CoalescedHeartbeatTickMs) * time.Millisecond)
+	heartbeatTicker := time.NewTicker(time.Duration(n.config.CoalescedHeartbeatTickMs) * time.Millisecond)
 	checkTicker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
+	defer heartbeatTicker.Stop()
 	defer checkTicker.Stop()
 	for {
 		select {
@@ -53,35 +53,35 @@ func (n *Node) replicaCoalescedHeartbeat() {
 			return
 		case <-checkTicker.C:
 			// check heartbeat last active time
-			n.coalescedHeartbeatQueue.heartbeatLastActiveUnixSec.Range(func(to uint64, lastActiveTime int64) bool {
+			n.coalescedHeartbeatQueue.heartbeatLastActiveUnixSec.Range(func(peerIden string, lastActiveTime int64) bool {
 				if lastActiveTime > 0 {
 					if time.Now().Unix()-lastActiveTime > invalidNodeTimeSecond {
-						n.coalescedHeartbeatQueue.heartbeatLastActiveUnixSec.Delete(to)
-						n.coalescedHeartbeatQueue.heartbeatMsg.Delete(to)
-						n.coalescedHeartbeatQueue.heartbeatRespMsg.Delete(to)
+						n.coalescedHeartbeatQueue.heartbeatLastActiveUnixSec.Delete(peerIden)
+						n.coalescedHeartbeatQueue.heartbeatMsg.Delete(peerIden)
+						n.coalescedHeartbeatQueue.heartbeatRespMsg.Delete(peerIden)
 					}
 				}
 				return true
 			})
-		case <-ticker.C:
-			n.coalescedHeartbeatQueue.heartbeatMsg.Range(func(to uint64, q *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]) bool {
+		case <-heartbeatTicker.C:
+			n.coalescedHeartbeatQueue.heartbeatMsg.Range(func(peerIden string, q *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]) bool {
 				heartbeats, err := q.Get()
 				if err != nil {
 					n.logger.Panicf("Node[%d] coalesced heartbeat get error: %v", n.config.NodeID, err)
 				}
 				if len(heartbeats.Data) > 0 {
-					n.trans.SendHeartbeat(to, heartbeats.Data, nil)
+					n.trans.SendHeartbeat(peerIden, heartbeats.Data, nil)
 					heartbeats.Release()
 				}
 				return true
 			})
-			n.coalescedHeartbeatQueue.heartbeatRespMsg.Range(func(to uint64, q *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]) bool {
+			n.coalescedHeartbeatQueue.heartbeatRespMsg.Range(func(peerIden string, q *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]) bool {
 				heartbeats, err := q.Get()
 				if err != nil {
 					n.logger.Panicf("Node[%d] coalesced heartbeat response get error: %v", n.config.NodeID, err)
 				}
 				if len(heartbeats.Data) > 0 {
-					n.trans.SendHeartbeat(to, nil, heartbeats.Data)
+					n.trans.SendHeartbeat(peerIden, nil, heartbeats.Data)
 					heartbeats.Release()
 				}
 				return true

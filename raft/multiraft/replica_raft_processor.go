@@ -34,7 +34,7 @@ func (r *replica) ProcessReady() {
 			select {
 			case r.readStateCh <- rd.ReadStates[len(rd.ReadStates)-1]:
 			case <-time.After(time.Second):
-				r.logger.Warningf("groupID[%d] nodeID[%d]: timed out sending read state. timeout=%d",
+				r.logger.Warningf("groupID[%d] peerID[%d]: timed out sending read state. timeout=%d",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), time.Second)
 			case <-r.closer.CloseCh():
 				return
@@ -47,7 +47,7 @@ func (r *replica) ProcessReady() {
 		waitWALSync := shouldWaitWALSync(rd)
 		if waitWALSync {
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-				r.logger.Panicf("groupID[%d] nodeID[%d] save hard state, entries and snapshot failed: %v",
+				r.logger.Panicf("groupID[%d] peerID[%d] save hard state, entries and snapshot failed: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 		}
@@ -60,29 +60,28 @@ func (r *replica) ProcessReady() {
 			if err := r.applyJobQueue.Put(func() {
 				r.doApplyJob(applyData)
 			}); err != nil {
-				r.logger.Panicf("groupID[%d] nodeID[%d]: error putting apply job: %v",
+				r.logger.Panicf("groupID[%d] peerID[%d]: error putting apply job: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 		}
 		if isLeader {
 			r.sendRaftMessage(rd.Messages)
 		}
-
 		if !waitWALSync {
 			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-				r.logger.Panicf("groupID[%d] nodeID[%d] save hard state, entries and snapshot failed: %v",
+				r.logger.Panicf("groupID[%d] peerID[%d] save hard state, entries and snapshot failed: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
 		}
 
 		if !emptySnapshot {
 			if err := r.storage.ApplyAndReleaseSnapshot(rd.Snapshot); err != nil {
-				r.logger.Panicf("groupID[%d] nodeID[%d]: apply snapshot failed: %v", r.cluster.GroupID(),
+				r.logger.Panicf("groupID[%d] peerID[%d]: apply snapshot failed: %v", r.cluster.GroupID(),
 					r.cluster.LocalPeerID(), err)
 			}
 		}
 		if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
-			r.logger.Panicf("groupID[%d] nodeID[%d]: append entries failed: %v", r.cluster.GroupID(),
+			r.logger.Panicf("groupID[%d] peerID[%d]: append entries failed: %v", r.cluster.GroupID(),
 				r.cluster.LocalPeerID(), err)
 		}
 		// The applyConfChangeEntry must be handled here to ensure the leader sends out messages (e.g., removing a follower) first.
@@ -107,7 +106,7 @@ func (r *replica) ProcessStep() {
 	}
 	items, err := r.requestQueue.step.Get()
 	if err != nil {
-		r.logger.Warningf("groupID[%d] nodeID[%d]: error getting step: %v", r.cluster.GroupID(),
+		r.logger.Warningf("groupID[%d] peerID[%d]: error getting step: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 		return
 	}
@@ -117,7 +116,7 @@ func (r *replica) ProcessStep() {
 	for _, msg := range items.Data {
 
 		if err = r.mu.rawNode.Step(msg); err != nil {
-			r.logger.Warningf("groupID[%d] nodeID[%d]: error stepping message: %v", r.cluster.GroupID(),
+			r.logger.Warningf("groupID[%d] peerID[%d]: error stepping message: %v", r.cluster.GroupID(),
 				r.cluster.LocalPeerID(), err)
 		}
 
@@ -130,7 +129,7 @@ func (r *replica) ProcessProposal() {
 	}
 	items, err := r.requestQueue.proposal.Get()
 	if err != nil {
-		r.logger.Warningf("groupID[%d] nodeID[%d]: error getting proposals: %v", r.cluster.GroupID(),
+		r.logger.Warningf("groupID[%d] peerID[%d]: error getting proposals: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 		return
 	}
@@ -160,7 +159,7 @@ func (r *replica) ProcessConfigChange() {
 	}
 	items, err := r.requestQueue.configChange.Get()
 	if err != nil {
-		r.logger.Warningf("groupID[%d] nodeID[%d]: error getting config change: %v", r.cluster.GroupID(),
+		r.logger.Warningf("groupID[%d] peerID[%d]: error getting config change: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
 		return
 	}
@@ -210,31 +209,57 @@ func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
 		m := &msgs[i]
 		switch m.Type {
 		case raftpb.MsgHeartbeat:
-			hq, _ := r.coalescedHeartbeat.heartbeatMsg.LoadOrStore(m.To,
-				queue.NewSwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage](r.config.CoalescedHeartbeatQueueSize, nil))
-			if err := hq.Put(babuzapb.MultiRaftHeartbeatMessage{
-				GroupID: uint64(r.cluster.GroupID()),
-				Term:    m.Term,
-				Commit:  m.Commit,
-				Context: m.Context,
+			peerIden, err := r.transport.ResolvePeerAddress(r.cluster.GroupID(), m.To)
+			if err != nil {
+				r.logger.Warningf("groupID[%d] peerID[%d]: error resolving peer address for heartbeat: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+				continue
+			}
+			hq, _ := r.coalescedHeartbeat.heartbeatMsg.LoadOrStore(peerIden,
+				queue.NewSwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage](r.config.CoalescedHeartbeatQueueSize,
+					func(messages []babuzapb.MultiRaftHeartbeatMessage) {
+						for index, _ := range messages {
+							messages[index] = babuzapb.MultiRaftHeartbeatMessage{}
+						}
+					}))
+			if err = hq.Put(babuzapb.MultiRaftHeartbeatMessage{
+				GroupID:    uint64(r.cluster.GroupID()),
+				FromPeerID: m.From,
+				ToPeerID:   m.To,
+				Term:       m.Term,
+				Commit:     m.Commit,
+				Context:    m.Context,
 			}); err != nil {
-				r.logger.Panicf("groupID[%d] nodeID[%d]: error putting heartbeat message: %v",
+				r.logger.Panicf("groupID[%d] peerID[%d]: error putting heartbeat message: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
-			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(m.To, time.Now().Unix())
+			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(peerIden, time.Now().Unix())
 		case raftpb.MsgHeartbeatResp:
-			hq, _ := r.coalescedHeartbeat.heartbeatRespMsg.LoadOrStore(m.To,
-				queue.NewSwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage](r.config.CoalescedHeartbeatQueueSize, nil))
-			if err := hq.Put(babuzapb.MultiRaftHeartbeatMessage{
-				GroupID: uint64(r.cluster.GroupID()),
-				Term:    m.Term,
-				Commit:  m.Commit,
-				Context: m.Context,
+			peerIden, err := r.transport.ResolvePeerAddress(r.cluster.GroupID(), m.To)
+			if err != nil {
+				r.logger.Warningf("groupID[%d] peerID[%d]: error resolving peer address for heartbeat response: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+				continue
+			}
+			hq, _ := r.coalescedHeartbeat.heartbeatRespMsg.LoadOrStore(peerIden,
+				queue.NewSwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage](r.config.CoalescedHeartbeatQueueSize,
+					func(messages []babuzapb.MultiRaftHeartbeatMessage) {
+						for index, _ := range messages {
+							messages[index] = babuzapb.MultiRaftHeartbeatMessage{}
+						}
+					}))
+			if err = hq.Put(babuzapb.MultiRaftHeartbeatMessage{
+				GroupID:    uint64(r.cluster.GroupID()),
+				FromPeerID: m.From,
+				ToPeerID:   m.To,
+				Term:       m.Term,
+				Commit:     m.Commit,
+				Context:    m.Context,
 			}); err != nil {
-				r.logger.Panicf("groupID[%d] nodeID[%d]: error putting heartbeat response message: %v",
+				r.logger.Panicf("groupID[%d] peerID[%d]: error putting heartbeat response message: %v",
 					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
 			}
-			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(m.To, time.Now().Unix())
+			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(peerIden, time.Now().Unix())
 		case raftpb.MsgAppResp:
 			if !m.Reject && m.Index > appRespIndex {
 				appRespIndex = m.Index

@@ -22,28 +22,38 @@ type raftStateMachineWrapper struct {
 }
 
 type bootstrapStorage struct {
-	stateMachineRootDir      string
-	stateMachineFactory      stateMachineFactory
-	walManager               ibabuza.MultiRaftWalManager
-	snapshotManager          ibabuza.MultiRaftSnapshotManager
-	logger                   ibabuza.Logger
-	mu                       sync.RWMutex
-	entryStorage             map[ibabuza.RaftGroupID]ibabuza.EntryStorage
-	wal                      map[ibabuza.RaftGroupID]ibabuza.Wal
-	raftStateMachineWrappers map[ibabuza.RaftGroupID]raftStateMachineWrapper
+	stateMachineRootDir string
+	stateMachineFactory stateMachineFactory
+	walManager          ibabuza.MultiRaftWalManager
+	snapshotManager     ibabuza.MultiRaftSnapshotManager
+	logger              ibabuza.Logger
+	// mu protects entryStorage, wal, and raftStateMachineWrappers
+	mapMu struct {
+		sync.RWMutex
+		entryStorage             map[ibabuza.RaftGroupID]ibabuza.EntryStorage
+		wal                      map[ibabuza.RaftGroupID]ibabuza.Wal
+		raftStateMachineWrappers map[ibabuza.RaftGroupID]raftStateMachineWrapper
+	}
 }
 
 func newBootstrapStorage(stateMachineRootDir string, stateMachineFactory stateMachineFactory,
 	walManager ibabuza.MultiRaftWalManager, snapManager ibabuza.MultiRaftSnapshotManager, logger ibabuza.Logger) BootstrapStorage {
 	return &bootstrapStorage{
-		stateMachineRootDir:      stateMachineRootDir,
-		stateMachineFactory:      stateMachineFactory,
-		walManager:               walManager,
-		snapshotManager:          snapManager,
-		logger:                   logger,
-		entryStorage:             make(map[ibabuza.RaftGroupID]ibabuza.EntryStorage),
-		wal:                      make(map[ibabuza.RaftGroupID]ibabuza.Wal),
-		raftStateMachineWrappers: make(map[ibabuza.RaftGroupID]raftStateMachineWrapper),
+		stateMachineRootDir: stateMachineRootDir,
+		stateMachineFactory: stateMachineFactory,
+		walManager:          walManager,
+		snapshotManager:     snapManager,
+		logger:              logger,
+		mapMu: struct {
+			sync.RWMutex
+			entryStorage             map[ibabuza.RaftGroupID]ibabuza.EntryStorage
+			wal                      map[ibabuza.RaftGroupID]ibabuza.Wal
+			raftStateMachineWrappers map[ibabuza.RaftGroupID]raftStateMachineWrapper
+		}{
+			entryStorage:             make(map[ibabuza.RaftGroupID]ibabuza.EntryStorage),
+			wal:                      make(map[ibabuza.RaftGroupID]ibabuza.Wal),
+			raftStateMachineWrappers: make(map[ibabuza.RaftGroupID]raftStateMachineWrapper),
+		},
 	}
 }
 
@@ -68,10 +78,10 @@ func (s *bootstrapStorage) OpenWalAndReplay(groupID ibabuza.RaftGroupID, snapsho
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.entryStorage[groupID] = entryStorage
-	s.wal[groupID] = wal
+	s.mapMu.Lock()
+	defer s.mapMu.Unlock()
+	s.mapMu.entryStorage[groupID] = entryStorage
+	s.mapMu.wal[groupID] = wal
 	return result, nil
 }
 
@@ -80,17 +90,17 @@ func (s *bootstrapStorage) CreateWal(groupID ibabuza.RaftGroupID, metadata babuz
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.entryStorage[groupID] = entryStorage
-	s.wal[groupID] = w
+	s.mapMu.Lock()
+	defer s.mapMu.Unlock()
+	s.mapMu.entryStorage[groupID] = entryStorage
+	s.mapMu.wal[groupID] = w
 	return nil
 }
 
 func (s *bootstrapStorage) GetEntryStorage(groupID ibabuza.RaftGroupID) (ibabuza.EntryStorage, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if entryStorage, ok := s.entryStorage[groupID]; ok {
+	s.mapMu.RLock()
+	defer s.mapMu.RUnlock()
+	if entryStorage, ok := s.mapMu.entryStorage[groupID]; ok {
 		return entryStorage, nil
 	}
 	return nil, errors.Errorf("entry storage not found for groupID %v", groupID)
@@ -102,7 +112,9 @@ func (s *bootstrapStorage) CreateStateMachine(groupID ibabuza.RaftGroupID) (ibab
 		return nil, err
 	}
 
-	s.raftStateMachineWrappers[groupID] = raftStateMachineWrapper{
+	s.mapMu.Lock()
+	defer s.mapMu.Unlock()
+	s.mapMu.raftStateMachineWrappers[groupID] = raftStateMachineWrapper{
 		stateMachine: stateMachine,
 		bsmInfo:      bsmInfo,
 	}
@@ -135,10 +147,12 @@ func (s *bootstrapStorage) OpenStateMachine(groupID ibabuza.RaftGroupID, snapsho
 					return nil, err
 				}
 			}
-			s.raftStateMachineWrappers[groupID] = raftStateMachineWrapper{
+			s.mapMu.Lock()
+			s.mapMu.raftStateMachineWrappers[groupID] = raftStateMachineWrapper{
 				stateMachine: stateMachine,
 				bsmInfo:      bsmInfo,
 			}
+			s.mapMu.Unlock()
 			bsmInfo.SetOpenAppliedIndex(diskAppliedIndex)
 			return responseSerializer, nil
 		}
@@ -155,7 +169,9 @@ func (s *bootstrapStorage) OpenStateMachine(groupID ibabuza.RaftGroupID, snapsho
 			}
 		}
 	}
-	s.raftStateMachineWrappers[groupID] = raftStateMachineWrapper{
+	s.mapMu.Lock()
+	defer s.mapMu.Unlock()
+	s.mapMu.raftStateMachineWrappers[groupID] = raftStateMachineWrapper{
 		stateMachine: stateMachine,
 		bsmInfo:      bsmInfo,
 	}
@@ -163,9 +179,9 @@ func (s *bootstrapStorage) OpenStateMachine(groupID ibabuza.RaftGroupID, snapsho
 }
 
 func (s *bootstrapStorage) SetWalNoFSync(groupID ibabuza.RaftGroupID) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if wal, ok := s.wal[groupID]; ok {
+	s.mapMu.RLock()
+	defer s.mapMu.RUnlock()
+	if wal, ok := s.mapMu.wal[groupID]; ok {
 		wal.SetUnsafeNoFsync()
 		return nil
 	}
@@ -173,21 +189,21 @@ func (s *bootstrapStorage) SetWalNoFSync(groupID ibabuza.RaftGroupID) error {
 }
 
 func (s *bootstrapStorage) GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuza.RaftStorage, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mapMu.RLock()
+	defer s.mapMu.RUnlock()
 	snapshotManager := s.snapshotManager.GetGroupSnapshot(groupID)
 
-	entryStorage, ok := s.entryStorage[groupID]
+	entryStorage, ok := s.mapMu.entryStorage[groupID]
 	if !ok {
 		return nil, errors.Errorf("entry storage not found for groupID %v", groupID)
 	}
 
-	wal, ok := s.wal[groupID]
+	wal, ok := s.mapMu.wal[groupID]
 	if !ok {
 		return nil, errors.Errorf("wal not found for groupID %v", groupID)
 	}
 
-	wrapper, ok := s.raftStateMachineWrappers[groupID]
+	wrapper, ok := s.mapMu.raftStateMachineWrappers[groupID]
 	if !ok {
 		return nil, errors.Errorf("state machine not found for groupID %v", groupID)
 	}
@@ -218,9 +234,9 @@ func (s *bootstrapStorage) createStateMachineInternal(groupID ibabuza.RaftGroupI
 		responseSerializer = stateMachine.(ibabuza.SessionEnabledStateMachine).GetResponseSerializer()
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	_, ok := s.raftStateMachineWrappers[groupID]
+	s.mapMu.Lock()
+	defer s.mapMu.Unlock()
+	_, ok := s.mapMu.raftStateMachineWrappers[groupID]
 	if ok {
 		return nil, nil, nil, errors.Errorf("groupID %v statemachine already exists", groupID)
 	}

@@ -17,7 +17,7 @@ option (gogoproto.goproto_sizecache_all) = false;
 
 
 message RaftPeerAttribute {
-  uint64    id = 1;
+  uint64    peerID = 1;
   string    raftListenAddr = 2;
   bool      isLearner = 3;
 }
@@ -93,8 +93,9 @@ message NormalRequest {
 
 message ConfChangeRequest {
   RequestContext    context = 1 [(gogoproto.nullable) = false];
-  RaftPeerAttribute raftPeerAttr = 2 [(gogoproto.nullable) = false];
-  bool              promoteLearner = 3;
+  uint64            groupID = 2;
+  RaftPeerAttribute raftPeerAttr = 3 [(gogoproto.nullable) = false];
+  bool              promoteLearner = 4;
 }
 
 message WalMetadata {

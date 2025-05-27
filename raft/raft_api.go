@@ -198,7 +198,7 @@ func (r *Raft) AddVotingPeer(ctx context.Context, session ClientSession, raftPee
 	}
 	replyID := r.idGenerator.Next()
 	confChange, err := EncodeClusterConfigurationChange(replyID, session, raftpb.ConfChangeAddNode,
-		raftPeerAttr, false)
+		r.cluster.GroupID(), raftPeerAttr, false)
 	if err != nil {
 		NewErrorResult(err)
 	}
@@ -215,7 +215,7 @@ func (r *Raft) RemovePeer(ctx context.Context, session ClientSession, peerID uin
 	}
 	replyID := r.idGenerator.Next()
 	confChange, err := EncodeClusterConfigurationChange(replyID, session, raftpb.ConfChangeRemoveNode,
-		babuzapb.RaftPeerAttribute{Id: peerID}, false)
+		r.cluster.GroupID(), babuzapb.RaftPeerAttribute{PeerID: peerID}, false)
 	if err != nil {
 		return NewErrorResult(err)
 	}
@@ -231,7 +231,8 @@ func (r *Raft) UpdatePeer(ctx context.Context, session ClientSession, raftPeerAt
 		return NewErrorResult(ErrNotLeader)
 	}
 	replyID := r.idGenerator.Next()
-	confChange, err := EncodeClusterConfigurationChange(replyID, session, raftpb.ConfChangeUpdateNode, raftPeerAttr, false)
+	confChange, err := EncodeClusterConfigurationChange(replyID, session, raftpb.ConfChangeUpdateNode,
+		r.cluster.GroupID(), raftPeerAttr, false)
 	if err != nil {
 		return NewErrorResult(err)
 	}
@@ -250,7 +251,8 @@ func (r *Raft) AddLearner(ctx context.Context, session ClientSession, raftPeerAt
 		return NewErrorResult(ErrNotLearner)
 	}
 	replyID := r.idGenerator.Next()
-	confChange, err := EncodeClusterConfigurationChange(replyID, session, raftpb.ConfChangeAddLearnerNode, raftPeerAttr, false)
+	confChange, err := EncodeClusterConfigurationChange(replyID, session, raftpb.ConfChangeAddLearnerNode,
+		r.cluster.GroupID(), raftPeerAttr, false)
 	if err != nil {
 		return NewErrorResult(err)
 	}
@@ -276,9 +278,10 @@ func (r *Raft) PromoteLearner(ctx context.Context, session ClientSession, peerID
 			return nil, err
 		}
 		replyID := r.idGenerator.Next()
-		confChange, err := EncodeClusterConfigurationChange(replyID, session, raftpb.ConfChangeAddNode, babuzapb.RaftPeerAttribute{
-			Id: peerID,
-		}, true)
+		confChange, err := EncodeClusterConfigurationChange(replyID, session, raftpb.ConfChangeAddNode,
+			r.cluster.GroupID(), babuzapb.RaftPeerAttribute{
+				PeerID: peerID,
+			}, true)
 		if err != nil {
 			return nil, err
 		}

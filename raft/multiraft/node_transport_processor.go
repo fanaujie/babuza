@@ -24,8 +24,8 @@ func (d *transportProcessor) ProcessMultiRaftMessage(batchMsg babuzapb.MultiRaft
 				}
 				if err = r.EnqueueStep(raftpb.Message{
 					Type:    raftpb.MsgHeartbeat,
-					To:      msg.Message.To,
-					From:    msg.Message.From,
+					To:      m.ToPeerID,
+					From:    m.FromPeerID,
 					Term:    m.Term,
 					Commit:  m.Commit,
 					Context: m.Context,
@@ -42,8 +42,8 @@ func (d *transportProcessor) ProcessMultiRaftMessage(batchMsg babuzapb.MultiRaft
 				}
 				if err = r.EnqueueStep(raftpb.Message{
 					Type:    raftpb.MsgHeartbeatResp,
-					To:      msg.Message.To,
-					From:    msg.Message.From,
+					To:      m.ToPeerID,
+					From:    m.FromPeerID,
 					Term:    m.Term,
 					Commit:  m.Commit,
 					Context: m.Context,

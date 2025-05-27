@@ -39,7 +39,7 @@ func BootstrapOrRecoverNode(cfg NodeConfig, factory ComponentsFactory, trans iba
 	logger := factory.GetLogger()
 	storage := newBootstrapStorage(stateMachineRootDir, factory, walManager, snapshotManager, logger)
 	if err := trans.SetupTransportConfig(ibabuza.TransportConfig{
-		PeerId:      cfg.NodeID,
+		LocalNodeID: cfg.NodeID,
 		PeerAddress: cfg.RaftListenAddress,
 		TLSConfig:   cfg.TLSConfig,
 	}); err != nil {
@@ -86,9 +86,13 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		if err = metadata.Unmarshal(walReplayResult.Metadata()); err != nil {
 			return nil, err
 		}
+		if metadata.ClusterID != config.ClusterID || metadata.GroupID != uint64(groupID) {
+			return nil, fmt.Errorf("wal metadata clusterID %d, groupID %d not match with config clusterID %d, groupID %d",
+				metadata.ClusterID, metadata.GroupID, config.ClusterID, groupID)
+		}
 		replicaCluster.SetClusterID(metadata.ClusterID)
 		replicaCluster.SetLocalPeerID(metadata.LocalPeerID)
-		replicaCluster.SetGroupID(ibabuza.RaftGroupID(metadata.GroupID))
+		replicaCluster.SetGroupID(groupID)
 		entryStorage, err := storage.GetEntryStorage(groupID)
 		if err != nil {
 			return nil, err
@@ -118,13 +122,13 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 				replicaSession); err != nil {
 				return nil, err
 			}
-			if replicaCluster.ClusterID() != config.ClusterID || replicaCluster.GroupID() != groupID || replicaCluster.LocalPeerID() != config.NodeID {
-				return nil, fmt.Errorf("clusterID %d, groupID %d, localPeerID %d not match with config clusterID %d, groupID %d, localPeerID %d",
-					replicaCluster.ClusterID(), replicaCluster.GroupID(), replicaCluster.LocalPeerID(),
-					config.ClusterID, groupID, config.NodeID)
+			if replicaCluster.ClusterID() != config.ClusterID || replicaCluster.GroupID() != groupID {
+				return nil, fmt.Errorf("clusterID %d, groupID %d, not match with config clusterID %d, groupID %d",
+					replicaCluster.ClusterID(), replicaCluster.GroupID(),
+					config.ClusterID, groupID)
 			}
 			for _, p := range replicaCluster.Peers() {
-				trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)
+				trans.AddPeer(groupID, p.RaftPeerAttr.PeerID, p.RaftPeerAttr.RaftListenAddr)
 			}
 			replicaStatus.SetAppliedIndex(snap.Metadata.Index)
 			replicaStatus.SetAppliedTerm(snap.Metadata.Term)
@@ -164,7 +168,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		r := &replica{
 			raftGroup: RaftGroup{
 				GroupID: groupID,
-				PeerID:  config.NodeID,
+				PeerID:  metadata.LocalPeerID,
 			},
 			config:                    replicaRaftConfig,
 			cluster:                   replicaCluster,
@@ -215,9 +219,9 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 		replicaEventCh: make(chan replicaEvent, 8),
 		replicaSet:     xsync.NewMap[ibabuza.RaftGroupID, *replica](),
 		coalescedHeartbeatQueue: &coalescedHeartbeatQueue{
-			heartbeatMsg:               xsync.NewMap[uint64, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
-			heartbeatRespMsg:           xsync.NewMap[uint64, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
-			heartbeatLastActiveUnixSec: xsync.NewMap[uint64, int64](),
+			heartbeatMsg:               xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
+			heartbeatRespMsg:           xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
+			heartbeatLastActiveUnixSec: xsync.NewMap[string, int64](),
 		},
 		idGenerator: idgenerator.New(config.NodeID, uint64(time.Now().Nanosecond())),
 	}
@@ -231,13 +235,28 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 	return n
 }
 
-func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, configuration *babuza.PeersConfiguration,
+func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfiguration,
 	joinExistingRaftGroup bool) (*replica, error) {
+
+	if err := configuration.Validate(); err != nil {
+		return nil, err
+	}
+	var localPeerID uint64
+	groupID := configuration.GroupID()
+	_ = configuration.Visit(func(attribute babuzapb.RaftPeerAttribute) error {
+		if attribute.RaftListenAddr == node.config.RaftListenAddress {
+			localPeerID = attribute.PeerID
+		}
+		return nil
+	})
+	if localPeerID == 0 {
+		return nil, fmt.Errorf("local peer ID not found in configuration: %v", configuration)
+	}
 
 	replicaCluster := node.factory.CreateCluster()
 	replicaCluster.SetClusterID(node.config.ClusterID)
 	replicaCluster.SetGroupID(groupID)
-	replicaCluster.SetLocalPeerID(node.config.NodeID)
+	replicaCluster.SetLocalPeerID(localPeerID)
 	replicaStatus := status.New()
 
 	replicaSession := node.factory.CreateSessionManager()
@@ -249,13 +268,9 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 	if err = replicaSession.SetResponseSerializer(responseSerializer); err != nil {
 		return nil, err
 	}
-	var peers []raft.Peer
-	if err = configuration.Validate(); err != nil {
-		return nil, err
-	}
 	for _, raftPeerAttr := range configuration.RaftPeersAttribute() {
-		if raftPeerAttr.Id != node.config.NodeID {
-			node.trans.AddPeer(raftPeerAttr.Id, raftPeerAttr.RaftListenAddr)
+		if raftPeerAttr.PeerID != localPeerID {
+			node.trans.AddPeer(groupID, raftPeerAttr.PeerID, raftPeerAttr.RaftListenAddr)
 		}
 	}
 	if joinExistingRaftGroup {
@@ -267,7 +282,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 			defer client.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 			defer cancel()
-			return configuration.MatchRemoteCluster(ctx, node.config.ClusterID, node.config.NodeID,
+			return configuration.MatchRemoteCluster(ctx, node.config.ClusterID, localPeerID,
 				groupID, client)
 		}(); err != nil {
 			return nil, err
@@ -275,7 +290,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 	}
 	if err = node.storage.CreateWal(groupID, babuzapb.WalMetadata{
 		ClusterID:   node.config.ClusterID,
-		LocalPeerID: node.config.NodeID,
+		LocalPeerID: localPeerID,
 		GroupID:     uint64(groupID),
 	}); err != nil {
 		return nil, err
@@ -300,7 +315,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 		LinearizedReadRequestTimeout: node.config.LinearizedReadRequestTimeout,
 	}
 
-	raftCfg := replicaRaftConfig.convertToRaftConfig(node.config.NodeID, node.logger, entryStorage)
+	raftCfg := replicaRaftConfig.convertToRaftConfig(localPeerID, node.logger, entryStorage)
 	rawNode, err := raft.NewRawNode(raftCfg)
 	if err != nil {
 		return nil, err
@@ -311,7 +326,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 	// When false: It indicates starting a new raft group from scratch.
 	if !joinExistingRaftGroup {
 		// as a learner will not bootstrap
-		peers, err = configuration.ToRaftPeers()
+		peers, err := configuration.ToRaftPeers()
 		if err != nil {
 			return nil, err
 		}
@@ -331,7 +346,7 @@ func bootstrapReplicaWithConfiguration(node *Node, groupID ibabuza.RaftGroupID, 
 	r := &replica{
 		raftGroup: RaftGroup{
 			GroupID: groupID,
-			PeerID:  node.config.NodeID,
+			PeerID:  localPeerID,
 		},
 		config:                    replicaRaftConfig,
 		cluster:                   replicaCluster,
