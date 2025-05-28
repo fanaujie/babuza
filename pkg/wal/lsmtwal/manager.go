@@ -23,11 +23,10 @@ const (
 )
 
 type keyPrefix struct {
-	hardState       []byte
-	snapshot        []byte
-	entry           []byte
-	metadata        []byte
-	reverseMetadata []byte
+	hardState []byte
+	snapshot  []byte
+	entry     []byte
+	metadata  []byte
 }
 
 type BadgerWalManager struct {
@@ -50,28 +49,15 @@ func newKeyPrefix(groupID ibabuza.RaftGroupID) *keyPrefix {
 			return key
 		}
 		key := make([]byte, 16)
-		binary.BigEndian.PutUint64(key[:8], uint64(groupID))
-		binary.BigEndian.PutUint64(key[8:], typeID)
-		return key
-	}
-	createReverseKey := func(typeID uint64) []byte {
-		if groupID == 0 {
-			key := make([]byte, 8)
-			binary.BigEndian.PutUint64(key, typeID)
-			return key
-		}
-		key := make([]byte, 16)
 		binary.BigEndian.PutUint64(key[:8], typeID)
 		binary.BigEndian.PutUint64(key[8:], uint64(groupID))
 		return key
 	}
-
 	return &keyPrefix{
-		hardState:       createKey(keyHardState),
-		snapshot:        createKey(keySnapshot),
-		entry:           createKey(keyEntry),
-		metadata:        createKey(keyMetadata),
-		reverseMetadata: createReverseKey(keyMetadata),
+		hardState: createKey(keyHardState),
+		snapshot:  createKey(keySnapshot),
+		entry:     createKey(keyEntry),
+		metadata:  createKey(keyMetadata),
 	}
 }
 

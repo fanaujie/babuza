@@ -1061,9 +1061,11 @@ func TestMultipleGroup(t *testing.T) {
 	cuConfig.CoalescedHeartbeatQueueSize = 1024
 	cuConfig.TransportPeerQueueSize = 1024 * 10
 	cuConfig.TransportHeartbeatBufferSize = 1024
-	cuConfig.SchedulerShardNum = 100
-	cuConfig.SchedulerShardWorkerNum = 5
+	cuConfig.SchedulerShardNum = 16
+	cuConfig.SchedulerShardWorkerNum = 8
 	cuConfig.SchedulerQueueSize = 128
+	cuConfig.RaftConfig.ElectionTicks = 20
+	cuConfig.RaftConfig.HeartbeatTicks = 3
 	nm, err := createNodeManager(nodeCfgs, cuConfig, rootDir, newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NotNil(t, nm)

@@ -101,7 +101,7 @@ func (s *KVServiceServer) ClusterConfiguration(ctx context.Context, req *kvbench
 	cfg := s.raft.ClusterConfiguration()
 	for _, peer := range cfg.Peers {
 		peerAttr = append(peerAttr, &kvbenchpb.RaftPeerAttribute{
-			PeerID:         peer.RaftPeerAttr.Id,
+			PeerID:         peer.RaftPeerAttr.PeerID,
 			RaftListenAddr: peer.RaftPeerAttr.RaftListenAddr,
 			GrpcListenAddr: peer.AppServiceAddresses[0],
 			IsLearner:      peer.RaftPeerAttr.IsLearner,

@@ -130,10 +130,7 @@ func (m *MultiRaftBadgerWalManager) CreateWal(groupID ibabuza.RaftGroupID, metad
 		if err != nil {
 			return err
 		}
-		if err = txn.Set(groupPrefix.metadata, data); err != nil {
-			return err
-		}
-		return txn.Set(groupPrefix.reverseMetadata, nil)
+		return txn.Set(groupPrefix.metadata, data)
 	}); err != nil {
 		return nil, nil, err
 	}

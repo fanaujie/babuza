@@ -132,10 +132,7 @@ func TestMultiRaftBadgerWalManager_CreateWal(t *testing.T) {
 	groupPrefix := manager.prefixCache.get(groupID)
 
 	err = manager.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(groupPrefix.reverseMetadata)
-		assert.NoError(t, err)
-
-		item, err = txn.Get(groupPrefix.metadata)
+		item, err := txn.Get(groupPrefix.metadata)
 		assert.NoError(t, err)
 
 		err = item.Value(func(val []byte) error {

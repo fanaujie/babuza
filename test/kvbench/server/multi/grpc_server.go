@@ -127,9 +127,9 @@ func (s *GrpcServer) ClusterConfiguration(ctx context.Context, req *kvbenchpb.Cl
 		peers := make([]*kvbenchpb.RaftPeerAttribute, 0, len(config.Peers))
 		for _, peer := range config.Peers {
 			peers = append(peers, &kvbenchpb.RaftPeerAttribute{
-				PeerID:         peer.RaftPeerAttr.Id,
+				PeerID:         peer.RaftPeerAttr.PeerID,
 				RaftListenAddr: peer.RaftPeerAttr.RaftListenAddr,
-				GrpcListenAddr: s.serverCfg.InitialGRPCPeers[peer.RaftPeerAttr.Id],
+				GrpcListenAddr: s.serverCfg.InitialGRPCPeers[peer.RaftPeerAttr.PeerID],
 				IsLearner:      peer.RaftPeerAttr.IsLearner,
 			})
 		}

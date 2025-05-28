@@ -10,12 +10,12 @@ import (
 	"github.com/fanaujie/babuza/pkg/snapshot"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/durable"
 	"github.com/fanaujie/babuza/pkg/transport"
+	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"github.com/fanaujie/babuza/pkg/wal/lsmtwal"
-	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/raft/multiraft"
 	"github.com/fanaujie/babuza/test/kvbench/statemachine"
 	"go.uber.org/zap"
@@ -153,7 +153,7 @@ func (s *Server) Start() error {
 	}, durable.NewSnapshotFS(), s.logger)
 
 	// Create transport
-	peerManager := transport.NewMultiRaftPeerManager()
+	peerManager := transport.NewPeerManager[peer.MultiRaftPeer, ibabuza.MultiRaftStatusReporter]()
 	trans := transport.NewMultiRaftTransport(
 		s.cfg.ClusterID,
 		peerManager,
@@ -163,7 +163,7 @@ func (s *Server) Start() error {
 		protocol.NewGrpcMultiRaft(s.logger),
 		s.logger,
 		transport.SetTransportOptionsWithPeerQueueSize(2048*10),
-		transport.SetTransportOptionsWithHeartbeatBufferSize(2048),
+		transport.SetTransportOptionsWithHeartbeatBufferSize(1024),
 	)
 
 	// Create MultiRaft node
@@ -184,8 +184,8 @@ func (s *Server) Start() error {
 		groupID := ibabuza.RaftGroupID(i + 1) // Group IDs start from 1
 
 		// Create peer configuration for this group
-		peersConfig := babuza.NewPeersConfiguration()
-
+		peersConfig := multiraft.NewPeersConfiguration()
+		peersConfig.SetGroupID(groupID)
 		for peerID, addr := range s.cfg.InitialRaftPeers {
 			if err = peersConfig.AddPeer(peerID, addr, false); err != nil {
 				return fmt.Errorf("failed to add peer %d: %w", peerID, err)
@@ -193,7 +193,7 @@ func (s *Server) Start() error {
 		}
 
 		// Create Raft group
-		if err := s.multiRaftNode.CreateRaftGroup(groupID, peersConfig, false); err != nil {
+		if err = s.multiRaftNode.CreateRaftGroup(peersConfig, false); err != nil {
 			return fmt.Errorf("failed to create Raft group %d: %w", groupID, err)
 		}
 
