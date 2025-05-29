@@ -27,8 +27,10 @@ export GOBIN=${BUILD_PATH}/bin
 export PATH="${GOBIN}:${PATH}"
 
 GEN_IBABUZA_RPOTO_PATH="${PWD}/ibabuza/babuzapb"
+
 GEN_PKG_PROTO_PATH="${PWD}/pkg/wal/babuzawal/pb ${PWD}/pkg/cluster/pb"
 GEN_GRPC_PROTO_PATH="${PWD}/pkg/transport/protocol/grpc/pb ${PWD}/test/kvbench/kvbenchpb"
+GEN_EXAMPLE_PROTO_PATH="${PWD}/examples/redis-cluster/pkg/pb"
 
 mkdir -p "${BUILD_PATH}/bin"
 
@@ -65,5 +67,12 @@ done
 for dir in ${GEN_GRPC_PROTO_PATH}; do
   pushd "${dir}"
     protoc --gogofast_out=plugins=grpc:. --gogofast_opt=paths=source_relative -I=".:${GOGOPROTO_ROOT}:${GOPATH}/src:${GEN_IBABUZA_RPOTO_PATH}" ./*.proto
+  popd
+done
+
+
+for dir in ${GEN_EXAMPLE_PROTO_PATH}; do
+  pushd "${dir}"
+    protoc --gogofast_out=. --gogofast_opt=paths=source_relative -I=".:${GOGOPROTO_ROOT}:${GOPATH}/src:${GEN_IBABUZA_RPOTO_PATH}" ./*.proto
   popd
 done

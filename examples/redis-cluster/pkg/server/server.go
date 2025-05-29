@@ -2,7 +2,8 @@ package server
 
 import (
 	"fmt"
-	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/server/redisstore"
+	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/cluster"
+	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/command"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -24,11 +25,11 @@ import (
 )
 
 type Server struct {
-	config       Config
-	node         *multiraft.Node
-	redisServer  *redcon.Server
-	commandTable *redisstore.CommandTable
-	logger       ibabuza.Logger
+	config      Config
+	node        *multiraft.Node
+	redisServer *redcon.Server
+	router      *command.Router
+	logger      ibabuza.Logger
 }
 
 type ShardInfo struct {
@@ -44,15 +45,14 @@ func NewServer(config Config) (*Server, error) {
 	babuzaLogger := logger.NewRaftLogger(zapLogger.Sugar())
 
 	server := &Server{
-		config:       config,
-		commandTable: redisstore.NewCommandTable(),
-		logger:       babuzaLogger,
+		config: config,
+		logger: babuzaLogger,
 	}
-
 	if err = server.setupNode(); err != nil {
 		return nil, err
 	}
-
+	server.router = command.NewRouter(config.InitialShards, cluster.NewMultiRaft(server.node))
+	server.registerCommand()
 	return server, nil
 }
 
@@ -133,7 +133,7 @@ func (s *Server) Run() error {
 func (s *Server) setupRedisServer() {
 	s.redisServer = redcon.NewServer(s.config.ListenAddr,
 		func(conn redcon.Conn, cmd redcon.Command) {
-			s.commandTable.RunCommand(conn, cmd)
+			s.router.RunCommand(conn, cmd)
 		},
 		func(conn redcon.Conn) bool {
 			s.logger.Infof("New connection: %s", conn.RemoteAddr())
@@ -168,4 +168,19 @@ func (s *Server) createInitialShards() error {
 		s.logger.Infof("Created shard %d", groupID)
 	}
 	return nil
+}
+
+func (s *Server) registerCommand() {
+	s.router.RegisterCommand(command.RedisPing, command.Handler{
+		OperationCmd: true,
+		Executor:     command.Ping,
+	})
+	s.router.RegisterCommand(command.RedisEcho, command.Handler{
+		OperationCmd: true,
+		Executor:     command.Echo,
+	})
+	s.router.RegisterCommand(command.RedisSet, command.Handler{
+		OperationCmd: false,
+		Executor:     command.Set,
+	})
 }

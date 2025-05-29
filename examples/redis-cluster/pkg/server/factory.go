@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/server/redisstore"
+	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/redisstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/cluster"
 	"github.com/fanaujie/babuza/pkg/session"

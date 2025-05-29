@@ -1,0 +1,31 @@
+syntax = "proto3";
+package redispb;
+option go_package = "github.com/fanaujie/babuza/examples/redis-cluster/pkg/pb";
+
+
+import "gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_enum_prefix_all) = false;
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+
+
+enum RedisDataType {
+  None = 0;
+  String = 1;
+}
+
+message RedisCommand {
+    RedisDataType type     = 1;
+    string command         = 2;
+    int64   argsLength     = 3;
+    repeated bytes  args   = 4;
+}
+
+
+
