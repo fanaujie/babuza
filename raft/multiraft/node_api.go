@@ -272,6 +272,14 @@ func (n *Node) Configuration(groupID ibabuza.RaftGroupID) (babuza.ClusterConfigu
 	return r.ClusterConfiguration(), nil
 }
 
+func (n *Node) Query(groupID ibabuza.RaftGroupID, key any) (any, error) {
+	r, err := n.getReplica(groupID)
+	if err != nil {
+		return nil, err
+	}
+	return r.storage.GetStateMachine().Query(key)
+}
+
 func (n *Node) Status(groupID ibabuza.RaftGroupID) (babuza.Status, error) {
 	r, err := n.getReplica(groupID)
 	if err != nil {

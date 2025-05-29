@@ -2,6 +2,7 @@ package redisstore
 
 import (
 	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/pb"
+	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/rediscommon"
 	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/redisstore/datastruct"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
@@ -82,4 +83,15 @@ func (r *RedisStateMachine) RestoreFromSnapshot(reader ibabuza.StateMachineSnaps
 // Close cleans up resources
 func (r *RedisStateMachine) Close() error {
 	return nil
+}
+
+// Query retrieves a value based on the key
+func (r *RedisStateMachine) Query(key any) (any, error) {
+	if cmd, ok := key.(*pb.RedisCommand); ok {
+		switch cmd.Type {
+		case pb.String:
+			return r.processString(*cmd)
+		}
+	}
+	return nil, rediscommon.ErrInvalidQueryType
 }

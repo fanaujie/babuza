@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/pb"
 	"github.com/fanaujie/babuza/ibabuza"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/tidwall/redcon"
@@ -14,6 +15,7 @@ type ClusterManager interface {
 	IsLocalLeaderForGroup(groupID ibabuza.RaftGroupID) bool
 	RedirectToLeader(conn redcon.Conn, cmd redcon.Command, groupID ibabuza.RaftGroupID) ([]byte, error)
 	Propose(ctx context.Context, groupID ibabuza.RaftGroupID, log []byte) babuza.ProposedResult
+	Query(groupID ibabuza.RaftGroupID, key *pb.RedisCommand) (any, error)
 }
 
 type Handler struct {
@@ -51,7 +53,7 @@ func (r *Router) RunCommand(conn redcon.Conn, cmd redcon.Command) {
 			handler.Executor(context.Background(), conn, cmd, 0, r.clusterMgr)
 			return
 		}
-		groupID := ibabuza.RaftGroupID(r.hashKey(cmd.Args[0]) % uint32(r.shards))
+		groupID := ibabuza.RaftGroupID(r.hashKey(cmd.Args[1]) % uint32(r.shards))
 		if !r.clusterMgr.IsLocalLeaderForGroup(groupID) {
 			resp, err := r.clusterMgr.RedirectToLeader(conn, cmd, groupID)
 			if err != nil {

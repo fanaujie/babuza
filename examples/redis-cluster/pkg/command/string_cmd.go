@@ -2,7 +2,9 @@ package command
 
 import (
 	"context"
+	"errors"
 	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/pb"
+	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/rediscommon"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/tidwall/redcon"
 )
@@ -14,7 +16,7 @@ func Set(ctx context.Context, conn redcon.Conn, cmd redcon.Command, groupID ibab
 	}
 	proposal := pb.RedisCommand{
 		Type:       pb.String,
-		Command:    RedisSet,
+		Command:    rediscommon.RedisSet,
 		ArgsLength: 2,
 		Args:       [][]byte{cmd.Args[1], cmd.Args[2]},
 	}
@@ -31,4 +33,26 @@ func Set(ctx context.Context, conn redcon.Conn, cmd redcon.Command, groupID ibab
 		return
 	}
 	conn.WriteString("OK")
+}
+
+func Get(ctx context.Context, conn redcon.Conn, cmd redcon.Command, groupID ibabuza.RaftGroupID, clusterMgr ClusterManager) {
+	if len(cmd.Args) != 2 {
+		conn.WriteError("ERR wrong number of arguments for 'get' command")
+		return
+	}
+	v, err := clusterMgr.Query(groupID, &pb.RedisCommand{
+		Type:       pb.String,
+		Command:    rediscommon.RedisGet,
+		ArgsLength: 1,
+		Args:       [][]byte{cmd.Args[1]},
+	})
+	if err != nil {
+		if errors.Is(err, rediscommon.ErrKeyNotExist) {
+			conn.WriteNull()
+			return
+		}
+		conn.WriteError("ERR " + err.Error())
+		return
+	}
+	conn.WriteBulkString(v.(string))
 }

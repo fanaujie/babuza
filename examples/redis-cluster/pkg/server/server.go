@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/cluster"
 	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/command"
+	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/rediscommon"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -171,16 +172,20 @@ func (s *Server) createInitialShards() error {
 }
 
 func (s *Server) registerCommand() {
-	s.router.RegisterCommand(command.RedisPing, command.Handler{
+	s.router.RegisterCommand(rediscommon.RedisPing, command.Handler{
 		OperationCmd: true,
 		Executor:     command.Ping,
 	})
-	s.router.RegisterCommand(command.RedisEcho, command.Handler{
+	s.router.RegisterCommand(rediscommon.RedisEcho, command.Handler{
 		OperationCmd: true,
 		Executor:     command.Echo,
 	})
-	s.router.RegisterCommand(command.RedisSet, command.Handler{
+	s.router.RegisterCommand(rediscommon.RedisSet, command.Handler{
 		OperationCmd: false,
 		Executor:     command.Set,
+	})
+	s.router.RegisterCommand(rediscommon.RedisGet, command.Handler{
+		OperationCmd: false,
+		Executor:     command.Get,
 	})
 }
