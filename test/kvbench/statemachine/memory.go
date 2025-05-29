@@ -140,6 +140,10 @@ func (m *MemoryStore) Close() error {
 	return nil
 }
 
+func (m *MemoryStore) Query(key any) (any, error) {
+	return nil, nil
+}
+
 // Errors
 var (
 	ErrKeyNotFound    = errors.New("key not found")

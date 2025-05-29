@@ -187,6 +187,10 @@ func (s *SimpleStateMachine) RestoreFromSnapshot(reader ibabuza.StateMachineSnap
 	return nil
 }
 
+func (s *SimpleStateMachine) Query(key any) (any, error) {
+	return nil, nil
+}
+
 func (s *SimpleStateMachine) Close() error {
 	return nil
 }

@@ -251,12 +251,16 @@ func (s *BadgerStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *BadgerStore) Load(key string) (value string, err error) {
+func (s *BadgerStore) Query(key any) (value any, err error) {
 	var v []byte
+	sKey, ok := key.(string)
+	if !ok {
+		return nil, kverror.ErrInvalidKeyType
+	}
 	if err = s.db.View(func(txn *badger.Txn) error {
-		item, gErr := txn.Get([]byte(key))
+		item, gErr := txn.Get([]byte(sKey))
 		if gErr != nil {
-			if gErr == badger.ErrKeyNotFound {
+			if errors.Is(gErr, badger.ErrKeyNotFound) {
 				return kverror.ErrKeyNotFound
 			}
 			return err

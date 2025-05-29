@@ -174,11 +174,14 @@ func (m *MemoryStore) Close() error {
 	return nil
 }
 
-func (m *MemoryStore) Load(key string) (string, error) {
+func (m *MemoryStore) Query(key any) (any, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	r, ok := m.store.Get(string(key))
+	sKey, ok := key.(string)
+	if !ok {
+		return nil, kverror.ErrInvalidKeyType
+	}
+	r, ok := m.store.Get(sKey)
 	if !ok {
 		return "", kverror.ErrKeyNotFound
 	}

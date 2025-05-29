@@ -36,6 +36,7 @@ type BaseStateMachine interface {
 	SaveSnapshot(StateMachineSnapshotContext, StateMachineSnapshotWriter) error
 	RestoreFromSnapshot(StateMachineSnapshotReader) error
 	Close() error
+	Query(key any) (any, error)
 }
 
 type MemoryStateMachine BaseStateMachine

@@ -15,7 +15,7 @@ import (
 )
 
 type ReadKvStore interface {
-	Load(key string) (string, error)
+	Query(key any) (any, error)
 	Hash() uint32
 }
 
@@ -83,7 +83,7 @@ func (h *KvStoreResourceHandler) readKvStoreFunc(w http.ResponseWriter, r *http.
 		},
 	}
 	var err error
-	res.Value, err = h.store.Load(res.Key)
+	v, err := h.store.Query(res.Key)
 	if err != nil {
 		if errors.Is(err, kverror.ErrKeyNotFound) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -92,6 +92,7 @@ func (h *KvStoreResourceHandler) readKvStoreFunc(w http.ResponseWriter, r *http.
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	res.Value = v.(string)
 	if err = writeHttpResponse(w, res); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

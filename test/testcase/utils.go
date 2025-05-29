@@ -391,7 +391,7 @@ func (c *raftKVDirectClient) Get(ctx context.Context, key string) (string, error
 	err := r.LinearizableRead(ctx)
 	defer cancel()
 	if err == nil {
-		v, err := r.GetStateMachine().(*kvstore.MemoryStoreWithSession).Load(key)
+		v, err := r.GetStateMachine().(*kvstore.MemoryStoreWithSession).Query(key)
 		if err != nil {
 			if errors.Is(err, kverror.ErrKeyNotFound) {
 				return "", nil
@@ -399,7 +399,8 @@ func (c *raftKVDirectClient) Get(ctx context.Context, key string) (string, error
 			fmt.Println("raftKVDirectClient: failed to get key", err.Error())
 			return "", err
 		}
-		return v, nil
+		sv := v.(string)
+		return sv, nil
 	}
 	fmt.Println("raftKVDirectClient: failed to get key", err.Error())
 	return "", err
