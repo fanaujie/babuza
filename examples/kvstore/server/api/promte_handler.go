@@ -51,7 +51,7 @@ func (h *PromoteLearnerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	promoteRes := h.r.PromoteLearner(r.Context(), session, req.RaftPeerId)
 	defer promoteRes.Release()
 	if ar := promoteRes.WaitForApplyResult(); ar.Error != nil {
-		processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
+		processRaftProposeError(ar.Error, w)
 		return
 	}
 	res := convertRaftClusterPeersToResponse(h.r, session.SessionID, session.SequenceNumber)

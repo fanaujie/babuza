@@ -74,8 +74,7 @@ type replica struct {
 	firstCommitInTermNotifier *syncutil.EventSignal
 	leaderChangeNotifier      *syncutil.EventSignal
 	linearizeReqNotifier      *syncutil.SignalManager
-	leaderCh                  chan leaderChange
-	replicaEventCh            chan replicaEvent
+	raftEventPublisher        *raftEventPublisher
 	receivedSnapshotMsgCh     chan babuzapb.SnapshotMessage
 	readStateCh               chan raft.ReadState
 	readIndexCh               chan struct{}

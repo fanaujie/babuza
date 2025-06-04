@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"github.com/fanaujie/babuza/ibabuza"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"time"
@@ -21,6 +22,9 @@ func (r *Raft) processRaftReady() {
 		case <-r.closer.CloseCh():
 			return
 		case rd := <-r.raftNode.Ready():
+			if !raft.IsEmptyHardState(rd.HardState) {
+				r.status.SetHardStateTerm(rd.HardState.Term)
+			}
 			if rd.SoftState != nil {
 				r.updateLeadership(*rd.SoftState)
 				isLeader = rd.SoftState.RaftState == raft.StateLeader
@@ -33,10 +37,6 @@ func (r *Raft) processRaftReady() {
 				case <-r.closer.CloseCh():
 					return
 				}
-			}
-
-			if raft.IsEmptyHardState(rd.HardState) {
-				r.status.SetHardStateTerm(rd.HardState.Term)
 			}
 			r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
 			waitWALSync := shouldWaitWALSync(rd)
@@ -166,18 +166,32 @@ func (r *Raft) updateLeadership(currentState raft.SoftState) {
 	} else {
 		r.metricsCollector.SetHasLeader(1)
 	}
-	if currentState.Lead == r.config.LocalPeerID {
+	if currentState.Lead == r.cluster.LocalPeerID() {
 		r.status.SetLeader(true)
 		r.metricsCollector.SetIsLeader(1)
-		r.leaderCh <- true
+		if r.raftEventPublisher != nil {
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:  ibabuza.AcquiredLeader,
+				PeerID: currentState.Lead,
+			})
+		}
 	} else {
 		if r.status.IsLeader() {
 			r.status.SetLeader(false)
 			r.metricsCollector.SetIsLeader(0)
-			r.leaderCh <- false
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:  ibabuza.LostLeader,
+				PeerID: r.cluster.LocalPeerID(),
+			})
 		}
 	}
 	if newLeader {
+		if r.raftEventPublisher != nil {
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:  ibabuza.LeaderChanged,
+				PeerID: currentState.Lead,
+			})
+		}
 		r.metricsCollector.IncrementLeaderChanges()
 		r.leaderChangeNotifier.Reset()
 	}

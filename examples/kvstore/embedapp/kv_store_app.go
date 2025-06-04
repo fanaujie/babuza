@@ -18,17 +18,50 @@ type KvStoreAppConfig struct {
 }
 
 type KvStoreApp struct {
-	isLeader                  uint64 //must use atomic operations to access; keep 64-bit aligned
 	serviceAddress            string
 	disableProposalForwarding bool
 	stopCh                    chan struct{}
 	stateMachine              ibabuza.BaseStateMachine
 	babuza                    *babuza.Raft
 	httpSrv                   *http.Server
+	logger                    ibabuza.Logger
+}
+
+func (k *KvStoreApp) OnLeaderChange(term, leaderID uint64) {
+	k.logger.Infof("service %s: leader changed to %d in term %d", k.serviceAddress, leaderID, term)
+}
+
+func (k *KvStoreApp) OnAcquiredLeader(term, leaderID uint64) {
+	k.logger.Infof("service %s: acquired leader %d in term %d", k.serviceAddress, leaderID, term)
+}
+
+func (k *KvStoreApp) OnLostLeader(term, leaderID uint64) {
+	k.logger.Infof("service %s: lost leader %d in term %d", k.serviceAddress, leaderID, term)
+}
+func (k *KvStoreApp) OnMemberChange(event int, term uint64, peerID uint64) {
+	switch event {
+	case ibabuza.MemberJoined:
+		k.logger.Infof("service %s: member %d joined in term %d", k.serviceAddress, peerID, term)
+	case ibabuza.MemberUpdated:
+		k.logger.Infof("service %s: member %d updated in term %d", k.serviceAddress, peerID, term)
+	case ibabuza.MemberRemoved:
+		k.logger.Infof("service %s: member %d removed in term %d", k.serviceAddress, peerID, term)
+	case ibabuza.LeanerAdded:
+		k.logger.Infof("service %s: learner %d added in term %d", k.serviceAddress, peerID, term)
+	case ibabuza.LeanerPromoted:
+		k.logger.Infof("service %s: learner %d promoted in term %d", k.serviceAddress, peerID, term)
+	default:
+		k.logger.Warningf("service %s: unknown member event %d for peer %d in term %d", k.serviceAddress, event, peerID, term)
+	}
+}
+
+func (k *KvStoreApp) OnRaftShutdown() {
+	k.logger.Infof("service %s: raft shutdown", k.serviceAddress)
 }
 
 func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMachine, customBuilder builder.BabuzaComponent) (*KvStoreApp, error) {
 	app := &KvStoreApp{}
+	app.logger = customBuilder.Logger
 	app.stateMachine = stateMachine
 	bootstrap, err := babuza.NewBootstrapRaftCluster(
 		appConfig.BubuzaConfig, *appConfig.VotingPeersCfg, stateMachine, customBuilder.Cluster,
@@ -37,7 +70,7 @@ func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMac
 	if err != nil {
 		return nil, err
 	}
-	r, err := babuza.NewRaft(appConfig.BubuzaConfig, bootstrap)
+	r, err := babuza.NewRaft(appConfig.BubuzaConfig, bootstrap, app)
 	if err != nil {
 		return nil, err
 	}
@@ -45,20 +78,6 @@ func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMac
 	app.disableProposalForwarding = appConfig.BubuzaConfig.DisableProposalForwarding
 	app.stopCh = make(chan struct{})
 	app.babuza = r
-	go func() {
-		for {
-			select {
-			case <-app.stopCh:
-				return
-			case isLeader := <-r.LeaderCh():
-				if isLeader {
-					app.isLeader = 1
-				} else {
-					app.isLeader = 0
-				}
-			}
-		}
-	}()
 	return app, nil
 }
 

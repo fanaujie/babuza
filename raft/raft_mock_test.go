@@ -494,6 +494,19 @@ func (c *mockPubTransClient) PublishApplicationService(babuzapb.PublishApplicati
 }
 func (c *mockPubTransClient) Close() error { return nil }
 
+type mockRaftListener struct {
+	leaderIDs map[uint64]uint64
+}
+
+func (m *mockRaftListener) OnLeaderChange(term, leaderID uint64) {
+	m.leaderIDs[term] = leaderID
+}
+func (m *mockRaftListener) OnAcquiredLeader(term, leaderID uint64) {}
+func (m *mockRaftListener) OnLostLeader(term, leaderID uint64)     {}
+
+func (m *mockRaftListener) OnMemberChange(memberEvent int, term, peerID uint64) {}
+func (m *mockRaftListener) OnRaftShutdown()                                     {}
+
 func newTestRaft(nodeId uint64) *Raft {
 	return &Raft{
 		config: BabuzaConfig{
@@ -509,7 +522,6 @@ func newTestRaft(nodeId uint64) *Raft {
 		manualSnapshotCh:          make(chan manualSnapshot),
 		readStateCh:               make(chan raft.ReadState, 1),
 		readIndexCh:               make(chan struct{}),
-		leaderCh:                  make(chan bool, 1),
 		linearizeReqNotifier:      syncutil.NewSignalManager(),
 		firstCommitInTermNotifier: syncutil.NewEventSignal(),
 		leaderChangeNotifier:      syncutil.NewEventSignal(),

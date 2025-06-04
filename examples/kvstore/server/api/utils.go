@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-func processRaftProposeError(err error, w http.ResponseWriter, req *http.Request, redirectLeaderAddresses []string) {
+func processRaftProposeError(err error, w http.ResponseWriter) {
 	if errors.Is(err, raft.ErrNotLeader) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return

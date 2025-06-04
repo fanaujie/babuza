@@ -9,6 +9,13 @@ import (
 
 type RaftGroupID uint64
 
+type MultiRaftListener interface {
+	OnAcquiredLeader(groupID RaftGroupID, term, leaderID uint64)
+	OnLostLeader(groupID RaftGroupID, term, leaderID uint64)
+	OnLeaderChange(groupID RaftGroupID, term, leaderID uint64)
+	OnMemberChange(memberEvent int, groupID RaftGroupID, term, peerID uint64)
+}
+
 type MultiRaftTransportResolver interface {
 	ResolvePeerAddress(groupID RaftGroupID, peerID uint64) (string, error)
 }

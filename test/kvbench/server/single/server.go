@@ -45,6 +45,26 @@ type Server struct {
 	mu           sync.Mutex
 }
 
+func (s *Server) OnLeaderChange(term, leaderID uint64) {
+	s.logger.Infof("leader change term: %d, leaderID: %d", term, leaderID)
+}
+
+func (s *Server) OnMemberChange(memberEvent int, term, peerID uint64) {
+	s.logger.Infof("member change term: %d, peerID: %d", term, peerID)
+}
+
+func (s *Server) OnRaftShutdown() {
+	s.logger.Infof("raft shutdown")
+}
+
+func (s *Server) OnAcquiredLeader(term, leaderID uint64) {
+	s.logger.Infof("acquired leader term: %d, leaderID: %d", term, leaderID)
+}
+
+func (s *Server) OnLostLeader(term, leaderID uint64) {
+	s.logger.Infof("lost leader term: %d, leaderID: %d", term, leaderID)
+}
+
 // NewServer creates a new KV server
 func NewServer(cfg Config) (*Server, error) {
 	s := &Server{
@@ -102,26 +122,10 @@ func (s *Server) Start() error {
 	}
 
 	// Create Raft instance
-	r, err := babuza.NewRaft(babuzaCfg, bootstrap)
+	r, err := babuza.NewRaft(babuzaCfg, bootstrap, s)
 	if err != nil {
 		return err
 	}
-
-	// Listen for leadership change events
-	s.closer.Run(func() {
-		for {
-			select {
-			case <-s.closer.CloseCh():
-				return
-			case isLeader := <-r.LeaderCh():
-				if isLeader {
-					s.logger.Infof("I am leader")
-				} else {
-					s.logger.Infof("I have lost my leadership")
-				}
-			}
-		}
-	})
 
 	s.raft = r
 	s.logger = babuzaComponents.Logger

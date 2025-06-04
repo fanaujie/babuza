@@ -35,6 +35,7 @@ type AppliedCluster interface {
 	ClusterID() uint64
 	GroupID() ibabuza.RaftGroupID
 	LocalPeerID() uint64
+	Peer(peerID uint64) (babuzapb.Peer, error)
 	Add(babuzapb.RaftPeerAttribute) error
 	Update(babuzapb.RaftPeerAttribute) error
 	Remove(peerID uint64) error
@@ -50,6 +51,10 @@ type AppliedTransport interface {
 	AddPeer(ibabuza.RaftGroupID, uint64, string)
 	UpdatePeer(ibabuza.RaftGroupID, uint64, string)
 	RemovePeer(ibabuza.RaftGroupID, uint64)
+}
+
+type AppliedPublishMemberEvent interface {
+	Publish(event ibabuza.RaftEvent)
 }
 
 type appliedTransportAdaptor struct {
@@ -75,13 +80,16 @@ type appliedFacadeImpl struct {
 	cluster             AppliedCluster
 	raftNode            AppliedRaftNode
 	trans               AppliedTransport
+	memberEvent         AppliedPublishMemberEvent
 	log                 ibabuza.Logger
 	metricsCollector    ibabuza.MetricsCollector
 }
 
 func NewAppliedFacade(firstCommitNotifier AppliedFirstCommitInTermNotifier,
 	sessionMgr AppliedSessionManager, replier AppliedReplier, cluster AppliedCluster, raftNode AppliedRaftNode,
-	trans AppliedTransport, log ibabuza.Logger, metricsCollector ibabuza.MetricsCollector) InternalAppliedFacade {
+	trans AppliedTransport, memberEvent AppliedPublishMemberEvent, log ibabuza.Logger,
+	metricsCollector ibabuza.MetricsCollector) InternalAppliedFacade {
+
 	return &appliedFacadeImpl{
 		firstCommitNotifier: firstCommitNotifier,
 		sessionManager:      sessionMgr,
@@ -89,6 +97,7 @@ func NewAppliedFacade(firstCommitNotifier AppliedFirstCommitInTermNotifier,
 		cluster:             cluster,
 		raftNode:            raftNode,
 		trans:               trans,
+		memberEvent:         memberEvent,
 		log:                 log,
 		metricsCollector:    metricsCollector,
 	}
@@ -105,6 +114,7 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 		trans: &appliedTransportAdaptor{
 			r.trans,
 		},
+		memberEvent:      r.raftEventPublisher,
 		log:              r.logger,
 		metricsCollector: r.metricsCollector,
 	}
@@ -247,7 +257,7 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 		return nil, false, err
 	}
 	var removeSelf bool
-
+	a.processMemberEvent(cc.Type, confReq)
 	switch cc.Type {
 	case raftpb.ConfChangeAddNode, raftpb.ConfChangeAddLearnerNode:
 		if !confReq.PromoteLearner && confReq.RaftPeerAttr.PeerID != a.cluster.LocalPeerID() {
@@ -261,7 +271,6 @@ func (a *appliedFacadeImpl) processConfChange(cc raftpb.ConfChange, confReq babu
 				a.metricsCollector.SetIsLearner(0)
 			}
 		}
-
 	case raftpb.ConfChangeRemoveNode:
 		if cc.NodeID == a.cluster.LocalPeerID() {
 			removeSelf = true
@@ -309,5 +318,32 @@ func (a *appliedFacadeImpl) handlePubAppService(e raftpb.Entry, req babuzapb.Nor
 	return ibabuza.ApplyResult{
 		LogIndex: e.Index,
 		Response: result,
+	}
+}
+
+func (a *appliedFacadeImpl) processMemberEvent(ccType raftpb.ConfChangeType, confReq babuzapb.ConfChangeRequest) {
+	switch ccType {
+	case raftpb.ConfChangeAddNode:
+		if confReq.PromoteLearner {
+			a.publishMemberEvent(ibabuza.LeanerPromoted, ibabuza.RaftGroupID(confReq.GroupID), confReq.RaftPeerAttr.PeerID)
+		} else {
+			a.publishMemberEvent(ibabuza.MemberJoined, ibabuza.RaftGroupID(confReq.GroupID), confReq.RaftPeerAttr.PeerID)
+		}
+	case raftpb.ConfChangeAddLearnerNode:
+		a.publishMemberEvent(ibabuza.LeanerAdded, ibabuza.RaftGroupID(confReq.GroupID), confReq.RaftPeerAttr.PeerID)
+	case raftpb.ConfChangeRemoveNode:
+		a.publishMemberEvent(ibabuza.MemberRemoved, ibabuza.RaftGroupID(confReq.GroupID), confReq.RaftPeerAttr.PeerID)
+	case raftpb.ConfChangeUpdateNode:
+		a.publishMemberEvent(ibabuza.MemberUpdated, ibabuza.RaftGroupID(confReq.GroupID), confReq.RaftPeerAttr.PeerID)
+	}
+}
+
+func (a *appliedFacadeImpl) publishMemberEvent(event int, groupID ibabuza.RaftGroupID, peerID uint64) {
+	if a.memberEvent != nil {
+		a.memberEvent.Publish(ibabuza.RaftEvent{
+			Event:   event,
+			GroupID: groupID,
+			PeerID:  peerID,
+		})
 	}
 }

@@ -58,6 +58,18 @@ type Server struct {
 	closer       *syncutil.Closer
 }
 
+func (s *Server) OnLeaderChange(term, leaderID uint64) {
+	s.logger.Infof("Leader changed to %d in term %d", leaderID, term)
+}
+
+func (s *Server) OnMemberChange(memberEvent int, term, peerID uint64) {
+	s.logger.Infof("Member event %d for peer %d in term %d", memberEvent, peerID, term)
+}
+
+func (s *Server) OnRaftShutdown() {
+	s.logger.Infof("Shutting down")
+}
+
 func NewServer(cfg Config) *Server {
 	return &Server{
 		cfg:    cfg,
@@ -144,27 +156,11 @@ func (s *Server) Start() error {
 	}
 
 	// Create Raft instance
-	r, err := babuza.NewRaft(babuzaCfg, bootstrap)
+	r, err := babuza.NewRaft(babuzaCfg, bootstrap, s)
 	if err != nil {
 		return err
 	}
-
-	// Listen for leadership change events
-	s.closer.Run(func() {
-		for {
-			select {
-			case <-s.closer.CloseCh():
-				return
-			case isLeader := <-r.LeaderCh():
-				if isLeader {
-					s.logger.Infof("I am leader")
-				} else {
-					s.logger.Infof("I have lost my leadership")
-				}
-			}
-		}
-	})
-
+	
 	s.raft = r
 	s.logger = babuzaComponets.Logger
 

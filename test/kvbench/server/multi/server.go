@@ -167,7 +167,7 @@ func (s *Server) Start() error {
 	)
 
 	// Create MultiRaft node
-	node, err := multiraft.BootstrapOrRecoverNode(nodeConfig, factory, trans, walMgr, snapshotMgr)
+	node, err := multiraft.BootstrapOrRecoverNode(nodeConfig, factory, trans, walMgr, snapshotMgr, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create MultiRaft node: %w", err)
 	}

@@ -33,7 +33,7 @@ func (h *SessionResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		defer babuzaRes.Release()
 		ar := babuzaRes.WaitForApplyResult()
 		if ar.Error != nil {
-			processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
+			processRaftProposeError(ar.Error, w)
 			return
 		}
 		res.SessionId = ar.LogIndex
@@ -57,7 +57,7 @@ func (h *SessionResourceHandler) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		defer babuzaRes.Release()
 		ar := babuzaRes.WaitForApplyResult()
 		if ar.Error != nil {
-			processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
+			processRaftProposeError(ar.Error, w)
 			return
 		}
 		if ar.Error == nil {

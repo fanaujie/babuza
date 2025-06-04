@@ -45,7 +45,7 @@ func (h *TransferLeaderHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err = h.r.TransferLeader(r.Context(), req.Transferee).Wait(); err != nil {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
+		processRaftProposeError(err, w)
 		return
 	}
 	if err = writeHttpResponse(w, &response.TransferLeaderResponse{}); err != nil {

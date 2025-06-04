@@ -323,7 +323,7 @@ func createNode(clusterID uint64, nodeID uint64, cuConfig customConfig, nodeRaft
 		transport.SetTransportOptionsWithPeerQueueSize(cuConfig.TransportPeerQueueSize),
 		transport.SetTransportOptionsWithHeartbeatBufferSize(cuConfig.TransportHeartbeatBufferSize))
 
-	return BootstrapOrRecoverNode(config, factory, trans, walMgr, snapshotMgr)
+	return BootstrapOrRecoverNode(config, factory, trans, walMgr, snapshotMgr, nil)
 }
 
 func proposeCommand(node *Node, groupID ibabuza.RaftGroupID, cmd CounterCommand) (*CounterResult, error) {

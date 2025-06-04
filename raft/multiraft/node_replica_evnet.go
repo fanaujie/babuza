@@ -8,14 +8,21 @@ import (
 )
 
 const (
-	eventRemovePeer = 1
-
 	invalidNodeTimeSecond = 60 * 5
 )
 
-type replicaEvent struct {
-	groupID ibabuza.RaftGroupID
-	event   int
+type raftEventPublisher struct {
+	ch chan ibabuza.RaftEvent
+}
+
+func newRaftEventPublisher() *raftEventPublisher {
+	return &raftEventPublisher{
+		ch: make(chan ibabuza.RaftEvent, 256),
+	}
+}
+
+func (p *raftEventPublisher) Publish(e ibabuza.RaftEvent) {
+	p.ch <- e
 }
 
 func (n *Node) replicaRaftTick() {
@@ -98,15 +105,58 @@ func (n *Node) replicaListener() {
 		select {
 		case <-n.closer.CloseCh():
 			return
-		case event := <-n.replicaEventCh:
-			switch event.event {
-			case eventRemovePeer:
-				r, ok := n.replicaSet.Load(event.groupID)
+		case event := <-n.raftEventPublisher.ch:
+			switch event.Event {
+			case ibabuza.LeaderChanged:
+				if n.raftListener != nil {
+					r, ok := n.replicaSet.Load(event.GroupID)
+					if ok {
+						n.raftListener.OnLeaderChange(event.GroupID, r.status.GetHardStateTerm(),
+							event.PeerID)
+					} else {
+						n.logger.Warningf("Node[%d] leader change event for group %d but replica not found", n.config.NodeID, event.GroupID)
+					}
+				}
+			case ibabuza.AcquiredLeader:
+				if n.raftListener != nil {
+					r, ok := n.replicaSet.Load(event.GroupID)
+					if ok {
+						n.raftListener.OnAcquiredLeader(event.GroupID, r.status.GetHardStateTerm(),
+							event.PeerID)
+					} else {
+						n.logger.Warningf("Node[%d] acquired leader event for group %d but replica not found", n.config.NodeID, event.GroupID)
+					}
+				}
+			case ibabuza.LostLeader:
+				if n.raftListener != nil {
+					r, ok := n.replicaSet.Load(event.GroupID)
+					if ok {
+						n.raftListener.OnLostLeader(event.GroupID, r.status.GetHardStateTerm(),
+							event.PeerID)
+					} else {
+						n.logger.Warningf("Node[%d] lost leader event for group %d but replica not found", n.config.NodeID, event.GroupID)
+					}
+				}
+			case ibabuza.MemberJoined, ibabuza.MemberUpdated, ibabuza.MemberRemoved,
+				ibabuza.LeanerAdded, ibabuza.LeanerPromoted:
+				if n.raftListener != nil {
+					r, ok := n.replicaSet.Load(event.GroupID)
+					if ok {
+						n.raftListener.OnMemberChange(event.Event, event.GroupID, r.status.GetHardStateTerm(), event.PeerID)
+					} else {
+						n.logger.Warningf("Node[%d] member change event for group %d but replica not found", n.config.NodeID, event.GroupID)
+					}
+				}
+			case ibabuza.RemoveSelf:
+				r, ok := n.replicaSet.Load(event.GroupID)
 				if ok {
 					r.Stop()
-					n.replicaSet.Delete(event.groupID)
-					n.logger.Infof("Node[%d] remove replica group %d", n.config.NodeID, event.groupID)
+					n.replicaSet.Delete(event.GroupID)
+					n.logger.Infof("Node[%d] remove replica group %d", n.config.NodeID, event.GroupID)
+				} else {
+					n.logger.Warningf("Node[%d] remove self event for group %d but replica not found", n.config.NodeID, event.GroupID)
 				}
+			default:
 			}
 		}
 	}

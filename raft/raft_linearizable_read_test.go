@@ -1,7 +1,9 @@
 package raft
 
 import (
+	"github.com/fanaujie/babuza/pkg/cluster"
 	"github.com/fanaujie/babuza/pkg/idgenerator"
+	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/replier"
 	"github.com/fanaujie/babuza/pkg/status"
 	"github.com/stretchr/testify/assert"
@@ -18,6 +20,8 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 	tr.config.LinearizedReadRequestTimeout = time.Second * 2
 	tr.raftNode = raftNode
 	tr.status = status.New()
+	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster.SetLocalPeerID(localPeerID)
 	readCtx := []byte{1, 2, 3, 4, 5, 6, 7, 8}
 	t.Run("correctness", func(t *testing.T) {
 		readState := raft.ReadState{
@@ -67,6 +71,8 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 	tr.raftNode = etcdRaftNode
 	tr.idGenerator = idgenerator.New(localPeerID, 10000)
 	tr.status = status.New()
+	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster.SetLocalPeerID(localPeerID)
 	defer tr.closer.Close()
 	tr.closer.Run(func() {
 		tr.processRaftLinearizedRead()

@@ -21,7 +21,8 @@ type Node struct {
 	factory                 ComponentsFactory
 	logger                  ibabuza.Logger
 	scheduler               Scheduler
-	replicaEventCh          chan replicaEvent
+	raftListener            ibabuza.MultiRaftListener
+	raftEventPublisher      *raftEventPublisher
 	closer                  *syncutil.Closer
 	replicaSet              *xsync.Map[ibabuza.RaftGroupID, *replica]
 	coalescedHeartbeatQueue *coalescedHeartbeatQueue

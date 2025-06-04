@@ -14,12 +14,6 @@ import (
 	"time"
 )
 
-const (
-	MemberJoinEvent   uint64 = 1
-	MemberUpdateEvent uint64 = 2
-	MemberLeaveEvent  uint64 = 3
-)
-
 type ClientSession struct {
 	SessionID                         uint64
 	SequenceNumber                    uint64
@@ -95,14 +89,15 @@ type Raft struct {
 	storage                   RaftStorage
 	logger                    ibabuza.Logger
 	metricsCollector          ibabuza.MetricsCollector
+	raftListener              ibabuza.RaftListener
 	appliedFacade             InternalAppliedFacade
+	raftEventPublisher        *raftEventPublisher
 	applyCh                   chan applyEntryToStateMachine
 	manualSnapshotCh          chan manualSnapshot
 	readStateCh               chan raft.ReadState
 	readIndexCh               chan struct{}
 	shutdownCh                chan struct{}
 	removeSelfCh              chan struct{}
-	leaderCh                  chan bool
 	closeRaftOnce             sync.Once
 	linearizeReqNotifier      *syncutil.SignalManager
 	firstCommitInTermNotifier *syncutil.EventSignal
@@ -111,7 +106,7 @@ type Raft struct {
 	shutdownMu                sync.Mutex
 }
 
-func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
+func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster, raftListener ibabuza.RaftListener) (*Raft, error) {
 	var err error
 	r := &Raft{
 		config:                    cfg,
@@ -128,19 +123,18 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 		storage:                   bootstrap.storage,
 		logger:                    bootstrap.logger,
 		metricsCollector:          bootstrap.metricsCollector,
+		raftListener:              raftListener,
 		applyCh:                   make(chan applyEntryToStateMachine, 8),
 		manualSnapshotCh:          make(chan manualSnapshot),
 		readStateCh:               make(chan raft.ReadState),
 		readIndexCh:               make(chan struct{}),
 		shutdownCh:                make(chan struct{}),
 		removeSelfCh:              make(chan struct{}),
-		leaderCh:                  make(chan bool, 1),
 		linearizeReqNotifier:      syncutil.NewSignalManager(),
 		firstCommitInTermNotifier: syncutil.NewEventSignal(),
 		leaderChangeNotifier:      syncutil.NewEventSignal(),
 		closer:                    syncutil.NewCloser(),
 	}
-	r.appliedFacade = newAppliedFacadeFromRaft(r)
 
 	if err = r.trans.SetupTransportRaft(&transportProcessor{
 		Raft: r,
@@ -159,6 +153,13 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster) (*Raft, error) {
 	r.closer.Run(func() {
 		r.processRaftLinearizedRead()
 	})
+	if raftListener != nil {
+		r.raftEventPublisher = newRaftEventPublisher()
+		r.closer.Run(func() {
+			r.handleListenerEvent()
+		})
+	}
+	r.appliedFacade = newAppliedFacadeFromRaft(r)
 	return r, nil
 }
 
@@ -369,10 +370,6 @@ func (r *Raft) LinearizableRead(ctx context.Context) error {
 	}
 }
 
-func (r *Raft) LeaderCh() chan bool {
-	return r.leaderCh
-}
-
 func (r *Raft) Shutdown() ShutdownResult {
 	r.shutdownMu.Lock()
 	defer r.shutdownMu.Unlock()
@@ -405,18 +402,6 @@ func (r *Raft) ClusterConfiguration() ClusterConfiguration {
 		LocalPeerID: r.cluster.LocalPeerID(),
 		Peers:       r.cluster.Peers(),
 	}
-}
-
-func (r *Raft) LeaderAppServiceAddresses() []string {
-	leaderID := r.getLeaderId()
-	if leaderID == raft.None {
-		return nil
-	}
-	p, err := r.cluster.Peer(leaderID)
-	if err != nil {
-		panic(err)
-	}
-	return p.AppServiceAddresses
 }
 
 func (r *Raft) Status() Status {

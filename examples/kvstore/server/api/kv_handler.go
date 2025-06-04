@@ -136,7 +136,7 @@ func (h *KvStoreResourceHandler) setKvStoreFunc(w http.ResponseWriter, r *http.R
 	defer cmdRes.Release()
 	ar := cmdRes.WaitForApplyResult()
 	if ar.Error != nil {
-		processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
+		processRaftProposeError(ar.Error, w)
 		return
 	}
 	res := response.KvStoreResponse{
@@ -188,7 +188,7 @@ func (h *KvStoreResourceHandler) appendKvStoreFunc(w http.ResponseWriter, r *htt
 	defer cmdRes.Release()
 	ar := cmdRes.WaitForApplyResult()
 	if ar.Error != nil {
-		processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
+		processRaftProposeError(ar.Error, w)
 		return
 	}
 	res := response.KvStoreResponse{
@@ -239,7 +239,7 @@ func (h *KvStoreResourceHandler) deleteKvStoreFunc(w http.ResponseWriter, r *htt
 	defer cmdRes.Release()
 	ar := cmdRes.WaitForApplyResult()
 	if ar.Error != nil {
-		processRaftProposeError(ar.Error, w, r, h.r.LeaderAppServiceAddresses())
+		processRaftProposeError(ar.Error, w)
 		return
 	}
 	res := response.KvStoreResponse{

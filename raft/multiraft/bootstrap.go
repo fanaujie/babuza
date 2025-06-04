@@ -31,7 +31,7 @@ type ComponentsFactory interface {
 }
 
 func BootstrapOrRecoverNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
-	snapshotManager ibabuza.MultiRaftSnapshotManager) (*Node, error) {
+	snapshotManager ibabuza.MultiRaftSnapshotManager, raftListener ibabuza.MultiRaftListener) (*Node, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -51,21 +51,21 @@ func BootstrapOrRecoverNode(cfg NodeConfig, factory ComponentsFactory, trans iba
 		if err = storage.ScanInstalledSnapshot(groupIDs); err != nil {
 			return nil, err
 		}
-		return restartNode(cfg, groupIDs, trans, storage, factory, logger)
+		return restartNode(cfg, groupIDs, trans, storage, factory, logger, raftListener)
 
 	}
-	return startNode(cfg, trans, storage, factory, logger)
+	return startNode(cfg, trans, storage, factory, logger, raftListener)
 }
 
 func startNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory,
-	logger ibabuza.Logger) (*Node, error) {
-	return newNode(config, trans, storage, factory, logger), nil
+	logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) (*Node, error) {
+	return newNode(config, trans, storage, factory, logger, raftListener), nil
 }
 
 func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans ibabuza.MultiRaftTransport,
-	storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger) (*Node, error) {
+	storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) (*Node, error) {
 
-	n := newNode(config, trans, storage, factory, logger)
+	n := newNode(config, trans, storage, factory, logger, raftListener)
 
 	for _, groupID := range restartGroupIDs {
 		replicaCluster := factory.CreateCluster()
@@ -163,7 +163,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		firstCommitInTermNotifier := syncutil.NewEventSignal()
 		resultReplier := replier.NewResult[ibabuza.ApplyResult]()
 		appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
-			resultReplier, replicaCluster, n, trans, logger, metrics.NewMockMetricsCollector())
+			resultReplier, replicaCluster, n, trans, nil, logger, metrics.NewMockMetricsCollector())
 
 		r := &replica{
 			raftGroup: RaftGroup{
@@ -183,8 +183,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 			firstCommitInTermNotifier: firstCommitInTermNotifier,
 			leaderChangeNotifier:      syncutil.NewEventSignal(),
 			linearizeReqNotifier:      syncutil.NewSignalManager(),
-			leaderCh:                  nil,
-			replicaEventCh:            n.replicaEventCh,
+			raftEventPublisher:        n.raftEventPublisher,
 			receivedSnapshotMsgCh:     make(chan babuzapb.SnapshotMessage, 8),
 			readStateCh:               make(chan raft.ReadState, 1),
 			readIndexCh:               make(chan struct{}, 1),
@@ -208,16 +207,17 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 	return n, nil
 }
 
-func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger) *Node {
+func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory,
+	logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) *Node {
 	n := &Node{
-		config:         config,
-		trans:          trans,
-		storage:        storage,
-		factory:        factory,
-		logger:         logger,
-		closer:         syncutil.NewCloser(),
-		replicaEventCh: make(chan replicaEvent, 8),
-		replicaSet:     xsync.NewMap[ibabuza.RaftGroupID, *replica](),
+		config:       config,
+		trans:        trans,
+		storage:      storage,
+		factory:      factory,
+		logger:       logger,
+		raftListener: raftListener,
+		closer:       syncutil.NewCloser(),
+		replicaSet:   xsync.NewMap[ibabuza.RaftGroupID, *replica](),
 		coalescedHeartbeatQueue: &coalescedHeartbeatQueue{
 			heartbeatMsg:               xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
 			heartbeatRespMsg:           xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
@@ -232,6 +232,7 @@ func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage Bootst
 		maxTicks:       config.SchedulerMaxTicks,
 	}, n, logger)
 	n.scheduler = scheduler
+	n.raftEventPublisher = newRaftEventPublisher()
 	return n
 }
 
@@ -341,7 +342,7 @@ func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfigura
 		return nil, err
 	}
 	appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
-		resultReplier, replicaCluster, node, node.trans, node.logger, metrics.NewMockMetricsCollector())
+		resultReplier, replicaCluster, node, node.trans, nil, node.logger, metrics.NewMockMetricsCollector())
 
 	r := &replica{
 		raftGroup: RaftGroup{
@@ -361,8 +362,7 @@ func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfigura
 		firstCommitInTermNotifier: firstCommitInTermNotifier,
 		leaderChangeNotifier:      syncutil.NewEventSignal(),
 		linearizeReqNotifier:      syncutil.NewSignalManager(),
-		leaderCh:                  nil,
-		replicaEventCh:            node.replicaEventCh,
+		raftEventPublisher:        node.raftEventPublisher,
 		receivedSnapshotMsgCh:     make(chan babuzapb.SnapshotMessage, 8),
 		readStateCh:               make(chan raft.ReadState, 1),
 		readIndexCh:               make(chan struct{}, 1),

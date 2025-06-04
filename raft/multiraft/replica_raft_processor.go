@@ -26,6 +26,10 @@ func (r *replica) ProcessReady() {
 	defer r.mu.lock.Unlock()
 	if r.mu.rawNode.HasReady() {
 		rd := r.mu.rawNode.Ready()
+
+		if !raft.IsEmptyHardState(rd.HardState) {
+			r.status.SetHardStateTerm(rd.HardState.Term)
+		}
 		if rd.SoftState != nil {
 			r.updateLeadership(*rd.SoftState)
 		}
@@ -39,9 +43,6 @@ func (r *replica) ProcessReady() {
 			case <-r.closer.CloseCh():
 				return
 			}
-		}
-		if raft.IsEmptyHardState(rd.HardState) {
-			r.status.SetHardStateTerm(rd.HardState.Term)
 		}
 		r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
 		waitWALSync := shouldWaitWALSync(rd)
@@ -87,10 +88,11 @@ func (r *replica) ProcessReady() {
 		// The applyConfChangeEntry must be handled here to ensure the leader sends out messages (e.g., removing a follower) first.
 		// This guarantees that the follower receives the message before the configuration change is actually applied.
 		if r.applyConfChangeEntry(rd.CommittedEntries) {
-			r.replicaEventCh <- replicaEvent{
-				groupID: r.cluster.GroupID(),
-				event:   eventRemovePeer,
-			}
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:   ibabuza.RemoveSelf,
+				GroupID: r.cluster.GroupID(),
+				PeerID:  r.cluster.LocalPeerID(),
+			})
 			return
 		}
 		if !isLeader {
@@ -300,20 +302,27 @@ func (r *replica) updateLeadership(currentState raft.SoftState) {
 	r.status.SetSoftState(currentState)
 	if currentState.Lead == r.cluster.LocalPeerID() {
 		r.status.SetLeader(true)
-		//r.leaderCh <- leaderChange{
-		//	RaftGroup: r.raftGroup,
-		//	isLeader:  true,
-		//}
+		r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+			Event:   ibabuza.AcquiredLeader,
+			GroupID: r.cluster.GroupID(),
+			PeerID:  r.cluster.LocalPeerID(),
+		})
 	} else {
 		if r.status.IsLeader() {
 			r.status.SetLeader(false)
-			//r.leaderCh <- leaderChange{
-			//	RaftGroup: r.raftGroup,
-			//	isLeader:  true,
-			//}
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:   ibabuza.LostLeader,
+				GroupID: r.cluster.GroupID(),
+				PeerID:  r.cluster.LocalPeerID(),
+			})
 		}
 	}
 	if newLeader {
+		r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+			Event:   ibabuza.LeaderChanged,
+			GroupID: r.cluster.GroupID(),
+			PeerID:  currentState.Lead,
+		})
 		r.leaderChangeNotifier.Reset()
 	}
 
