@@ -20,8 +20,8 @@ type RaftEvent struct {
 
 type RaftListener interface {
 	OnLeaderChange(term, leaderID uint64)
-	OnAcquiredLeader(term, leaderID uint64)
-	OnLostLeader(term, leaderID uint64)
+	OnAcquiredLeader()
+	OnLostLeader()
 	OnMemberChange(memberEvent int, term, peerID uint64)
 	OnRaftShutdown()
 }

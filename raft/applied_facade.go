@@ -37,7 +37,7 @@ type AppliedCluster interface {
 	LocalPeerID() uint64
 	Peer(peerID uint64) (babuzapb.Peer, error)
 	Add(babuzapb.RaftPeerAttribute) error
-	Update(babuzapb.RaftPeerAttribute) error
+	Update(uint64, babuzapb.RaftPeerAttribute) error
 	Remove(peerID uint64) error
 	Promote(peerID uint64) error
 	UpdateAppServiceAddresses(uint64, []string) error
@@ -221,7 +221,7 @@ func (a *appliedFacadeImpl) clusterValidateAndApply(changeType raftpb.ConfChange
 	case raftpb.ConfChangeRemoveNode:
 		return a.cluster.Remove(req.RaftPeerAttr.PeerID)
 	case raftpb.ConfChangeUpdateNode:
-		return a.cluster.Update(req.RaftPeerAttr)
+		return a.cluster.Update(req.RaftPeerAttr.PeerID, req.RaftPeerAttr)
 	}
 	return fmt.Errorf("cluster: not support changeType(%d)", changeType)
 }

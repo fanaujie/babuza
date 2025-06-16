@@ -14,8 +14,8 @@ import (
 type ClusterManager interface {
 	IsLocalLeaderForGroup(groupID ibabuza.RaftGroupID) bool
 	RedirectToLeader(conn redcon.Conn, cmd redcon.Command, groupID ibabuza.RaftGroupID) ([]byte, error)
-	Propose(ctx context.Context, groupID ibabuza.RaftGroupID, log []byte) babuza.ProposedResult
-	Query(groupID ibabuza.RaftGroupID, key *pb.RedisCommand) (any, error)
+	LocalPropose(ctx context.Context, groupID ibabuza.RaftGroupID, log []byte) babuza.ProposedResult
+	LocalQuery(groupID ibabuza.RaftGroupID, key *pb.RedisCommand) (any, error)
 }
 
 type Handler struct {

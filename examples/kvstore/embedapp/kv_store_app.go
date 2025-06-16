@@ -31,12 +31,10 @@ func (k *KvStoreApp) OnLeaderChange(term, leaderID uint64) {
 	k.logger.Infof("service %s: leader changed to %d in term %d", k.serviceAddress, leaderID, term)
 }
 
-func (k *KvStoreApp) OnAcquiredLeader(term, leaderID uint64) {
-	k.logger.Infof("service %s: acquired leader %d in term %d", k.serviceAddress, leaderID, term)
+func (k *KvStoreApp) OnAcquiredLeader() {
 }
 
-func (k *KvStoreApp) OnLostLeader(term, leaderID uint64) {
-	k.logger.Infof("service %s: lost leader %d in term %d", k.serviceAddress, leaderID, term)
+func (k *KvStoreApp) OnLostLeader() {
 }
 func (k *KvStoreApp) OnMemberChange(event int, term uint64, peerID uint64) {
 	switch event {

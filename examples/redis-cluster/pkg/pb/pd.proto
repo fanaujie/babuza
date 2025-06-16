@@ -1,0 +1,46 @@
+syntax = "proto3";
+package pdpb;
+option go_package = "github.com/fanaujie/babuza/examples/redis-cluster/pkg/pb";
+
+import "gogoproto/gogo.proto";
+import "babuza.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_enum_prefix_all) = false;
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+
+
+message StoreHeartbeatReq {
+  uint64 clusterID = 1;
+  uint64 storeID = 2;
+  uint64 leaderCount = 3;
+}
+
+message StoreHeartbeatResp {
+  uint64 clusterID = 1;
+}
+
+message RaftGroupLeaderHeartbeatReq {
+  uint64 storeID = 1;
+  uint64 groupID = 2;
+  uint64 leaderID = 3;
+  repeated babuza.RaftPeerAttribute peers = 4 [(gogoproto.nullable) = false];
+}
+
+message TransferLeader {
+  uint64 newLeaderID = 1;
+}
+
+message RaftGroupLeaderHeartbeatResp {
+  TransferLeader transferLeader = 1;
+}
+
+service PDService {
+  rpc StoreHeartbeat(StoreHeartbeatReq) returns (StoreHeartbeatResp) {}
+  rpc RaftGroupLeaderHeartbeat(RaftGroupLeaderHeartbeatReq) returns (RaftGroupLeaderHeartbeatResp) {}
+}

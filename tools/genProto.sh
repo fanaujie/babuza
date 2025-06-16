@@ -73,6 +73,6 @@ done
 
 for dir in ${GEN_EXAMPLE_PROTO_PATH}; do
   pushd "${dir}"
-    protoc --gogofast_out=. --gogofast_opt=paths=source_relative -I=".:${GOGOPROTO_ROOT}:${GOPATH}/src:${GEN_IBABUZA_RPOTO_PATH}" ./*.proto
+    protoc --gogofast_out=plugins=grpc:. --gogofast_opt=paths=source_relative -I=".:${GOGOPROTO_ROOT}:${GOPATH}/src:${GEN_IBABUZA_RPOTO_PATH}" ./*.proto
   popd
 done

@@ -181,7 +181,7 @@ func (c *BasicClientRequestIdempotency) Run(tc *testcluster.BabuzaCluster, a any
 	leaderRaft := tc.GetAllRaft()[leaderID]
 	assert.NotNil(c.t, leaderRaft)
 	bFind := false
-	clusterConfig := leaderRaft.ClusterConfiguration()
+	clusterConfig := leaderRaft.ClusterInfo()
 	assert.Equal(c.t, 4, len(clusterConfig.Peers))
 	for _, p := range clusterConfig.Peers {
 		if p.RaftPeerAttr.PeerID == 100 {
@@ -195,7 +195,7 @@ func (c *BasicClientRequestIdempotency) Run(tc *testcluster.BabuzaCluster, a any
 	})
 	assert.Nil(c.t, err)
 	bFind = false
-	clusterConfig = leaderRaft.ClusterConfiguration()
+	clusterConfig = leaderRaft.ClusterInfo()
 	assert.Equal(c.t, 4, len(clusterConfig.Peers))
 	for _, p := range clusterConfig.Peers {
 		if p.RaftPeerAttr.PeerID == 100 {

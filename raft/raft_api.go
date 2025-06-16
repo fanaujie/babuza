@@ -20,11 +20,10 @@ type ClientSession struct {
 	LowestSequenceNumberNotYetReplied uint64
 }
 
-type ClusterConfiguration struct {
+type ClusterInfo struct {
 	ClusterID   uint64
 	LeaderID    uint64
 	LocalPeerID uint64
-	GroupID     uint64
 	Peers       []babuzapb.Peer
 }
 
@@ -395,8 +394,8 @@ func (r *Raft) ApplicationServiceStart(ctx context.Context, appServiceAddresses 
 	return doneCh
 }
 
-func (r *Raft) ClusterConfiguration() ClusterConfiguration {
-	return ClusterConfiguration{
+func (r *Raft) ClusterInfo() ClusterInfo {
+	return ClusterInfo{
 		ClusterID:   r.cluster.ClusterID(),
 		LeaderID:    r.getLeaderId(),
 		LocalPeerID: r.cluster.LocalPeerID(),

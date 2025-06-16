@@ -46,10 +46,10 @@ func NewGRPCFactory(clusterID uint64, config client.Config) (*Factory, error) {
 			fmt.Printf("failed to connect to %s: %v", addr, err)
 			continue
 		}
-		clientpb := kvbenchpb.NewKVServiceClient(conn)
+		kvServiceClient := kvbenchpb.NewKVServiceClient(conn)
 
 		// 2. acquire cluster configuration
-		clusterResp, err := clientpb.ClusterConfiguration(context.Background(), &kvbenchpb.ClusterPeersRequest{
+		clusterResp, err := kvServiceClient.ClusterConfiguration(context.Background(), &kvbenchpb.ClusterPeersRequest{
 			ClusterID: clusterID,
 		})
 		if err != nil {

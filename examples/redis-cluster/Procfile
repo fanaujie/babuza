@@ -1,3 +1,4 @@
-redis1: ./redis-cluster server  --shards 32 --node-id 1 --data-dir ./data1 --redis-address 127.0.0.1:10001 --raft-address 127.0.0.1:14200  --initial-raft-peers 1=127.0.0.1:14200,2=127.0.0.1:14201,3=127.0.0.1:14202
-redis2: ./redis-cluster server  --shards 32 --node-id 2 --data-dir ./data2 --redis-address 127.0.0.1:10002 --raft-address 127.0.0.1:14201  --initial-raft-peers 1=127.0.0.1:14200,2=127.0.0.1:14201,3=127.0.0.1:14202
-redis3: ./redis-cluster server  --shards 32 --node-id 3 --data-dir ./data3 --redis-address 127.0.0.1:10003 --raft-address 127.0.0.1:14202  --initial-raft-peers 1=127.0.0.1:14200,2=127.0.0.1:14201,3=127.0.0.1:14202
+pd: ./redis-cluster pd
+redis1: bash ./start-redis.sh 1 32 ./data1
+redis2: bash ./start-redis.sh 2 32 ./data2
+redis3: bash ./start-redis.sh 3 32 ./data3

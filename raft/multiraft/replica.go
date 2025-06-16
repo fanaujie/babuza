@@ -238,13 +238,17 @@ func (r *replica) TransferLeader(transfereeID uint64) {
 	r.mu.rawNode.TransferLeader(transfereeID)
 }
 
-func (r *replica) ClusterConfiguration() babuza.ClusterConfiguration {
-	return babuza.ClusterConfiguration{
-		ClusterID: r.cluster.ClusterID(),
-		LeaderID:  r.status.CloneSoftState().Lead,
-		GroupID:   uint64(r.cluster.GroupID()),
-		Peers:     r.cluster.Peers(),
+func (r *replica) RaftGroupPeersInfo() RaftGroupPeersInfo {
+	info := RaftGroupPeersInfo{
+		ClusterID:   r.cluster.ClusterID(),
+		GroupID:     r.raftGroup.GroupID,
+		LeaderID:    r.status.CloneSoftState().Lead,
+		LocalPeerID: r.raftGroup.PeerID,
 	}
+	for _, peer := range r.cluster.Peers() {
+		info.Peers = append(info.Peers, peer.RaftPeerAttr)
+	}
+	return info
 }
 
 func (r *replica) learnerReady(ctx context.Context, learnerId uint64) error {

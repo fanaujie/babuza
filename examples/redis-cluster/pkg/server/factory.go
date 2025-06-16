@@ -16,7 +16,7 @@ func (f *redisComponentFactory) CreateStateMachine(stateMachineRootDir string, g
 }
 
 func (f *redisComponentFactory) CreateCluster() ibabuza.Cluster {
-	return cluster.NewCluster(f.logger)
+	return cluster.NewCluster()
 }
 
 func (f *redisComponentFactory) CreateSessionManager() ibabuza.SessionManager {

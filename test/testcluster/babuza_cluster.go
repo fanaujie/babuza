@@ -377,7 +377,7 @@ func (c *BabuzaCluster) CheckPeerExists(ctx context.Context, ClusterID uint64, p
 			if !ok {
 				return fmt.Errorf("test cluster: not found leader (id=%d)", ClusterID)
 			}
-			clusterCfg := controller.app.Raft().ClusterConfiguration()
+			clusterCfg := controller.app.Raft().ClusterInfo()
 			if clusterCfg.LeaderID != ClusterID {
 				return fmt.Errorf("test cluster: leader id mismatch. expected=%d, actual=%d", ClusterID, clusterCfg.LeaderID)
 			}

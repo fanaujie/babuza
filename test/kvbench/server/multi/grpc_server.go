@@ -16,19 +16,19 @@ import (
 // GrpcServer implements the KVService gRPC service
 type GrpcServer struct {
 	serverCfg     Config
-	multiRaftNode *multiraft.Node
+	store         *multiraft.Store
 	stateMachines map[ibabuza.RaftGroupID]*statemachine.MemoryStore
 	grpcServer    *grpc.Server
 	logger        ibabuza.Logger
 }
 
 // NewGrpcServer creates a new gRPC server for the KV service
-func NewGrpcServer(serverCfg Config, node *multiraft.Node, stores map[ibabuza.RaftGroupID]*statemachine.MemoryStore,
+func NewGrpcServer(serverCfg Config, store *multiraft.Store, stores map[ibabuza.RaftGroupID]*statemachine.MemoryStore,
 	logger ibabuza.Logger) *GrpcServer {
 	grpcServer := grpc.NewServer()
 	server := &GrpcServer{
 		serverCfg:     serverCfg,
-		multiRaftNode: node,
+		store:         store,
 		stateMachines: stores,
 		grpcServer:    grpcServer,
 		logger:        logger,
@@ -56,7 +56,7 @@ func (s *GrpcServer) Put(ctx context.Context, req *kvbenchpb.PutRequest) (*kvben
 
 	// Check if the group exists
 	groupID := ibabuza.RaftGroupID(req.GroupID)
-	if !s.multiRaftNode.HasGroupID(groupID) {
+	if !s.store.HasGroupID(groupID) {
 		return nil, status.Errorf(codes.NotFound, "raft group %d not found", req.GroupID)
 	}
 
@@ -74,14 +74,14 @@ func (s *GrpcServer) Put(ctx context.Context, req *kvbenchpb.PutRequest) (*kvben
 	}
 
 	// Propose the change to the Raft group
-	result := s.multiRaftNode.Propose(ctx, groupID, babuza.ClientSession{}, data)
+	result := s.store.Propose(ctx, groupID, babuza.ClientSession{}, data)
 	defer result.Release()
 	applyResult := result.WaitForApplyResult()
 	if applyResult.Error != nil {
 		return nil, status.Errorf(codes.Internal, "failed to apply command: %v", applyResult.Error)
 	}
 	// Get the status to include in the response
-	sta, _ := s.multiRaftNode.Status(groupID)
+	sta, _ := s.store.RaftGroupStatus(groupID)
 	// Return the response
 	return &kvbenchpb.PutResponse{
 		Header: &kvbenchpb.ResponseHeader{
@@ -106,7 +106,7 @@ func (s *GrpcServer) Delete(ctx context.Context, req *kvbenchpb.DeleteRequest) (
 
 // ClusterConfiguration implements the ClusterConfiguration RPC
 func (s *GrpcServer) ClusterConfiguration(ctx context.Context, req *kvbenchpb.ClusterPeersRequest) (*kvbenchpb.ClusterPeersResponse, error) {
-	groups := s.multiRaftNode.GetGroupIDs()
+	groups := s.store.GetGroupIDs()
 	if len(groups) == 0 {
 		return nil, status.Error(codes.NotFound, "no raft groups found")
 	}
@@ -118,7 +118,7 @@ func (s *GrpcServer) ClusterConfiguration(ctx context.Context, req *kvbenchpb.Cl
 
 	// Get configuration for each group
 	for _, groupID := range groups {
-		config, err := s.multiRaftNode.Configuration(groupID)
+		config, err := s.store.RaftGroupPeersInfo(groupID)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get configuration for group %d: %v", groupID, err)
 		}

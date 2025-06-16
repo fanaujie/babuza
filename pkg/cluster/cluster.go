@@ -20,19 +20,15 @@ type Cluster struct {
 	groupID     ibabuza.RaftGroupID
 	localPeerID uint64
 	store       pb.Store
-	logger      ibabuza.Logger
-	mu          *sync.RWMutex
+	mu          sync.RWMutex
 }
 
-func NewCluster(logger ibabuza.Logger) *Cluster {
-	logger.Info("Cluster: creating cluster")
+func NewCluster() *Cluster {
 	return &Cluster{
 		store: pb.Store{
 			Peers:      make(map[uint64]babuzapb.Peer),
 			RemovedIds: make(map[uint64]bool),
 		},
-		logger: logger,
-		mu:     &sync.RWMutex{},
 	}
 }
 
@@ -168,30 +164,22 @@ func (c *Cluster) Add(peer babuzapb.RaftPeerAttribute) error {
 	if _, ok := c.store.RemovedIds[peer.PeerID]; ok {
 		return ErrPeerIDRemoved
 	}
-	for _, m := range c.store.Peers {
-		if m.RaftPeerAttr.RaftListenAddr == peer.RaftListenAddr {
-			return ErrPeerRaftListenAddrExists
-		}
-	}
 	c.store.Peers[peer.PeerID] = babuzapb.Peer{
 		RaftPeerAttr: peer,
 	}
 	return nil
 }
 
-func (c *Cluster) Update(peer babuzapb.RaftPeerAttribute) error {
+func (c *Cluster) Update(peerID uint64, peer babuzapb.RaftPeerAttribute) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	p, ok := c.store.Peers[peer.PeerID]
+	p, ok := c.store.Peers[peerID]
 	if !ok {
 		return ErrPeerIDNotFound
 	}
-	for _, m := range c.store.Peers {
-		if m.RaftPeerAttr.RaftListenAddr == peer.RaftListenAddr {
-			return ErrPeerRaftListenAddrExists
-		}
-	}
 	p.RaftPeerAttr.RaftListenAddr = peer.RaftListenAddr
+	p.RaftPeerAttr.IsLearner = peer.IsLearner
+	p.RaftPeerAttr.StoreID = peer.StoreID
 	c.store.Peers[peer.PeerID] = p
 	return nil
 }

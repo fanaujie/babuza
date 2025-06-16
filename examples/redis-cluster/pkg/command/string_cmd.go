@@ -15,7 +15,7 @@ func Set(ctx context.Context, conn redcon.Conn, cmd redcon.Command, groupID ibab
 		return
 	}
 	proposal := pb.RedisCommand{
-		Type:       pb.String,
+		Type:       pb.RedisDataType_String,
 		Command:    rediscommon.RedisSet,
 		ArgsLength: 2,
 		Args:       [][]byte{cmd.Args[1], cmd.Args[2]},
@@ -25,7 +25,7 @@ func Set(ctx context.Context, conn redcon.Conn, cmd redcon.Command, groupID ibab
 		conn.WriteError("ERR failed to marshal proposal: " + err.Error())
 		return
 	}
-	result := clusterMgr.Propose(ctx, groupID, data)
+	result := clusterMgr.LocalPropose(ctx, groupID, data)
 	defer result.Release()
 	ar := result.WaitForApplyResult()
 	if ar.Error != nil {
@@ -40,8 +40,8 @@ func Get(ctx context.Context, conn redcon.Conn, cmd redcon.Command, groupID ibab
 		conn.WriteError("ERR wrong number of arguments for 'get' command")
 		return
 	}
-	v, err := clusterMgr.Query(groupID, &pb.RedisCommand{
-		Type:       pb.String,
+	v, err := clusterMgr.LocalQuery(groupID, &pb.RedisCommand{
+		Type:       pb.RedisDataType_String,
 		Command:    rediscommon.RedisGet,
 		ArgsLength: 1,
 		Args:       [][]byte{cmd.Args[1]},

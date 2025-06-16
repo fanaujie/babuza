@@ -13,14 +13,14 @@ import (
 )
 
 var (
-	ErrInvalidNodeID            = errors.New("invalid node id")
+	ErrInvalidStoreID           = errors.New("invalid store id")
 	ErrInvalidRaftListenAddress = errors.New("invalid raft listen address")
 )
 
-type NodeConfig struct {
+type StoreConfig struct {
 	ClusterID         uint64
-	NodeID            uint64
-	NodeHostDir       string
+	StoreID           uint64
+	StoreHostDir      string
 	RaftListenAddress string
 	EnableWalNoSync   bool
 	SnapshotCount     uint64
@@ -39,34 +39,37 @@ type NodeConfig struct {
 
 	// setup job queue
 	JobQueueSize int64
+	// setup leader transfer checker
+	LeaderTransferCheckerShardNum int
 }
 
-func DefaultNodeConfig(ClusterID, nodeID uint64, nodeHostDir string, raftListenAddr string) NodeConfig {
-	return NodeConfig{
-		ClusterID:                    ClusterID,
-		NodeID:                       nodeID,
-		NodeHostDir:                  nodeHostDir,
-		RaftListenAddress:            raftListenAddr,
-		EnableWalNoSync:              false,
-		SnapshotCount:                10000,
-		RaftConfig:                   babuza.DefaultRaftConfig(),
-		LearnerReadyPercent:          0.95,
-		CoalescedHeartbeatTickMs:     50,
-		CoalescedHeartbeatQueueSize:  512,
-		LinearizedReadRequestTimeout: time.Second * 3,
-		LinearizedReadRetryTimeout:   time.Millisecond * 500,
-		TLSConfig:                    ibabuza.TLSConfig{},
-		SchedulerShardNum:            2,
-		SchedulerShardWorkerNum:      3,
-		SchedulerQueueSize:           64,
-		SchedulerMaxTicks:            5,
-		JobQueueSize:                 128,
+func DefaultStoreConfig(ClusterID, storeID uint64, storeHostDir string, raftListenAddr string) StoreConfig {
+	return StoreConfig{
+		ClusterID:                     ClusterID,
+		StoreID:                       storeID,
+		StoreHostDir:                  storeHostDir,
+		RaftListenAddress:             raftListenAddr,
+		EnableWalNoSync:               false,
+		SnapshotCount:                 10000,
+		RaftConfig:                    babuza.DefaultRaftConfig(),
+		LearnerReadyPercent:           0.95,
+		CoalescedHeartbeatTickMs:      50,
+		CoalescedHeartbeatQueueSize:   512,
+		LinearizedReadRequestTimeout:  time.Second * 3,
+		LinearizedReadRetryTimeout:    time.Millisecond * 500,
+		TLSConfig:                     ibabuza.TLSConfig{},
+		SchedulerShardNum:             2,
+		SchedulerShardWorkerNum:       3,
+		SchedulerQueueSize:            64,
+		SchedulerMaxTicks:             5,
+		JobQueueSize:                  128,
+		LeaderTransferCheckerShardNum: 4,
 	}
 }
 
-func (c *NodeConfig) Validate() error {
-	if c.NodeID == 0 {
-		return ErrInvalidNodeID
+func (c *StoreConfig) Validate() error {
+	if c.StoreID == 0 {
+		return ErrInvalidStoreID
 	}
 	if !netutil.IsValidAddress(c.RaftListenAddress) {
 		return ErrInvalidRaftListenAddress
@@ -104,13 +107,13 @@ func (r *ReplicaRaftConfig) convertToRaftConfig(localPeerID uint64, logger raft.
 }
 
 type PeersConfiguration struct {
-	groupID ibabuza.RaftGroupID
-	config  *babuza.PeersConfiguration
+	groupID     ibabuza.RaftGroupID
+	peersConfig *babuza.PeersConfiguration
 }
 
 func NewPeersConfiguration() *PeersConfiguration {
 	return &PeersConfiguration{
-		config: babuza.NewPeersConfiguration(),
+		peersConfig: babuza.NewPeersConfiguration(),
 	}
 }
 
@@ -122,28 +125,33 @@ func (c *PeersConfiguration) SetGroupID(groupID ibabuza.RaftGroupID) {
 	c.groupID = groupID
 }
 
-func (c *PeersConfiguration) AddPeer(id uint64, raftListenAddr string, isLearner bool) error {
-	return c.config.AddPeer(id, raftListenAddr, isLearner)
+func (c *PeersConfiguration) AddPeer(peerID, storeID uint64, raftListenAddr string, isLearner bool) error {
+	if err := c.peersConfig.AddPeer(peerID, raftListenAddr, isLearner); err != nil {
+		return err
+	}
+	peerAttr, _ := c.peersConfig.GetPeer(peerID)
+	peerAttr.StoreID = storeID
+	return c.peersConfig.UpdatePeer(peerID, peerAttr)
 }
 
 func (c *PeersConfiguration) GetPeer(id uint64) (babuzapb.RaftPeerAttribute, error) {
-	return c.config.GetPeer(id)
+	return c.peersConfig.GetPeer(id)
 }
 
 func (c *PeersConfiguration) RemovePeer(id uint64) {
-	c.config.RemovePeer(id)
+	c.peersConfig.RemovePeer(id)
 }
 
 func (c *PeersConfiguration) RaftPeersAttribute() []babuzapb.RaftPeerAttribute {
-	return c.config.RaftPeersAttribute()
+	return c.peersConfig.RaftPeersAttribute()
 }
 
 func (c *PeersConfiguration) PeerIds() []uint64 {
-	return c.config.PeerIds()
+	return c.peersConfig.PeerIds()
 }
 
 func (c *PeersConfiguration) ToRaftPeers() ([]raft.Peer, error) {
-	peersMap := c.config.RaftPeerAttributeMap()
+	peersMap := c.peersConfig.RaftPeerAttributeMap()
 	var peers []raft.Peer
 	if len(peersMap) == 0 {
 		return nil, fmt.Errorf("no peers found in group %d", c.groupID)
@@ -171,7 +179,8 @@ func (c *PeersConfiguration) ToRaftPeers() ([]raft.Peer, error) {
 func (c *PeersConfiguration) Clone() *PeersConfiguration {
 	clone := NewPeersConfiguration()
 	for _, raftPeerAttr := range c.RaftPeersAttribute() {
-		if err := clone.AddPeer(raftPeerAttr.PeerID, raftPeerAttr.RaftListenAddr, raftPeerAttr.IsLearner); err != nil {
+		if err := clone.AddPeer(raftPeerAttr.PeerID, raftPeerAttr.StoreID,
+			raftPeerAttr.RaftListenAddr, raftPeerAttr.IsLearner); err != nil {
 			return nil
 		}
 	}
@@ -179,11 +188,17 @@ func (c *PeersConfiguration) Clone() *PeersConfiguration {
 }
 
 func (c *PeersConfiguration) Validate() error {
-	if err := c.config.Validate(); err != nil {
+	if err := c.peersConfig.Validate(); err != nil {
 		return err
 	}
 	if c.groupID == 0 {
 		return fmt.Errorf("group ID is not set")
+	}
+	// check store IDs
+	for _, raftPeerAttr := range c.RaftPeersAttribute() {
+		if raftPeerAttr.StoreID == 0 {
+			return fmt.Errorf("store ID is not set for peer %d", raftPeerAttr.PeerID)
+		}
 	}
 	return nil
 }
@@ -231,7 +246,7 @@ func (c *PeersConfiguration) equal(other []babuzapb.Peer) bool {
 	if len(c.RaftPeersAttribute()) != len(other) {
 		return false
 	}
-	peersMap := c.config.RaftPeerAttributeMap()
+	peersMap := c.peersConfig.RaftPeerAttributeMap()
 	for _, peer := range other {
 		if peerAttr, ok := peersMap[peer.RaftPeerAttr.PeerID]; !ok || peerAttr.RaftListenAddr != peer.RaftPeerAttr.RaftListenAddr ||
 			peerAttr.IsLearner != peer.RaftPeerAttr.IsLearner {

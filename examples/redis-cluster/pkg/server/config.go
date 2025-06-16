@@ -10,23 +10,25 @@ import (
 )
 
 type Config struct {
-	NodeID        uint64
-	ClusterID     uint64
-	ListenAddr    string
-	RaftAddr      string
-	DataDir       string
-	JoinExisting  bool
-	InitialShards int
-	PeerAddrs     []string
+	StoreID                          uint64
+	ClusterID                        uint64
+	ListenAddr                       string
+	RaftAddr                         string
+	DataDir                          string
+	InitialShards                    int
+	StoreAddrs                       []string
+	IntervalHeartbeatStore           int
+	IntervalHeartbeatRaftGroupLeader int
+	PdGRPCAddr                       string
 }
 
-func (c *Config) ParsedPeers() (map[uint64]string, error) {
-	peers := make(map[uint64]string)
+func (c *Config) ParsedStores() (map[uint64]string, error) {
+	stores := make(map[uint64]string)
 
-	for _, peerStr := range c.PeerAddrs {
-		parts := strings.Split(peerStr, "=")
+	for _, storeStr := range c.StoreAddrs {
+		parts := strings.Split(storeStr, "=")
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid peer format: %s (expected format: id=addr)", peerStr)
+			return nil, fmt.Errorf("invalid store format: %s (expected format: id=addr)", storeStr)
 		}
 
 		id, err := strconv.ParseUint(parts[0], 10, 64)
@@ -34,24 +36,26 @@ func (c *Config) ParsedPeers() (map[uint64]string, error) {
 			return nil, fmt.Errorf("invalid peer ID: %s", parts[0])
 		}
 
-		peers[id] = parts[1]
+		stores[id] = parts[1]
 	}
 
-	return peers, nil
+	return stores, nil
 }
 
 func (c *Config) CreatePeersConfig(groupID ibabuza.RaftGroupID) (*multiraft.PeersConfiguration, error) {
 	peersConfig := multiraft.NewPeersConfiguration()
 	peersConfig.SetGroupID(groupID)
 
-	peers, err := c.ParsedPeers()
+	stores, err := c.ParsedStores()
 	if err != nil {
 		return nil, err
 	}
 
-	for id, addr := range peers {
-		if err = peersConfig.AddPeer(id, addr, false); err != nil {
-			return nil, fmt.Errorf("failed to add peer %d: %w", id, err)
+	for storeID, addr := range stores {
+		peerID := storeID + 100
+		if err = peersConfig.AddPeer(peerID, storeID, addr, false); err != nil {
+			return nil, fmt.Errorf("failed to add peer %d store %d addr %s: %w",
+				peerID, storeID, addr, err)
 		}
 	}
 

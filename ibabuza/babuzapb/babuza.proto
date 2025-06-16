@@ -20,12 +20,14 @@ message RaftPeerAttribute {
   uint64    peerID = 1;
   string    raftListenAddr = 2;
   bool      isLearner = 3;
+  uint64    storeID = 4;
 }
 
 message Peer {
   RaftPeerAttribute raftPeerAttr = 1 [(gogoproto.nullable) = false];
   repeated string appServiceAddresses = 2;
 }
+
 
 enum SnapshotFileCompressionType{
   SnapshotFileCompression_None = 0;

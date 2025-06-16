@@ -501,8 +501,8 @@ type mockRaftListener struct {
 func (m *mockRaftListener) OnLeaderChange(term, leaderID uint64) {
 	m.leaderIDs[term] = leaderID
 }
-func (m *mockRaftListener) OnAcquiredLeader(term, leaderID uint64) {}
-func (m *mockRaftListener) OnLostLeader(term, leaderID uint64)     {}
+func (m *mockRaftListener) OnAcquiredLeader() {}
+func (m *mockRaftListener) OnLostLeader()     {}
 
 func (m *mockRaftListener) OnMemberChange(memberEvent int, term, peerID uint64) {}
 func (m *mockRaftListener) OnRaftShutdown()                                     {}

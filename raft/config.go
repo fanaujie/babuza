@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	"go.etcd.io/etcd/raft/v3"
 	"math"
 	"time"
@@ -38,6 +39,17 @@ func (c *PeersConfiguration) GetPeer(id uint64) (babuzapb.RaftPeerAttribute, err
 		return babuzapb.RaftPeerAttribute{}, fmt.Errorf("peer not found: %d", id)
 	}
 	return raftPeerAttr, nil
+}
+
+func (c *PeersConfiguration) UpdatePeer(peerID uint64, peerAttr babuzapb.RaftPeerAttribute) error {
+	if _, ok := c.raftPeersAttr[peerID]; !ok {
+		return fmt.Errorf("peer not found: %d", peerID)
+	}
+	if peerAttr.PeerID != peerID {
+		return fmt.Errorf("peer ID mismatch: expected %d, got %d", peerID, peerAttr.PeerID)
+	}
+	c.raftPeersAttr[peerID] = peerAttr
+	return nil
 }
 
 func (c *PeersConfiguration) RemovePeer(id uint64) {
@@ -97,8 +109,8 @@ func (c *PeersConfiguration) Validate() error {
 		if raftPeerAttr.PeerID == 0 {
 			return fmt.Errorf("PeersConfiguration: empty peer id in config: %v", *c)
 		}
-		if raftPeerAttr.RaftListenAddr == "" {
-			return fmt.Errorf("PeersConfiguration: empty RaftListenAddr in config: %v", *c)
+		if !netutil.IsValidAddress(raftPeerAttr.RaftListenAddr) {
+			return fmt.Errorf("PeersConfiguration: invalid RaftListenAddr in config: %v", raftPeerAttr.RaftListenAddr)
 		}
 		if _, ok := idSet[raftPeerAttr.PeerID]; ok {
 			return fmt.Errorf("PeersConfiguration: found duplicate ID in config: %v", *c)

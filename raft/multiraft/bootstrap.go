@@ -30,16 +30,16 @@ type ComponentsFactory interface {
 	GetLogger() ibabuza.Logger
 }
 
-func BootstrapOrRecoverNode(cfg NodeConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
-	snapshotManager ibabuza.MultiRaftSnapshotManager, raftListener ibabuza.MultiRaftListener) (*Node, error) {
+func BootstrapOrRecoverStore(cfg StoreConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
+	snapshotManager ibabuza.MultiRaftSnapshotManager, raftListener ibabuza.MultiRaftListener) (*Store, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	stateMachineRootDir := filepath.Join(cfg.NodeHostDir, stateMachineDir)
+	stateMachineRootDir := filepath.Join(cfg.StoreHostDir, stateMachineDir)
 	logger := factory.GetLogger()
 	storage := newBootstrapStorage(stateMachineRootDir, factory, walManager, snapshotManager, logger)
 	if err := trans.SetupTransportConfig(ibabuza.TransportConfig{
-		LocalNodeID: cfg.NodeID,
+		LocalNodeID: cfg.StoreID,
 		PeerAddress: cfg.RaftListenAddress,
 		TLSConfig:   cfg.TLSConfig,
 	}); err != nil {
@@ -51,21 +51,21 @@ func BootstrapOrRecoverNode(cfg NodeConfig, factory ComponentsFactory, trans iba
 		if err = storage.ScanInstalledSnapshot(groupIDs); err != nil {
 			return nil, err
 		}
-		return restartNode(cfg, groupIDs, trans, storage, factory, logger, raftListener)
+		return restartStore(cfg, groupIDs, trans, storage, factory, logger, raftListener)
 
 	}
-	return startNode(cfg, trans, storage, factory, logger, raftListener)
+	return startStore(cfg, trans, storage, factory, logger, raftListener)
 }
 
-func startNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory,
-	logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) (*Node, error) {
-	return newNode(config, trans, storage, factory, logger, raftListener), nil
+func startStore(config StoreConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory,
+	logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) (*Store, error) {
+	return newStore(config, trans, storage, factory, logger, raftListener), nil
 }
 
-func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans ibabuza.MultiRaftTransport,
-	storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) (*Node, error) {
+func restartStore(config StoreConfig, restartGroupIDs []ibabuza.RaftGroupID, trans ibabuza.MultiRaftTransport,
+	storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) (*Store, error) {
 
-	n := newNode(config, trans, storage, factory, logger, raftListener)
+	n := newStore(config, trans, storage, factory, logger, raftListener)
 
 	for _, groupID := range restartGroupIDs {
 		replicaCluster := factory.CreateCluster()
@@ -163,7 +163,7 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 		firstCommitInTermNotifier := syncutil.NewEventSignal()
 		resultReplier := replier.NewResult[ibabuza.ApplyResult]()
 		appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
-			resultReplier, replicaCluster, n, trans, nil, logger, metrics.NewMockMetricsCollector())
+			resultReplier, replicaCluster, &callbackProcessor{n}, trans, nil, logger, metrics.NewMockMetricsCollector())
 
 		r := &replica{
 			raftGroup: RaftGroup{
@@ -207,36 +207,38 @@ func restartNode(config NodeConfig, restartGroupIDs []ibabuza.RaftGroupID, trans
 	return n, nil
 }
 
-func newNode(config NodeConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory,
-	logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) *Node {
-	n := &Node{
+func newStore(config StoreConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory,
+	logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) *Store {
+	closer := syncutil.NewCloser()
+	s := &Store{
 		config:       config,
 		trans:        trans,
 		storage:      storage,
 		factory:      factory,
 		logger:       logger,
 		raftListener: raftListener,
-		closer:       syncutil.NewCloser(),
+		closer:       closer,
 		replicaSet:   xsync.NewMap[ibabuza.RaftGroupID, *replica](),
 		coalescedHeartbeatQueue: &coalescedHeartbeatQueue{
 			heartbeatMsg:               xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
 			heartbeatRespMsg:           xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
 			heartbeatLastActiveUnixSec: xsync.NewMap[string, int64](),
 		},
-		idGenerator: idgenerator.New(config.NodeID, uint64(time.Now().Nanosecond())),
+		idGenerator:           idgenerator.New(config.StoreID, uint64(time.Now().Nanosecond())),
+		leaderTransferChecker: newLeaderTransferChecker(config.LeaderTransferCheckerShardNum, time.Second, closer),
 	}
-	scheduler := newScheduler(config.NodeID, schedulerConfig{
+	scheduler := newScheduler(config.StoreID, schedulerConfig{
 		shardNum:       config.SchedulerShardNum,
 		shardWorkerNum: config.SchedulerShardWorkerNum,
 		queueSize:      config.SchedulerQueueSize,
 		maxTicks:       config.SchedulerMaxTicks,
-	}, n, logger)
-	n.scheduler = scheduler
-	n.raftEventPublisher = newRaftEventPublisher()
-	return n
+	}, &callbackProcessor{s}, logger)
+	s.scheduler = scheduler
+	s.raftEventPublisher = newRaftEventPublisher()
+	return s
 }
 
-func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfiguration,
+func bootstrapReplicaWithConfiguration(store *Store, configuration *PeersConfiguration,
 	joinExistingRaftGroup bool) (*replica, error) {
 
 	if err := configuration.Validate(); err != nil {
@@ -245,7 +247,7 @@ func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfigura
 	var localPeerID uint64
 	groupID := configuration.GroupID()
 	_ = configuration.Visit(func(attribute babuzapb.RaftPeerAttribute) error {
-		if attribute.RaftListenAddr == node.config.RaftListenAddress {
+		if attribute.RaftListenAddr == store.config.RaftListenAddress {
 			localPeerID = attribute.PeerID
 		}
 		return nil
@@ -254,15 +256,15 @@ func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfigura
 		return nil, fmt.Errorf("local peer ID not found in configuration: %v", configuration)
 	}
 
-	replicaCluster := node.factory.CreateCluster()
-	replicaCluster.SetClusterID(node.config.ClusterID)
+	replicaCluster := store.factory.CreateCluster()
+	replicaCluster.SetClusterID(store.config.ClusterID)
 	replicaCluster.SetGroupID(groupID)
 	replicaCluster.SetLocalPeerID(localPeerID)
 	replicaStatus := status.New()
 
-	replicaSession := node.factory.CreateSessionManager()
+	replicaSession := store.factory.CreateSessionManager()
 
-	responseSerializer, err := node.storage.CreateStateMachine(groupID)
+	responseSerializer, err := store.storage.CreateStateMachine(groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -271,52 +273,52 @@ func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfigura
 	}
 	for _, raftPeerAttr := range configuration.RaftPeersAttribute() {
 		if raftPeerAttr.PeerID != localPeerID {
-			node.trans.AddPeer(groupID, raftPeerAttr.PeerID, raftPeerAttr.RaftListenAddr)
+			store.trans.AddPeer(groupID, raftPeerAttr.PeerID, raftPeerAttr.RaftListenAddr)
 		}
 	}
 	if joinExistingRaftGroup {
 		if err = func() error {
-			client, err := node.trans.CreateTransportClient()
+			client, err := store.trans.CreateTransportClient()
 			if err != nil {
 				return err
 			}
 			defer client.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 			defer cancel()
-			return configuration.MatchRemoteCluster(ctx, node.config.ClusterID, localPeerID,
+			return configuration.MatchRemoteCluster(ctx, store.config.ClusterID, localPeerID,
 				groupID, client)
 		}(); err != nil {
 			return nil, err
 		}
 	}
-	if err = node.storage.CreateWal(groupID, babuzapb.WalMetadata{
-		ClusterID:   node.config.ClusterID,
+	if err = store.storage.CreateWal(groupID, babuzapb.WalMetadata{
+		ClusterID:   store.config.ClusterID,
 		LocalPeerID: localPeerID,
 		GroupID:     uint64(groupID),
 	}); err != nil {
 		return nil, err
 	}
-	if node.config.EnableWalNoSync {
-		err = node.storage.SetWalNoFSync(groupID)
+	if store.config.EnableWalNoSync {
+		err = store.storage.SetWalNoFSync(groupID)
 		if err != nil {
 			return nil, err
 		}
 	}
-	entryStorage, err := node.storage.GetEntryStorage(groupID)
+	entryStorage, err := store.storage.GetEntryStorage(groupID)
 	if err != nil {
 		return nil, err
 	}
 	replicaRaftConfig := ReplicaRaftConfig{
-		EnableWalNoSync:              node.config.EnableWalNoSync,
-		SnapshotCount:                node.config.SnapshotCount,
-		RaftConfig:                   node.config.RaftConfig,
-		LearnerReadyPercent:          node.config.LearnerReadyPercent,
-		CoalescedHeartbeatQueueSize:  node.config.CoalescedHeartbeatQueueSize,
-		LinearizedReadRetryTimeout:   node.config.LinearizedReadRetryTimeout,
-		LinearizedReadRequestTimeout: node.config.LinearizedReadRequestTimeout,
+		EnableWalNoSync:              store.config.EnableWalNoSync,
+		SnapshotCount:                store.config.SnapshotCount,
+		RaftConfig:                   store.config.RaftConfig,
+		LearnerReadyPercent:          store.config.LearnerReadyPercent,
+		CoalescedHeartbeatQueueSize:  store.config.CoalescedHeartbeatQueueSize,
+		LinearizedReadRetryTimeout:   store.config.LinearizedReadRetryTimeout,
+		LinearizedReadRequestTimeout: store.config.LinearizedReadRequestTimeout,
 	}
 
-	raftCfg := replicaRaftConfig.convertToRaftConfig(localPeerID, node.logger, entryStorage)
+	raftCfg := replicaRaftConfig.convertToRaftConfig(localPeerID, store.logger, entryStorage)
 	rawNode, err := raft.NewRawNode(raftCfg)
 	if err != nil {
 		return nil, err
@@ -337,12 +339,13 @@ func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfigura
 	}
 	firstCommitInTermNotifier := syncutil.NewEventSignal()
 	resultReplier := replier.NewResult[ibabuza.ApplyResult]()
-	replicaStorage, err := node.storage.GetReplicaStorage(groupID)
+	replicaStorage, err := store.storage.GetReplicaStorage(groupID)
 	if err != nil {
 		return nil, err
 	}
 	appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
-		resultReplier, replicaCluster, node, node.trans, nil, node.logger, metrics.NewMockMetricsCollector())
+		resultReplier, replicaCluster, &callbackProcessor{store}, store.trans, nil,
+		store.logger, metrics.NewMockMetricsCollector())
 
 	r := &replica{
 		raftGroup: RaftGroup{
@@ -351,25 +354,25 @@ func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfigura
 		},
 		config:                    replicaRaftConfig,
 		cluster:                   replicaCluster,
-		transport:                 node.trans,
+		transport:                 store.trans,
 		status:                    replicaStatus,
 		sessionManager:            replicaSession,
 		storage:                   replicaStorage,
 		appliedFacade:             appliedFacade,
-		idGenerator:               node.idGenerator,
+		idGenerator:               store.idGenerator,
 		resultReplier:             resultReplier,
 		completionReplier:         replier.NewCompletion(),
 		firstCommitInTermNotifier: firstCommitInTermNotifier,
 		leaderChangeNotifier:      syncutil.NewEventSignal(),
 		linearizeReqNotifier:      syncutil.NewSignalManager(),
-		raftEventPublisher:        node.raftEventPublisher,
+		raftEventPublisher:        store.raftEventPublisher,
 		receivedSnapshotMsgCh:     make(chan babuzapb.SnapshotMessage, 8),
 		readStateCh:               make(chan raft.ReadState, 1),
 		readIndexCh:               make(chan struct{}, 1),
-		scheduler:                 node.scheduler,
-		applyJobQueue:             newJobQueue(groupID, node.config.JobQueueSize, node.logger),
+		scheduler:                 store.scheduler,
+		applyJobQueue:             newJobQueue(groupID, store.config.JobQueueSize, store.logger),
 		requestQueue:              newReplicaRequestQueue(),
-		coalescedHeartbeat:        node.coalescedHeartbeatQueue,
+		coalescedHeartbeat:        store.coalescedHeartbeatQueue,
 		mu: struct {
 			lock        sync.Mutex
 			rawNode     *raft.RawNode
@@ -378,7 +381,108 @@ func bootstrapReplicaWithConfiguration(node *Node, configuration *PeersConfigura
 			rawNode:     rawNode,
 			unreachable: make(map[uint64]struct{}),
 		},
-		logger: node.logger,
+		logger: store.logger,
+		closer: syncutil.NewCloser(),
+	}
+	return r, nil
+}
+
+func newReplicaWithoutConfiguration(store *Store, groupID ibabuza.RaftGroupID, localPeerID uint64) (*replica, error) {
+
+	replicaCluster := store.factory.CreateCluster()
+	replicaCluster.SetClusterID(store.config.ClusterID)
+	replicaCluster.SetGroupID(groupID)
+	replicaCluster.SetLocalPeerID(localPeerID)
+	replicaStatus := status.New()
+
+	replicaSession := store.factory.CreateSessionManager()
+
+	responseSerializer, err := store.storage.CreateStateMachine(groupID)
+	if err != nil {
+		return nil, err
+	}
+	if err = replicaSession.SetResponseSerializer(responseSerializer); err != nil {
+		return nil, err
+	}
+
+	if err = store.storage.CreateWal(groupID, babuzapb.WalMetadata{
+		ClusterID:   store.config.ClusterID,
+		LocalPeerID: localPeerID,
+		GroupID:     uint64(groupID),
+	}); err != nil {
+		return nil, err
+	}
+	if store.config.EnableWalNoSync {
+		err = store.storage.SetWalNoFSync(groupID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	entryStorage, err := store.storage.GetEntryStorage(groupID)
+	if err != nil {
+		return nil, err
+	}
+	replicaRaftConfig := ReplicaRaftConfig{
+		EnableWalNoSync:              store.config.EnableWalNoSync,
+		SnapshotCount:                store.config.SnapshotCount,
+		RaftConfig:                   store.config.RaftConfig,
+		LearnerReadyPercent:          store.config.LearnerReadyPercent,
+		CoalescedHeartbeatQueueSize:  store.config.CoalescedHeartbeatQueueSize,
+		LinearizedReadRetryTimeout:   store.config.LinearizedReadRetryTimeout,
+		LinearizedReadRequestTimeout: store.config.LinearizedReadRequestTimeout,
+	}
+
+	raftCfg := replicaRaftConfig.convertToRaftConfig(localPeerID, store.logger, entryStorage)
+	rawNode, err := raft.NewRawNode(raftCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	firstCommitInTermNotifier := syncutil.NewEventSignal()
+	resultReplier := replier.NewResult[ibabuza.ApplyResult]()
+	replicaStorage, err := store.storage.GetReplicaStorage(groupID)
+	if err != nil {
+		return nil, err
+	}
+	appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
+		resultReplier, replicaCluster, &callbackProcessor{store}, store.trans, nil,
+		store.logger, metrics.NewMockMetricsCollector())
+
+	r := &replica{
+		raftGroup: RaftGroup{
+			GroupID: groupID,
+			PeerID:  localPeerID,
+		},
+		config:                    replicaRaftConfig,
+		cluster:                   replicaCluster,
+		transport:                 store.trans,
+		status:                    replicaStatus,
+		sessionManager:            replicaSession,
+		storage:                   replicaStorage,
+		appliedFacade:             appliedFacade,
+		idGenerator:               store.idGenerator,
+		resultReplier:             resultReplier,
+		completionReplier:         replier.NewCompletion(),
+		firstCommitInTermNotifier: firstCommitInTermNotifier,
+		leaderChangeNotifier:      syncutil.NewEventSignal(),
+		linearizeReqNotifier:      syncutil.NewSignalManager(),
+		raftEventPublisher:        store.raftEventPublisher,
+		receivedSnapshotMsgCh:     make(chan babuzapb.SnapshotMessage, 8),
+		readStateCh:               make(chan raft.ReadState, 1),
+		readIndexCh:               make(chan struct{}, 1),
+		scheduler:                 store.scheduler,
+		applyJobQueue:             newJobQueue(groupID, store.config.JobQueueSize, store.logger),
+		requestQueue:              newReplicaRequestQueue(),
+		coalescedHeartbeat:        store.coalescedHeartbeatQueue,
+		mu: struct {
+			lock        sync.Mutex
+			rawNode     *raft.RawNode
+			unreachable map[uint64]struct{}
+		}{
+			rawNode:     rawNode,
+			unreachable: make(map[uint64]struct{}),
+		},
+		logger: store.logger,
 		closer: syncutil.NewCloser(),
 	}
 	return r, nil

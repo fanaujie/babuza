@@ -1,14 +1,17 @@
 package server
 
 import (
+	"context"
 	"fmt"
-	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/cluster"
 	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/command"
+	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/pb"
+	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/pdclient"
 	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/rediscommon"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/logger"
@@ -27,10 +30,38 @@ import (
 
 type Server struct {
 	config      Config
-	node        *multiraft.Node
+	store       *multiraft.Store
 	redisServer *redcon.Server
+	pdClient    *pdclient.PDClient
 	router      *command.Router
 	logger      ibabuza.Logger
+	stopCh      chan struct{}
+}
+
+func (s *Server) OnAcquiredLeader(groupID ibabuza.RaftGroupID, term, leaderID uint64) {
+	s.logger.Infof("Acquired leader for group %d, term %d, leaderID %d", groupID, term, leaderID)
+	// immediately send heartbeat to PD
+	info, err := s.store.RaftGroupPeersInfo(groupID)
+	if err != nil {
+		s.logger.Errorf("Failed to get Raft group peers info for group %d: %v", groupID, err)
+		return
+	}
+	if err = s.replicaLeaderHeartbeat(info); err != nil {
+		s.logger.Errorf("Failed to send leader heartbeat for group %d: %v", groupID, err)
+		return
+	}
+}
+
+func (s *Server) OnLostLeader(groupID ibabuza.RaftGroupID, term, leaderID uint64) {
+	s.logger.Infof("Lost leader for group %d, term %d, leaderID %d", groupID, term, leaderID)
+}
+
+func (s *Server) OnLeaderChange(groupID ibabuza.RaftGroupID, term, leaderID uint64) {
+	s.logger.Infof("Leader changed for group %d, term %d, new leaderID %d", groupID, term, leaderID)
+}
+
+func (s *Server) OnMemberChange(memberEvent int, groupID ibabuza.RaftGroupID, term, peerID uint64) {
+	s.logger.Infof("Member change event %d for group %d, term %d, peerID %d", memberEvent, groupID, term, peerID)
 }
 
 type ShardInfo struct {
@@ -48,19 +79,20 @@ func NewServer(config Config) (*Server, error) {
 	server := &Server{
 		config: config,
 		logger: babuzaLogger,
+		stopCh: make(chan struct{}),
 	}
 	if err = server.setupNode(); err != nil {
 		return nil, err
 	}
-	server.router = command.NewRouter(config.InitialShards, cluster.NewMultiRaft(server.node))
+	server.router = command.NewRouter(config.InitialShards, NewCluster(server.store))
 	server.registerCommand()
 	return server, nil
 }
 
 func (s *Server) setupNode() error {
-	nodeConfig := multiraft.DefaultNodeConfig(
+	nodeConfig := multiraft.DefaultStoreConfig(
 		s.config.ClusterID,
-		s.config.NodeID,
+		s.config.StoreID,
 		s.config.DataDir,
 		s.config.RaftAddr,
 	)
@@ -94,17 +126,15 @@ func (s *Server) setupNode() error {
 	}
 
 	var err error
-	s.node, err = multiraft.BootstrapOrRecoverNode(nodeConfig, factory, trans, walMgr, snapshotMgr)
+	s.store, err = multiraft.BootstrapOrRecoverStore(nodeConfig, factory, trans, walMgr, snapshotMgr, s)
 	if err != nil {
 		return fmt.Errorf("failed to bootstrap node: %w", err)
 	}
 
-	if len(s.node.GetGroupIDs()) == 0 {
-		if !s.config.JoinExisting {
-			if err = s.createInitialShards(); err != nil {
-				s.node.Stop()
-				return fmt.Errorf("failed to create initial shards: %w", err)
-			}
+	if len(s.store.GetGroupIDs()) == 0 {
+		if err = s.createInitialShards(); err != nil {
+			s.store.Stop()
+			return fmt.Errorf("failed to create initial shards: %w", err)
 		}
 	}
 
@@ -112,22 +142,25 @@ func (s *Server) setupNode() error {
 }
 
 func (s *Server) Run() error {
-	if err := s.node.Start(); err != nil {
+	if err := s.store.Start(); err != nil {
 		return fmt.Errorf("failed to start node: %w", err)
 	}
-
+	var err error
+	s.pdClient, err = pdclient.NewPDClient(s.config.PdGRPCAddr)
+	if err != nil {
+		return fmt.Errorf("failed to create pd client: %w", err)
+	}
 	s.setupRedisServer()
-
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sig
 	fmt.Println("Shutting down...")
-
+	close(s.stopCh)
 	if s.redisServer != nil {
 		s.redisServer.Close()
 	}
-	s.node.Stop()
+	s.store.Stop()
 	return nil
 }
 
@@ -147,10 +180,10 @@ func (s *Server) setupRedisServer() {
 
 	go func() {
 		s.logger.Infof("Redis server started on %s", s.config.ListenAddr)
-		err := s.redisServer.ListenAndServe()
-		if err != nil {
-			s.logger.Infof("Redis server error: %v", err)
-		}
+		_ = s.redisServer.ListenAndServe()
+	}()
+	go func() {
+		s.heartbeat()
 	}()
 }
 
@@ -163,10 +196,76 @@ func (s *Server) createInitialShards() error {
 			return fmt.Errorf("failed to create peers config for shard %d: %w", groupID, err)
 		}
 
-		if err = s.node.CreateRaftGroup(peersConfig, false); err != nil {
+		if err = s.store.CreateRaftGroup(peersConfig, false); err != nil {
 			return fmt.Errorf("failed to create Raft group %d: %w", groupID, err)
 		}
 		s.logger.Infof("Created shard %d", groupID)
+	}
+	return nil
+}
+
+func (s *Server) heartbeat() {
+	nodeHeartbeatTicker := time.NewTicker(time.Duration(s.config.IntervalHeartbeatStore) * time.Second)
+	defer nodeHeartbeatTicker.Stop()
+	leaderHeartbeatTicker := time.NewTicker(time.Duration(s.config.IntervalHeartbeatRaftGroupLeader) * time.Second)
+	defer leaderHeartbeatTicker.Stop()
+
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-nodeHeartbeatTicker.C:
+			leaderCount := uint64(0)
+			for _, groupID := range s.store.GetGroupIDs() {
+				info, err := s.store.RaftGroupPeersInfo(groupID)
+				if err != nil {
+					s.logger.Errorf("failed to get Raft group peers info for group %d: %v", groupID, err)
+					continue
+				}
+				if info.IsLeader() {
+					leaderCount++
+				}
+			}
+			if _, err := s.pdClient.StoreHeartbeat(context.TODO(),
+				&pb.StoreHeartbeatReq{
+					StoreID:     s.config.StoreID,
+					ClusterID:   s.config.ClusterID,
+					LeaderCount: leaderCount,
+				}); err != nil {
+				s.logger.Errorf("failed to send store heartbeat: %v", err)
+				continue
+			}
+		case <-leaderHeartbeatTicker.C:
+			for _, groupID := range s.store.GetGroupIDs() {
+				info, err := s.store.RaftGroupPeersInfo(groupID)
+				if err != nil {
+					continue
+				}
+				if info.LeaderID == info.LocalPeerID {
+					if err = s.replicaLeaderHeartbeat(info); err != nil {
+						s.logger.Errorf("failed to heartbeat leader: %v", err)
+						continue
+					}
+				}
+			}
+		}
+	}
+}
+
+func (s *Server) replicaLeaderHeartbeat(info multiraft.RaftGroupPeersInfo) error {
+	resp, err := s.pdClient.RaftGroupLeaderHeartbeat(context.TODO(),
+		&pb.RaftGroupLeaderHeartbeatReq{
+			StoreID:  s.config.StoreID,
+			GroupID:  uint64(info.GroupID),
+			LeaderID: info.LeaderID,
+			Peers:    info.Peers,
+		})
+	if err != nil {
+		return err
+	}
+	if resp.TransferLeader != nil {
+		s.logger.Infof("Transferring leader for group %d to new leader %d", info.GroupID, resp.TransferLeader.NewLeaderID)
+		s.store.TransferLeader(context.TODO(), info.GroupID, resp.TransferLeader.NewLeaderID)
 	}
 	return nil
 }

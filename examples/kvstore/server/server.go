@@ -58,6 +58,12 @@ type Server struct {
 	closer       *syncutil.Closer
 }
 
+func (s *Server) OnAcquiredLeader() {
+}
+
+func (s *Server) OnLostLeader() {
+}
+
 func (s *Server) OnLeaderChange(term, leaderID uint64) {
 	s.logger.Infof("Leader changed to %d in term %d", leaderID, term)
 }
@@ -160,7 +166,7 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
-	
+
 	s.raft = r
 	s.logger = babuzaComponets.Logger
 

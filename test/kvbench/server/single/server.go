@@ -57,12 +57,12 @@ func (s *Server) OnRaftShutdown() {
 	s.logger.Infof("raft shutdown")
 }
 
-func (s *Server) OnAcquiredLeader(term, leaderID uint64) {
-	s.logger.Infof("acquired leader term: %d, leaderID: %d", term, leaderID)
+func (s *Server) OnAcquiredLeader() {
+
 }
 
-func (s *Server) OnLostLeader(term, leaderID uint64) {
-	s.logger.Infof("lost leader term: %d, leaderID: %d", term, leaderID)
+func (s *Server) OnLostLeader() {
+
 }
 
 // NewServer creates a new KV server

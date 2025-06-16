@@ -29,9 +29,9 @@ func (r *Raft) handleListenerEvent() {
 			case ibabuza.LeaderChanged:
 				r.raftListener.OnLeaderChange(r.status.GetHardStateTerm(), e.PeerID)
 			case ibabuza.AcquiredLeader:
-				r.raftListener.OnAcquiredLeader(r.status.GetHardStateTerm(), e.PeerID)
+				r.raftListener.OnAcquiredLeader()
 			case ibabuza.LostLeader:
-				r.raftListener.OnLostLeader(r.status.GetHardStateTerm(), e.PeerID)
+				r.raftListener.OnLostLeader()
 			case ibabuza.MemberJoined, ibabuza.MemberUpdated, ibabuza.MemberRemoved,
 				ibabuza.LeanerAdded, ibabuza.LeanerPromoted:
 				r.raftListener.OnMemberChange(e.Event, r.status.GetHardStateTerm(), e.PeerID)

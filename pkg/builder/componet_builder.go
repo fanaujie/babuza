@@ -284,7 +284,7 @@ func (b *BabuzaComponentBuilder) Build() *BabuzaComponent {
 	component.Transport = b.createTransport(component.Logger)
 
 	component.RaftNode = raftnode.NewEtcdRaftNode()
-	component.Cluster = cluster.NewCluster(component.Logger)
+	component.Cluster = cluster.NewCluster()
 
 	b.built = true
 

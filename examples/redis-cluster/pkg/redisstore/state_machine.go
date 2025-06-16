@@ -33,7 +33,7 @@ func (r *RedisStateMachine) Apply(entry ibabuza.Entry) ibabuza.ApplyResult {
 	var result any
 	var err error
 	switch redisCmd.Type {
-	case pb.String:
+	case pb.RedisDataType_String:
 		result, err = r.processString(redisCmd)
 	}
 	return ibabuza.ApplyResult{
@@ -89,7 +89,7 @@ func (r *RedisStateMachine) Close() error {
 func (r *RedisStateMachine) Query(key any) (any, error) {
 	if cmd, ok := key.(*pb.RedisCommand); ok {
 		switch cmd.Type {
-		case pb.String:
+		case pb.RedisDataType_String:
 			return r.processString(*cmd)
 		}
 	}

@@ -55,7 +55,7 @@ type Config struct {
 // Server represents a multi-raft KV server
 type Server struct {
 	cfg           Config
-	multiRaftNode *multiraft.Node
+	store         *multiraft.Store
 	stateMachines map[ibabuza.RaftGroupID]*statemachine.MemoryStore
 	logger        ibabuza.Logger
 	closer        *syncutil.Closer
@@ -71,7 +71,7 @@ type KVComponentFactory struct {
 }
 
 func (f *KVComponentFactory) CreateCluster() ibabuza.Cluster {
-	return cluster.NewCluster(f.logger)
+	return cluster.NewCluster()
 }
 
 func (f *KVComponentFactory) CreateSessionManager() ibabuza.SessionManager {
@@ -121,7 +121,7 @@ func (s *Server) Start() error {
 	s.logger = logger.NewRaftLogger(zapLogger.Sugar())
 
 	// Create node configuration
-	nodeConfig := multiraft.DefaultNodeConfig(s.cfg.ClusterID, s.cfg.LocalPeerID, s.cfg.DataDir, s.cfg.RaftAddress)
+	nodeConfig := multiraft.DefaultStoreConfig(s.cfg.ClusterID, s.cfg.LocalPeerID, s.cfg.DataDir, s.cfg.RaftAddress)
 	nodeConfig.EnableWalNoSync = true
 	nodeConfig.SnapshotCount = 100000000
 	nodeConfig.DisableProposalForwarding = false
@@ -167,15 +167,15 @@ func (s *Server) Start() error {
 	)
 
 	// Create MultiRaft node
-	node, err := multiraft.BootstrapOrRecoverNode(nodeConfig, factory, trans, walMgr, snapshotMgr, nil)
+	node, err := multiraft.BootstrapOrRecoverStore(nodeConfig, factory, trans, walMgr, snapshotMgr, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create MultiRaft node: %w", err)
 	}
 
-	s.multiRaftNode = node
+	s.store = node
 
 	// Start MultiRaft node
-	if err = s.multiRaftNode.Start(); err != nil {
+	if err = s.store.Start(); err != nil {
 		return fmt.Errorf("failed to start MultiRaft node: %w", err)
 	}
 
@@ -193,7 +193,7 @@ func (s *Server) Start() error {
 		}
 
 		// Create Raft group
-		if err = s.multiRaftNode.CreateRaftGroup(peersConfig, false); err != nil {
+		if err = s.store.CreateRaftGroup(peersConfig, false); err != nil {
 			return fmt.Errorf("failed to create Raft group %d: %w", groupID, err)
 		}
 
@@ -211,7 +211,7 @@ func (s *Server) startGrpcServer() error {
 		return fmt.Errorf("failed to listen on %s: %w", s.cfg.GrpcAddress, err)
 	}
 
-	s.grpcServer = NewGrpcServer(s.cfg, s.multiRaftNode, s.stateMachines, s.logger)
+	s.grpcServer = NewGrpcServer(s.cfg, s.store, s.stateMachines, s.logger)
 
 	s.closer.Run(func() {
 		if err := s.grpcServer.Serve(lis); err != nil {
@@ -231,8 +231,8 @@ func (s *Server) Stop() error {
 		s.grpcServer.Stop()
 	}
 
-	if s.multiRaftNode != nil {
-		s.multiRaftNode.Stop()
+	if s.store != nil {
+		s.store.Stop()
 	}
 
 	s.closer.Close()
@@ -252,7 +252,7 @@ func (s *Server) WaitForLeadership(timeout time.Duration) error {
 
 		for i := uint(0); i < s.cfg.ShardCount; i++ {
 			groupID := ibabuza.RaftGroupID(i + 1)
-			status, err := s.multiRaftNode.Status(groupID)
+			status, err := s.store.RaftGroupStatus(groupID)
 			if err != nil {
 				return err
 			}
@@ -266,7 +266,7 @@ func (s *Server) WaitForLeadership(timeout time.Duration) error {
 		if allHaveLeader {
 			for i := uint(0); i < s.cfg.ShardCount; i++ {
 				groupID := ibabuza.RaftGroupID(i + 1)
-				status, _ := s.multiRaftNode.Status(groupID)
+				status, _ := s.store.RaftGroupStatus(groupID)
 				fmt.Printf("Leader %d: %d\n", groupID, status.LeaderID)
 			}
 			return nil

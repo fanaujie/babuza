@@ -98,7 +98,7 @@ func (s *KVServiceServer) Delete(ctx context.Context, req *kvbenchpb.DeleteReque
 
 func (s *KVServiceServer) ClusterConfiguration(ctx context.Context, req *kvbenchpb.ClusterPeersRequest) (*kvbenchpb.ClusterPeersResponse, error) {
 	var peerAttr []*kvbenchpb.RaftPeerAttribute
-	cfg := s.raft.ClusterConfiguration()
+	cfg := s.raft.ClusterInfo()
 	for _, peer := range cfg.Peers {
 		peerAttr = append(peerAttr, &kvbenchpb.RaftPeerAttribute{
 			PeerID:         peer.RaftPeerAttr.PeerID,

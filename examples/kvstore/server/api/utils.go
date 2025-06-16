@@ -26,7 +26,7 @@ func writeHttpResponse(w http.ResponseWriter, response any) error {
 }
 
 func convertRaftClusterPeersToResponse(babuza *raft.Raft, sessionId, sessionSeqNum uint64) *response.ClusterConfigurationResponse {
-	babuzaResponse := babuza.ClusterConfiguration()
+	babuzaResponse := babuza.ClusterInfo()
 	res := &response.ClusterConfigurationResponse{
 		SessionID:      sessionId,
 		SequenceNumber: sessionSeqNum,

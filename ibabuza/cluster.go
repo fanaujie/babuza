@@ -21,7 +21,7 @@ type Cluster interface {
 	GroupID() RaftGroupID
 	LocalPeerID() uint64
 	Add(babuzapb.RaftPeerAttribute) error
-	Update(babuzapb.RaftPeerAttribute) error
+	Update(peerID uint64, attr babuzapb.RaftPeerAttribute) error
 	Remove(peerID uint64) error
 	Promote(peerID uint64) error
 	UpdateAppServiceAddresses(peerID uint64, addresses []string) error
