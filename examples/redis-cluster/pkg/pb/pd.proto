@@ -15,14 +15,19 @@ option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
 
+
+
 message StoreHeartbeatReq {
   uint64 clusterID = 1;
   uint64 storeID = 2;
   uint64 leaderCount = 3;
+  string redisListenAddr = 4;
+  repeated uint64 leaderGroupIDs = 5;
 }
 
 message StoreHeartbeatResp {
   uint64 clusterID = 1;
+  map<uint64, string> redisRoutingTable = 2;
 }
 
 message RaftGroupLeaderHeartbeatReq {

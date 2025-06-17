@@ -12,7 +12,7 @@ import (
 type Config struct {
 	StoreID                          uint64
 	ClusterID                        uint64
-	ListenAddr                       string
+	RedisListenAddr                  string
 	RaftAddr                         string
 	DataDir                          string
 	InitialShards                    int

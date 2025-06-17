@@ -34,6 +34,7 @@ type Server struct {
 	redisServer *redcon.Server
 	pdClient    *pdclient.PDClient
 	router      *command.Router
+	clMgr       *clusterMgr
 	logger      ibabuza.Logger
 	stopCh      chan struct{}
 }
@@ -84,7 +85,8 @@ func NewServer(config Config) (*Server, error) {
 	if err = server.setupNode(); err != nil {
 		return nil, err
 	}
-	server.router = command.NewRouter(config.InitialShards, NewCluster(server.store))
+	server.clMgr = newClusterMgr(config.RedisListenAddr, server.store)
+	server.router = command.NewRouter(config.InitialShards, server.clMgr)
 	server.registerCommand()
 	return server, nil
 }
@@ -160,12 +162,13 @@ func (s *Server) Run() error {
 	if s.redisServer != nil {
 		s.redisServer.Close()
 	}
+	s.clMgr.Close()
 	s.store.Stop()
 	return nil
 }
 
 func (s *Server) setupRedisServer() {
-	s.redisServer = redcon.NewServer(s.config.ListenAddr,
+	s.redisServer = redcon.NewServer(s.config.RedisListenAddr,
 		func(conn redcon.Conn, cmd redcon.Command) {
 			s.router.RunCommand(conn, cmd)
 		},
@@ -179,7 +182,7 @@ func (s *Server) setupRedisServer() {
 	)
 
 	go func() {
-		s.logger.Infof("Redis server started on %s", s.config.ListenAddr)
+		s.logger.Infof("Redis server started on %s", s.config.RedisListenAddr)
 		_ = s.redisServer.ListenAndServe()
 	}()
 	go func() {
@@ -205,16 +208,17 @@ func (s *Server) createInitialShards() error {
 }
 
 func (s *Server) heartbeat() {
-	nodeHeartbeatTicker := time.NewTicker(time.Duration(s.config.IntervalHeartbeatStore) * time.Second)
-	defer nodeHeartbeatTicker.Stop()
+	storeHeartbeatTicker := time.NewTicker(time.Duration(s.config.IntervalHeartbeatStore) * time.Second)
+	defer storeHeartbeatTicker.Stop()
 	leaderHeartbeatTicker := time.NewTicker(time.Duration(s.config.IntervalHeartbeatRaftGroupLeader) * time.Second)
 	defer leaderHeartbeatTicker.Stop()
-
+	shardIDs := make([]uint64, 0, s.config.InitialShards)
 	for {
 		select {
 		case <-s.stopCh:
 			return
-		case <-nodeHeartbeatTicker.C:
+		case <-storeHeartbeatTicker.C:
+			shardIDs = shardIDs[:0] // Reset leader IDs for this heartbeat
 			leaderCount := uint64(0)
 			for _, groupID := range s.store.GetGroupIDs() {
 				info, err := s.store.RaftGroupPeersInfo(groupID)
@@ -224,16 +228,20 @@ func (s *Server) heartbeat() {
 				}
 				if info.IsLeader() {
 					leaderCount++
+					shardIDs = append(shardIDs, uint64(groupID))
 				}
 			}
-			if _, err := s.pdClient.StoreHeartbeat(context.TODO(),
+			if res, err := s.pdClient.StoreHeartbeat(context.TODO(),
 				&pb.StoreHeartbeatReq{
-					StoreID:     s.config.StoreID,
-					ClusterID:   s.config.ClusterID,
-					LeaderCount: leaderCount,
+					StoreID:         s.config.StoreID,
+					ClusterID:       s.config.ClusterID,
+					LeaderCount:     leaderCount,
+					RedisListenAddr: s.config.RedisListenAddr,
+					LeaderGroupIDs:  shardIDs,
 				}); err != nil {
 				s.logger.Errorf("failed to send store heartbeat: %v", err)
-				continue
+			} else {
+				s.clMgr.UpdateRoutingTable(res.RedisRoutingTable)
 			}
 		case <-leaderHeartbeatTicker.C:
 			for _, groupID := range s.store.GetGroupIDs() {

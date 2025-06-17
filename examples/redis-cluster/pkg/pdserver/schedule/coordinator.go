@@ -65,8 +65,10 @@ func (c *Coordinator) DoStoreHeartbeat(store pb.StoreHeartbeatReq) (*pb.StoreHea
 	fmt.Printf("Store %d heartbeat received, leader count: %d\n", store.StoreID, store.LeaderCount)
 	c.infoManager.AddOrUpdateStore(store.StoreID, infostore.CreateStoreInfo(
 		store.StoreID, store.LeaderCount))
+	c.infoManager.UpdateRoutingTable(store.RedisListenAddr, store.LeaderGroupIDs)
 	return &pb.StoreHeartbeatResp{
-		ClusterID: store.ClusterID,
+		ClusterID:         store.ClusterID,
+		RedisRoutingTable: c.infoManager.RoutingTable(),
 	}, nil
 }
 

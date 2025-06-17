@@ -81,7 +81,6 @@ func (t *Tcp) Setup(cfg ibabuza.TransportConfig) error {
 	t.config = cfg
 	t.pool = connpool.NewConnectionPool[*conn.FrameConnection](t, connpool.Config{
 		MaxConnectionsPerHost: t.options.MaxConnectionsPerHost,
-		DialTimeout:           t.options.DialTimeout,
 		IdleTimeout:           t.options.IdleConnTimeout,
 	})
 	return nil

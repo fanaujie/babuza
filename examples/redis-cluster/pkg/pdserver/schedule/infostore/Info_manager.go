@@ -14,6 +14,8 @@ type InfoManager interface {
 	AllGroups() []GroupInfo
 	Store(storeID uint64) (StoreInfo, bool)
 	Stores() []StoreInfo
+	UpdateRoutingTable(redisListenAddr string, LeaderGroupIDs []uint64)
+	RoutingTable() map[uint64]string
 }
 
 var _ InfoManager = (*InfoManagerImpl)(nil)
@@ -28,6 +30,10 @@ type InfoManagerImpl struct {
 	store struct {
 		mu     sync.RWMutex
 		stores map[uint64]StoreInfo
+	}
+	routing struct {
+		mu    sync.RWMutex
+		table map[uint64]string
 	}
 }
 
@@ -48,6 +54,12 @@ func NewInfoManager() *InfoManagerImpl {
 			stores map[uint64]StoreInfo
 		}{
 			stores: make(map[uint64]StoreInfo),
+		},
+		routing: struct {
+			mu    sync.RWMutex
+			table map[uint64]string
+		}{
+			table: make(map[uint64]string),
 		},
 	}
 }
@@ -183,4 +195,26 @@ func (i *InfoManagerImpl) Store(storeID uint64) (StoreInfo, bool) {
 		return StoreInfo{}, false
 	}
 	return storeInfo, true
+}
+
+func (i *InfoManagerImpl) UpdateRoutingTable(redisListenAddr string, LeaderGroupIDs []uint64) {
+	i.routing.mu.Lock()
+	defer i.routing.mu.Unlock()
+
+	// Update the routing table with the new entries
+	for _, groupID := range LeaderGroupIDs {
+		i.routing.table[groupID] = redisListenAddr
+	}
+
+}
+
+func (i *InfoManagerImpl) RoutingTable() map[uint64]string {
+	i.routing.mu.RLock()
+	defer i.routing.mu.RUnlock()
+
+	routingTableCopy := make(map[uint64]string, len(i.routing.table))
+	for groupID, addr := range i.routing.table {
+		routingTableCopy[groupID] = addr
+	}
+	return routingTableCopy
 }

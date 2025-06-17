@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/pb"
 	"github.com/fanaujie/babuza/examples/redis-cluster/pkg/rediscommon"
 	"github.com/fanaujie/babuza/ibabuza"
@@ -40,6 +41,7 @@ func Get(ctx context.Context, conn redcon.Conn, cmd redcon.Command, groupID ibab
 		conn.WriteError("ERR wrong number of arguments for 'get' command")
 		return
 	}
+	fmt.Printf("Executing GET command for group %d with key %s\n", groupID, cmd.Args[1])
 	v, err := clusterMgr.LocalQuery(groupID, &pb.RedisCommand{
 		Type:       pb.RedisDataType_String,
 		Command:    rediscommon.RedisGet,

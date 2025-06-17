@@ -133,7 +133,7 @@ func (suite *IntegrationTestSuite) setupRedisClusterServers() error {
 			config := Config{
 				StoreID:                          cfg.storeID,
 				ClusterID:                        clusterID,
-				ListenAddr:                       cfg.listenAddr,
+				RedisListenAddr:                  cfg.listenAddr,
 				RaftAddr:                         cfg.raftAddr,
 				DataDir:                          tempDir,
 				InitialShards:                    initialShards,

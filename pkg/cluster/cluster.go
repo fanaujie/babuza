@@ -164,6 +164,12 @@ func (c *Cluster) Add(peer babuzapb.RaftPeerAttribute) error {
 	if _, ok := c.store.RemovedIds[peer.PeerID]; ok {
 		return ErrPeerIDRemoved
 	}
+	// Check if the RaftListenAddr already exists
+	for _, p := range c.store.Peers {
+		if p.RaftPeerAttr.RaftListenAddr == peer.RaftListenAddr {
+			return ErrPeerRaftListenAddrExists
+		}
+	}
 	c.store.Peers[peer.PeerID] = babuzapb.Peer{
 		RaftPeerAttr: peer,
 	}

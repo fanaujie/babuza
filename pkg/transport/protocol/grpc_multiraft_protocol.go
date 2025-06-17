@@ -88,7 +88,6 @@ func (g *GrpcMultiRaft) Setup(cfg ibabuza.TransportConfig) error {
 	g.pool = connpool.NewConnectionPool[*grpc.ClientConn](g, connpool.Config{
 		MaxConnectionsPerHost: g.options.MaxConnectionsPerHost,
 		IdleTimeout:           g.options.IdleConnTimeout,
-		DialTimeout:           g.options.DialTimeout,
 	})
 	return nil
 }

@@ -88,7 +88,6 @@ func TestNewConnectionPool(t *testing.T) {
 	creator := newMockConnectionCreator()
 	options := Config{
 		MaxConnectionsPerHost: 10,
-		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
 	}
 
@@ -108,7 +107,6 @@ func TestConnectionPool_Get(t *testing.T) {
 	creator := newMockConnectionCreator()
 	options := Config{
 		MaxConnectionsPerHost: 2,
-		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
 	}
 
@@ -165,7 +163,6 @@ func TestConnectionPool_Put(t *testing.T) {
 	creator := newMockConnectionCreator()
 	options := Config{
 		MaxConnectionsPerHost: 5,
-		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
 	}
 
@@ -202,7 +199,6 @@ func TestConnectionPool_Remove(t *testing.T) {
 	creator := newMockConnectionCreator()
 	options := Config{
 		MaxConnectionsPerHost: 5,
-		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
 	}
 
@@ -261,7 +257,6 @@ func TestConnectionPool_Close(t *testing.T) {
 	creator := newMockConnectionCreator()
 	options := Config{
 		MaxConnectionsPerHost: 5,
-		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
 	}
 
@@ -291,7 +286,6 @@ func TestConnectionPool_IdleTimeout(t *testing.T) {
 	creator := newMockConnectionCreator()
 	options := Config{
 		MaxConnectionsPerHost: 5,
-		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Millisecond * 100, // Very short timeout for testing
 	}
 
@@ -326,7 +320,6 @@ func TestConnectionPool_Concurrent(t *testing.T) {
 	creator := newMockConnectionCreator()
 	options := Config{
 		MaxConnectionsPerHost: 10,
-		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
 	}
 
@@ -389,7 +382,6 @@ func TestConnectionPool_GetActiveAndIdleConnectionCountFix(t *testing.T) {
 	creator := newMockConnectionCreator()
 	options := Config{
 		MaxConnectionsPerHost: 5,
-		DialTimeout:           time.Second * 1,
 		IdleTimeout:           time.Second * 30,
 	}
 
