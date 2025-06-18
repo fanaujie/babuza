@@ -18,7 +18,7 @@ type Scheduler interface {
 type JobFunc func()
 
 type JobQueue interface {
-	Put(job JobFunc) error
+	Put(groupID ibabuza.RaftGroupID, job JobFunc) error
 	Start() error
 	Stop()
 }

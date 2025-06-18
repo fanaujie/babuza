@@ -58,7 +58,7 @@ func (r *replica) ProcessReady() {
 			applyData := poolGetApplyEntry()
 			applyData.entries = rd.CommittedEntries
 			applyData.snapshot = rd.Snapshot
-			if err := r.applyJobQueue.Put(func() {
+			if err := r.applyJobQueue.Put(r.cluster.GroupID(), func() {
 				r.doApplyJob(applyData)
 			}); err != nil {
 				r.logger.Panicf("groupID[%d] peerID[%d]: error putting apply job: %v",

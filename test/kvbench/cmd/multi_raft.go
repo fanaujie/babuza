@@ -11,7 +11,9 @@ import (
 )
 
 var (
-	multiShardCount uint
+	multiShardCount      uint64
+	initialRaftStoresRaw string
+	initialGRPCStoresRaw string
 )
 
 // multiCmd represents the multi command
@@ -33,12 +35,12 @@ func init() {
 	// Add the same flags as the single command
 	multiCmd.Flags().Uint64Var(&clusterID, "cluster-id", 1, "ID of the Raft cluster")
 	multiCmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Directory for storing server data")
-	multiCmd.Flags().Uint64Var(&localPeerID, "local-peer-id", 1, "ID of the local peer")
+	multiCmd.Flags().Uint64Var(&storeID, "store-id", 1, "ID of the local peer")
 	multiCmd.Flags().StringVar(&grpcAddr, "grpc-address", "127.0.0.1:24200", "Address for the gRPC service")
 	multiCmd.Flags().StringVar(&raftAddr, "raft-address", "127.0.0.1:14200", "Address for Raft communication")
-	multiCmd.Flags().StringVar(&initialRaftPeersRaw, "initial-raft-peers", "", "List of initial raft peers to connect (e.g., 1=127.0.0.1:14200,2=127.0.0.1:14201)")
-	multiCmd.Flags().StringVar(&initialGRPCPeersRaw, "initial-grpc-peers", "", "List of initial gRPC peers to connect (e.g., 1=127.0.0.1:24200,2=127.0.0.1:24201,3=127.0.0.1:24202)")
-	multiCmd.Flags().UintVar(&multiShardCount, "shards", 1, "Number of Raft groups (shards) to create")
+	multiCmd.Flags().StringVar(&initialRaftStoresRaw, "initial-raft-stores", "", "List of initial raft stores to connect (e.g., 1=127.0.0.1:14200,2=127.0.0.1:14201)")
+	multiCmd.Flags().StringVar(&initialGRPCStoresRaw, "initial-grpc-stores", "", "List of initial gRPC stores to connect (e.g., 1=127.0.0.1:24200,2=127.0.0.1:24201,3=127.0.0.1:24202)")
+	multiCmd.Flags().Uint64Var(&multiShardCount, "shards", 1, "Number of Raft groups (shards) to create")
 }
 
 func runMultiServerFunc(cmd *cobra.Command, args []string) {
@@ -50,27 +52,27 @@ func runMultiServerFunc(cmd *cobra.Command, args []string) {
 
 	// Parse initial peers
 	var err error
-	initialRaftPeers, err := parseInitialPeers(initialRaftPeersRaw)
+	initialRaftStores, err := parseInitialPeers(initialRaftStoresRaw)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to parse initial peers: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to parse initial stores: %v\n", err)
 		os.Exit(1)
 	}
-	initialGRPCPeers, err := parseInitialPeers(initialGRPCPeersRaw)
+	initialGRPCStores, err := parseInitialPeers(initialGRPCStoresRaw)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to parse initial gRPC peers: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to parse initial gRPC stores: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Create server configuration
 	cfg := multi.Config{
-		DataDir:          dataDir,
-		ClusterID:        clusterID,
-		LocalPeerID:      localPeerID,
-		GrpcAddress:      grpcAddr,
-		RaftAddress:      raftAddr,
-		InitialRaftPeers: initialRaftPeers,
-		InitialGRPCPeers: initialGRPCPeers,
-		ShardCount:       multiShardCount,
+		DataDir:           dataDir,
+		ClusterID:         clusterID,
+		StoreID:           storeID,
+		GrpcAddress:       grpcAddr,
+		RaftAddress:       raftAddr,
+		InitialRaftStores: initialRaftStores,
+		InitialGRPCStores: initialGRPCStores,
+		ShardCount:        multiShardCount,
 	}
 
 	// Create the server

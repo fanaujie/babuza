@@ -188,7 +188,7 @@ func restartStore(config StoreConfig, restartGroupIDs []ibabuza.RaftGroupID, tra
 			readStateCh:               make(chan raft.ReadState, 1),
 			readIndexCh:               make(chan struct{}, 1),
 			scheduler:                 n.scheduler,
-			applyJobQueue:             newJobQueue(groupID, n.config.JobQueueSize, n.logger),
+			applyJobQueue:             n.shardedJobQueue,
 			requestQueue:              newReplicaRequestQueue(),
 			coalescedHeartbeat:        n.coalescedHeartbeatQueue,
 			mu: struct {
@@ -234,6 +234,7 @@ func newStore(config StoreConfig, trans ibabuza.MultiRaftTransport, storage Boot
 		maxTicks:       config.SchedulerMaxTicks,
 	}, &callbackProcessor{s}, logger)
 	s.scheduler = scheduler
+	s.shardedJobQueue = newShardedJobQueue(config.JobQueueShardNum, config.JobQueueSize, logger)
 	s.raftEventPublisher = newRaftEventPublisher()
 	return s
 }
@@ -370,7 +371,7 @@ func bootstrapReplicaWithConfiguration(store *Store, configuration *PeersConfigu
 		readStateCh:               make(chan raft.ReadState, 1),
 		readIndexCh:               make(chan struct{}, 1),
 		scheduler:                 store.scheduler,
-		applyJobQueue:             newJobQueue(groupID, store.config.JobQueueSize, store.logger),
+		applyJobQueue:             store.shardedJobQueue,
 		requestQueue:              newReplicaRequestQueue(),
 		coalescedHeartbeat:        store.coalescedHeartbeatQueue,
 		mu: struct {
@@ -471,7 +472,7 @@ func newReplicaWithoutConfiguration(store *Store, groupID ibabuza.RaftGroupID, l
 		readStateCh:               make(chan raft.ReadState, 1),
 		readIndexCh:               make(chan struct{}, 1),
 		scheduler:                 store.scheduler,
-		applyJobQueue:             newJobQueue(groupID, store.config.JobQueueSize, store.logger),
+		applyJobQueue:             store.shardedJobQueue,
 		requestQueue:              newReplicaRequestQueue(),
 		coalescedHeartbeat:        store.coalescedHeartbeatQueue,
 		mu: struct {

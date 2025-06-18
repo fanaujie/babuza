@@ -37,6 +37,7 @@ type Store struct {
 	closer                  *syncutil.Closer
 	replicaSet              *xsync.Map[ibabuza.RaftGroupID, *replica]
 	coalescedHeartbeatQueue *coalescedHeartbeatQueue
+	shardedJobQueue         JobQueue
 	idGenerator             babuza.InternalIdGenerator
 	leaderTransferChecker   *leaderTransferChecker
 }
@@ -68,6 +69,10 @@ func (s *Store) Start() error {
 		err = errors.Errorf("Store[%d] raftScheduler start error: %v", s.config.StoreID, err)
 		return err
 	}
+	if err = s.shardedJobQueue.Start(); err != nil {
+		err = errors.Errorf("Store[%d] shardedJobQueue start error: %v", s.config.StoreID, err)
+		return err
+	}
 	s.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
 		if err = value.Start(); err != nil {
 			err = errors.Errorf("Store[%d] replica start error: %v", s.config.StoreID, err)
@@ -91,6 +96,7 @@ func (s *Store) Stop() {
 	s.trans.Stop()
 	s.closer.Close()
 	s.scheduler.Stop()
+	s.shardedJobQueue.Stop()
 	s.replicaSet.Range(func(key ibabuza.RaftGroupID, value *replica) bool {
 		value.Stop()
 		return true

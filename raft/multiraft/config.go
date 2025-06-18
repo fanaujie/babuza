@@ -38,7 +38,8 @@ type StoreConfig struct {
 	SchedulerMaxTicks       int
 
 	// setup job queue
-	JobQueueSize int64
+	JobQueueShardNum uint64
+	JobQueueSize     int64
 	// setup leader transfer checker
 	LeaderTransferCheckerShardNum int
 }
@@ -62,6 +63,7 @@ func DefaultStoreConfig(ClusterID, storeID uint64, storeHostDir string, raftList
 		SchedulerShardWorkerNum:       3,
 		SchedulerQueueSize:            64,
 		SchedulerMaxTicks:             5,
+		JobQueueShardNum:              4,
 		JobQueueSize:                  128,
 		LeaderTransferCheckerShardNum: 4,
 	}

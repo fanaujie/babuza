@@ -33,8 +33,8 @@ type Config struct {
 	// ClusterID is the ID of the Raft cluster
 	ClusterID uint64
 
-	// LocalPeerID is the ID of the local peer
-	LocalPeerID uint64
+	// StoreID is the ID of the store
+	StoreID uint64
 
 	// GrpcAddress is the address for the gRPC service
 	GrpcAddress string
@@ -42,14 +42,14 @@ type Config struct {
 	// RaftAddress is the address for Raft communication
 	RaftAddress string
 
-	// InitialPeers is a list of peers to connect each other
-	InitialRaftPeers map[uint64]string
+	// InitialRaftStores is a list of store to connect each other
+	InitialRaftStores map[uint64]string
 
-	// InitialGRPCPeers is a list of gRPC peers for client connections
-	InitialGRPCPeers map[uint64]string
+	// InitialGRPCStores is a list of gRPC peers for client connections
+	InitialGRPCStores map[uint64]string
 
 	// ShardCount is the number of Raft groups (shards) to create
-	ShardCount uint
+	ShardCount uint64
 }
 
 // Server represents a multi-raft KV server
@@ -120,16 +120,17 @@ func (s *Server) Start() error {
 	zapLogger, _ := zap.NewProduction(zap.AddCallerSkip(1))
 	s.logger = logger.NewRaftLogger(zapLogger.Sugar())
 
-	// Create node configuration
-	nodeConfig := multiraft.DefaultStoreConfig(s.cfg.ClusterID, s.cfg.LocalPeerID, s.cfg.DataDir, s.cfg.RaftAddress)
-	nodeConfig.EnableWalNoSync = true
-	nodeConfig.SnapshotCount = 100000000
-	nodeConfig.DisableProposalForwarding = false
-	nodeConfig.LearnerReadyPercent = 0.95
-	nodeConfig.CoalescedHeartbeatQueueSize = 2048
-	nodeConfig.SchedulerShardNum = 16
-	nodeConfig.SchedulerShardWorkerNum = 8
-	nodeConfig.SchedulerQueueSize = 256
+	// Create store configuration
+	storeConfig := multiraft.DefaultStoreConfig(s.cfg.ClusterID, s.cfg.StoreID, s.cfg.DataDir, s.cfg.RaftAddress)
+
+	storeConfig.SnapshotCount = 100000000
+	storeConfig.DisableProposalForwarding = false
+	storeConfig.LearnerReadyPercent = 0.95
+	storeConfig.CoalescedHeartbeatQueueSize = 2048
+	storeConfig.SchedulerShardNum = 8
+	storeConfig.SchedulerShardWorkerNum = 4
+	storeConfig.SchedulerQueueSize = 256
+	storeConfig.JobQueueShardNum = 16
 
 	// Create components factory
 	factory := &KVComponentFactory{
@@ -167,7 +168,7 @@ func (s *Server) Start() error {
 	)
 
 	// Create MultiRaft node
-	node, err := multiraft.BootstrapOrRecoverStore(nodeConfig, factory, trans, walMgr, snapshotMgr, nil)
+	node, err := multiraft.BootstrapOrRecoverStore(storeConfig, factory, trans, walMgr, snapshotMgr, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create MultiRaft node: %w", err)
 	}
@@ -180,15 +181,16 @@ func (s *Server) Start() error {
 	}
 
 	// Create Raft groups for each shard
-	for i := uint(0); i < s.cfg.ShardCount; i++ {
+	for i := uint64(0); i < s.cfg.ShardCount; i++ {
 		groupID := ibabuza.RaftGroupID(i + 1) // Group IDs start from 1
 
 		// Create peer configuration for this group
 		peersConfig := multiraft.NewPeersConfiguration()
 		peersConfig.SetGroupID(groupID)
-		for peerID, addr := range s.cfg.InitialRaftPeers {
-			if err = peersConfig.AddPeer(peerID, addr, false); err != nil {
-				return fmt.Errorf("failed to add peer %d: %w", peerID, err)
+		for storeID, addr := range s.cfg.InitialRaftStores {
+			peerID := storeID
+			if err = peersConfig.AddPeer(peerID, storeID, addr, false); err != nil {
+				return fmt.Errorf("failed to add peer %d  to store %d: %w", peerID, storeID, err)
 			}
 		}
 
@@ -250,7 +252,7 @@ func (s *Server) WaitForLeadership(timeout time.Duration) error {
 	for {
 		allHaveLeader := true
 
-		for i := uint(0); i < s.cfg.ShardCount; i++ {
+		for i := uint64(0); i < s.cfg.ShardCount; i++ {
 			groupID := ibabuza.RaftGroupID(i + 1)
 			status, err := s.store.RaftGroupStatus(groupID)
 			if err != nil {
@@ -264,7 +266,7 @@ func (s *Server) WaitForLeadership(timeout time.Duration) error {
 		}
 
 		if allHaveLeader {
-			for i := uint(0); i < s.cfg.ShardCount; i++ {
+			for i := uint64(0); i < s.cfg.ShardCount; i++ {
 				groupID := ibabuza.RaftGroupID(i + 1)
 				status, _ := s.store.RaftGroupStatus(groupID)
 				fmt.Printf("Leader %d: %d\n", groupID, status.LeaderID)

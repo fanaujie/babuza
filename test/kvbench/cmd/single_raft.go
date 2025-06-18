@@ -14,11 +14,11 @@ import (
 var (
 	dataDir             string
 	clusterID           uint64
-	localPeerID         uint64
+	storeID             uint64
 	grpcAddr            string
 	raftAddr            string
 	joinCluster         bool
-	initialRaftPeersRaw string
+	initialPeersRaw     string
 	initialGRPCPeersRaw string
 )
 
@@ -34,11 +34,11 @@ func init() {
 	serverCmd.AddCommand(singleCmd)
 	singleCmd.Flags().Uint64Var(&clusterID, "cluster-id", 1, "ID of the Raft cluster")
 	singleCmd.Flags().StringVar(&dataDir, "data-dir", "./data", "Directory for storing server data")
-	singleCmd.Flags().Uint64Var(&localPeerID, "local-peer-id", 1, "ID of the local peer")
+	singleCmd.Flags().Uint64Var(&storeID, "store-id", 1, "ID of the store")
 	singleCmd.Flags().StringVar(&grpcAddr, "grpc-address", "127.0.0.1:24200", "Address for the gRPC service")
 	singleCmd.Flags().StringVar(&raftAddr, "raft-address", "127.0.0.1:14200", "Address for Raft communication")
 	singleCmd.Flags().BoolVar(&joinCluster, "join", false, "Join an existing cluster")
-	singleCmd.Flags().StringVar(&initialRaftPeersRaw, "initial-raft-peers", "", "List of initial raft peers to connect (e.g., 1=127.0.0.1:14200,2=127.0.0.1:14201)")
+	singleCmd.Flags().StringVar(&initialPeersRaw, "initial-raft-peers", "", "List of initial peers to connect (e.g., 1=127.0.0.1:14200,2=127.0.0.1:14201)")
 }
 
 func parseInitialPeers(raw string) (map[uint64]string, error) {
@@ -64,7 +64,7 @@ func parseInitialPeers(raw string) (map[uint64]string, error) {
 
 func runServerFunc(cmd *cobra.Command, args []string) {
 	var err error
-	initialRaftPeers, err := parseInitialPeers(initialRaftPeersRaw)
+	initialRaftPeers, err := parseInitialPeers(initialPeersRaw)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to parse initial peers: %v\n", err)
 		os.Exit(1)
@@ -73,7 +73,7 @@ func runServerFunc(cmd *cobra.Command, args []string) {
 	cfg := single.Config{
 		DataDir:      dataDir,
 		ClusterID:    clusterID,
-		LocalPeerID:  localPeerID,
+		LocalPeerID:  storeID,
 		GrpcAddress:  grpcAddr,
 		RaftAddress:  raftAddr,
 		InitialPeers: initialRaftPeers,

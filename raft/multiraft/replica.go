@@ -96,9 +96,6 @@ func (r *replica) Status() ibabuza.Status {
 }
 
 func (r *replica) Start() error {
-	if err := r.applyJobQueue.Start(); err != nil {
-		return err
-	}
 	r.closer.Run(func() {
 		r.processRaftLinearizedRead()
 	})
@@ -108,7 +105,6 @@ func (r *replica) Start() error {
 func (r *replica) Stop() {
 	r.closer.Close()
 	r.requestQueue.Dispose()
-	r.applyJobQueue.Stop()
 }
 
 func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {

@@ -113,7 +113,7 @@ func (s *GrpcServer) ClusterConfiguration(ctx context.Context, req *kvbenchpb.Cl
 
 	resp := &kvbenchpb.ClusterPeersResponse{
 		ClusterID: req.ClusterID,
-		PeerID:    s.serverCfg.LocalPeerID,
+		PeerID:    s.serverCfg.StoreID,
 	}
 
 	// Get configuration for each group
@@ -127,10 +127,10 @@ func (s *GrpcServer) ClusterConfiguration(ctx context.Context, req *kvbenchpb.Cl
 		peers := make([]*kvbenchpb.RaftPeerAttribute, 0, len(config.Peers))
 		for _, peer := range config.Peers {
 			peers = append(peers, &kvbenchpb.RaftPeerAttribute{
-				PeerID:         peer.RaftPeerAttr.PeerID,
-				RaftListenAddr: peer.RaftPeerAttr.RaftListenAddr,
-				GrpcListenAddr: s.serverCfg.InitialGRPCPeers[peer.RaftPeerAttr.PeerID],
-				IsLearner:      peer.RaftPeerAttr.IsLearner,
+				PeerID:         peer.PeerID,
+				RaftListenAddr: peer.RaftListenAddr,
+				GrpcListenAddr: s.serverCfg.InitialGRPCStores[peer.PeerID],
+				IsLearner:      peer.IsLearner,
 			})
 		}
 
