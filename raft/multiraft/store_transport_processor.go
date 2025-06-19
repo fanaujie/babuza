@@ -18,11 +18,11 @@ func (d *transportProcessor) ProcessMultiRaftMessage(batchMsg babuzapb.MultiRaft
 		case raftpb.MsgHeartbeat:
 			for _, m := range msg.HeartbeatMessages {
 				groupID := ibabuza.RaftGroupID(m.GroupID)
-				r, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
+				_, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
 				if err != nil {
 					return
 				}
-				if err = r.EnqueueStep(raftpb.Message{
+				if err = d.enqueueStep(groupID, raftpb.Message{
 					Type:    raftpb.MsgHeartbeat,
 					To:      m.ToPeerID,
 					From:    m.FromPeerID,
@@ -36,11 +36,11 @@ func (d *transportProcessor) ProcessMultiRaftMessage(batchMsg babuzapb.MultiRaft
 		case raftpb.MsgHeartbeatResp:
 			for _, m := range msg.HeartbeatResponseMessages {
 				groupID := ibabuza.RaftGroupID(m.GroupID)
-				r, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
+				_, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
 				if err != nil {
 					return
 				}
-				if err = r.EnqueueStep(raftpb.Message{
+				if err = d.enqueueStep(groupID, raftpb.Message{
 					Type:    raftpb.MsgHeartbeatResp,
 					To:      m.ToPeerID,
 					From:    m.FromPeerID,
@@ -53,20 +53,16 @@ func (d *transportProcessor) ProcessMultiRaftMessage(batchMsg babuzapb.MultiRaft
 			}
 		default:
 			groupID := ibabuza.RaftGroupID(msg.GroupID)
-			r, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
+			_, err := d.validateRequest(groupID, batchMsg.ClusterID, msg.Message.To)
 			if err != nil {
 				return
 			}
-			if err = r.EnqueueStep(msg.Message); err != nil {
+			if err = d.enqueueStep(groupID, msg.Message); err != nil {
 				d.logger.Warningf("Store[%d] ProcessBatchMessage groupID[%d] enqueue step error: %v", d.config.StoreID, groupID, err)
 			}
 		}
 	}
 
-}
-
-func (d *transportProcessor) ProcessBatchMessage(batchMsg babuzapb.BatchMessage) {
-	// not implemented
 }
 
 func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
@@ -106,7 +102,7 @@ func (d *transportProcessor) ProcessSnapshotMessage(msg babuzapb.SnapshotMessage
 				Message: "Failed to finish snapshot: " + err.Error(),
 			}
 		} else {
-			if err = r.EnqueueStep(msg.FinishMessage); err != nil {
+			if err = d.enqueueStep(groupID, msg.FinishMessage); err != nil {
 				r.logger.Warningf("Store[%d] groupID[%d] failed to enqueue finish message. err(%s)",
 					r.cluster.LocalPeerID(), msg.GroupID, err.Error())
 				return babuzapb.SnapshotMessageResponse{
@@ -182,24 +178,24 @@ func (d *transportProcessor) CreateSnapshotReader(groupID ibabuza.RaftGroupID, s
 	return snapReader, nil
 }
 
-func (d *transportProcessor) validateRequest(groupID ibabuza.RaftGroupID, clusterID uint64, peerID uint64) (*replica, error) {
+func (d *transportProcessor) validateRequest(groupID ibabuza.RaftGroupID, clusterID uint64, peerID uint64) error {
 	r, err := d.getReplica(groupID)
 	if err != nil {
 		d.logger.Warningf("Store[%d] groupID[%d] get replica error: %v",
 			d.config.StoreID, groupID, err)
-		return nil, err
+		return err
 	}
 
 	if clusterID != r.cluster.ClusterID() {
 		d.logger.Warningf("Store[%d] groupID[%d] cluster id %d not match %d",
 			d.config.StoreID, groupID, clusterID, r.cluster.ClusterID())
-		return nil, errors.New("cluster id not match")
+		return errors.New("cluster id not match")
 	}
 
 	if peerID != r.cluster.LocalPeerID() {
 		d.logger.Warningf("Store[%d] groupID[%d] received message with different peer id(%d)",
 			d.config.StoreID, groupID, peerID)
-		return nil, errors.New("peer id not match")
+		return errors.New("peer id not match")
 	}
-	return r, nil
+	return nil
 }

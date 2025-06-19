@@ -101,10 +101,11 @@ func (s *Server) setupNode() error {
 	nodeConfig.ElectionTicks = 20
 	nodeConfig.HeartbeatTicks = 2
 
-	walMgr := lsmtwal.NewMultiRaftBadgerWalManager(lsmtwal.MultiRaftConfig{
+	walMgr := lsmtwal.NewMultiRaftWalManager(lsmtwal.MultiRaftConfig{
 		InMemory:           false,
 		WalDir:             filepath.Join(s.config.DataDir, "wal"),
 		KeyPrefixCacheSize: 1024,
+		ManagerType:        lsmtwal.WalManagerTypeBadger, // Default to BadgerDB
 	}, s.logger)
 
 	snapshotMgr := snapshot.NewMultiRaftSnapshotManager(snapshot.Config{

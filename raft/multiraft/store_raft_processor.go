@@ -13,35 +13,47 @@ type callbackProcessor struct {
 func (p *callbackProcessor) ProcessTick(groupID ibabuza.RaftGroupID) {
 	r, ok := p.replicaSet.Load(groupID)
 	if ok {
-		r.ProcessTick()
+		r.processTick()
 	}
 }
 
 func (p *callbackProcessor) ProcessReady(groupID ibabuza.RaftGroupID) {
 	r, ok := p.replicaSet.Load(groupID)
 	if ok {
-		r.ProcessReady()
+		r.processReady()
 	}
 }
 
 func (p *callbackProcessor) ProcessStep(groupID ibabuza.RaftGroupID) {
 	r, ok := p.replicaSet.Load(groupID)
+	if !ok {
+		return
+	}
+	requestQueue, ok := p.requestQueues.Load(groupID)
 	if ok {
-		r.ProcessStep()
+		r.processStep(requestQueue)
 	}
 }
 
 func (p *callbackProcessor) ProcessProposal(groupID ibabuza.RaftGroupID) {
 	r, ok := p.replicaSet.Load(groupID)
+	if !ok {
+		return
+	}
+	requestQueue, ok := p.requestQueues.Load(groupID)
 	if ok {
-		r.ProcessProposal()
+		r.processProposal(requestQueue)
 	}
 }
 
 func (p *callbackProcessor) ProcessConfigChange(groupID ibabuza.RaftGroupID) {
 	r, ok := p.replicaSet.Load(groupID)
+	if !ok {
+		return
+	}
+	requestQueue, ok := p.requestQueues.Load(groupID)
 	if ok {
-		r.ProcessConfigChange()
+		r.ProcessConfigChange(requestQueue)
 	}
 }
 

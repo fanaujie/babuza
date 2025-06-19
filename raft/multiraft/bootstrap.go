@@ -189,7 +189,7 @@ func restartStore(config StoreConfig, restartGroupIDs []ibabuza.RaftGroupID, tra
 			readIndexCh:               make(chan struct{}, 1),
 			scheduler:                 n.scheduler,
 			applyJobQueue:             n.shardedJobQueue,
-			requestQueue:              newReplicaRequestQueue(),
+			enqueueStepFunc:           n.enqueueStep,
 			coalescedHeartbeat:        n.coalescedHeartbeatQueue,
 			mu: struct {
 				lock        sync.Mutex
@@ -202,6 +202,7 @@ func restartStore(config StoreConfig, restartGroupIDs []ibabuza.RaftGroupID, tra
 			logger: logger,
 			closer: syncutil.NewCloser(),
 		}
+		n.requestQueues.Store(groupID, newReplicaRequestQueue())
 		n.replicaSet.Store(groupID, r)
 	}
 	return n, nil
@@ -211,14 +212,15 @@ func newStore(config StoreConfig, trans ibabuza.MultiRaftTransport, storage Boot
 	logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) *Store {
 	closer := syncutil.NewCloser()
 	s := &Store{
-		config:       config,
-		trans:        trans,
-		storage:      storage,
-		factory:      factory,
-		logger:       logger,
-		raftListener: raftListener,
-		closer:       closer,
-		replicaSet:   xsync.NewMap[ibabuza.RaftGroupID, *replica](),
+		config:        config,
+		trans:         trans,
+		storage:       storage,
+		factory:       factory,
+		logger:        logger,
+		raftListener:  raftListener,
+		closer:        closer,
+		replicaSet:    xsync.NewMap[ibabuza.RaftGroupID, *replica](),
+		requestQueues: xsync.NewMap[ibabuza.RaftGroupID, *replicaRequestQueue](),
 		coalescedHeartbeatQueue: &coalescedHeartbeatQueue{
 			heartbeatMsg:               xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
 			heartbeatRespMsg:           xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
@@ -372,7 +374,7 @@ func bootstrapReplicaWithConfiguration(store *Store, configuration *PeersConfigu
 		readIndexCh:               make(chan struct{}, 1),
 		scheduler:                 store.scheduler,
 		applyJobQueue:             store.shardedJobQueue,
-		requestQueue:              newReplicaRequestQueue(),
+		enqueueStepFunc:           store.enqueueStep,
 		coalescedHeartbeat:        store.coalescedHeartbeatQueue,
 		mu: struct {
 			lock        sync.Mutex
@@ -385,6 +387,7 @@ func bootstrapReplicaWithConfiguration(store *Store, configuration *PeersConfigu
 		logger: store.logger,
 		closer: syncutil.NewCloser(),
 	}
+	store.requestQueues.Store(groupID, newReplicaRequestQueue())
 	return r, nil
 }
 
@@ -473,7 +476,7 @@ func newReplicaWithoutConfiguration(store *Store, groupID ibabuza.RaftGroupID, l
 		readIndexCh:               make(chan struct{}, 1),
 		scheduler:                 store.scheduler,
 		applyJobQueue:             store.shardedJobQueue,
-		requestQueue:              newReplicaRequestQueue(),
+		enqueueStepFunc:           store.enqueueStep,
 		coalescedHeartbeat:        store.coalescedHeartbeatQueue,
 		mu: struct {
 			lock        sync.Mutex
@@ -486,5 +489,6 @@ func newReplicaWithoutConfiguration(store *Store, groupID ibabuza.RaftGroupID, l
 		logger: store.logger,
 		closer: syncutil.NewCloser(),
 	}
+	store.requestQueues.Store(groupID, newReplicaRequestQueue())
 	return r, nil
 }

@@ -36,6 +36,7 @@ type Store struct {
 	raftEventPublisher      *raftEventPublisher
 	closer                  *syncutil.Closer
 	replicaSet              *xsync.Map[ibabuza.RaftGroupID, *replica]
+	requestQueues           *xsync.Map[ibabuza.RaftGroupID, *replicaRequestQueue]
 	coalescedHeartbeatQueue *coalescedHeartbeatQueue
 	shardedJobQueue         JobQueue
 	idGenerator             babuza.InternalIdGenerator
@@ -101,8 +102,13 @@ func (s *Store) Stop() {
 		value.Stop()
 		return true
 	})
+	s.requestQueues.Range(func(key ibabuza.RaftGroupID, value *replicaRequestQueue) bool {
+		value.Dispose()
+		return true
+	})
 	s.storage.Close()
 	s.replicaSet = nil
+	s.requestQueues = nil
 }
 
 func (s *Store) CreateRaftGroup(peersConfig *PeersConfiguration, join bool) error {
@@ -162,7 +168,30 @@ func (s *Store) RegisterSession(ctx context.Context, groupID ibabuza.RaftGroupID
 	if err != nil {
 		return babuza.NewErrorResult(err)
 	}
-	return r.RegisterSessionRequest(ctx)
+	requestQueue, err := s.getRequestQueue(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+
+	replyID := s.idGenerator.Next()
+	data, err := babuza.EncodeRegisterSessionRequest(replyID, 0)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	proposal := poolGetProposal()
+	proposal.replyID = replyID
+	proposal.data = data
+	if err = requestQueue.proposal.Put(proposal); err != nil {
+		poolReleaseProposal(proposal)
+		return babuza.NewErrorResult(err)
+	}
+	s.scheduler.EnqueueState(stateProposal, groupID)
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
+	if err != nil {
+		poolReleaseProposal(proposal)
+		return babuza.NewErrorResult(err)
+	}
+	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
 func (s *Store) UnregisterSession(ctx context.Context, groupID ibabuza.RaftGroupID,
@@ -171,7 +200,30 @@ func (s *Store) UnregisterSession(ctx context.Context, groupID ibabuza.RaftGroup
 	if err != nil {
 		return babuza.NewErrorResult(err)
 	}
-	return r.UnregisterSessionRequest(ctx, sessionID)
+	requestQueue, err := s.getRequestQueue(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+
+	replyID := s.idGenerator.Next()
+	data, err := babuza.EncodeRegisterSessionRequest(replyID, sessionID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	proposal := poolGetProposal()
+	proposal.replyID = replyID
+	proposal.data = data
+	if err = requestQueue.proposal.Put(proposal); err != nil {
+		poolReleaseProposal(proposal)
+		return babuza.NewErrorResult(err)
+	}
+	s.scheduler.EnqueueState(stateProposal, groupID)
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
+	if err != nil {
+		poolReleaseProposal(proposal)
+		return babuza.NewErrorResult(err)
+	}
+	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
 func (s *Store) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession, log []byte) babuza.ProposedResult {
@@ -179,7 +231,30 @@ func (s *Store) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, sessio
 	if err != nil {
 		return babuza.NewErrorResult(err)
 	}
-	return r.EnqueueProposal(ctx, session, log)
+	requestQueue, err := s.getRequestQueue(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+
+	replyID := s.idGenerator.Next()
+	data, err := babuza.EncodeProposedLog(replyID, session, log)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	proposal := poolGetProposal()
+	proposal.replyID = replyID
+	proposal.data = data
+	if err = requestQueue.proposal.Put(proposal); err != nil {
+		r.resultReplier.CancelResult(replyID)
+		poolReleaseProposal(proposal)
+		return babuza.NewErrorResult(err)
+	}
+	s.scheduler.EnqueueState(stateProposal, groupID)
+	return babuza.NewProposalResult(ctx, r.closer, ch)
 }
 
 func (s *Store) AddVotingPeer(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
@@ -194,7 +269,7 @@ func (s *Store) AddVotingPeer(ctx context.Context, groupID ibabuza.RaftGroupID, 
 	if raftPeerAttr.IsLearner {
 		return babuza.NewErrorResult(babuza.ErrLearnerCanNotVote)
 	}
-	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddNode, raftPeerAttr, false)
+	return s.enqueueConfigChange(ctx, groupID, session, raftpb.ConfChangeAddNode, raftPeerAttr, false)
 }
 
 func (s *Store) RemovePeer(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
@@ -206,7 +281,7 @@ func (s *Store) RemovePeer(ctx context.Context, groupID ibabuza.RaftGroupID, ses
 	if s.config.DisableProposalForwarding && r.Status().IsLeader() == false {
 		return babuza.NewErrorResult(babuza.ErrNotLeader)
 	}
-	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeRemoveNode, babuzapb.RaftPeerAttribute{PeerID: peerID}, false)
+	return s.enqueueConfigChange(ctx, groupID, session, raftpb.ConfChangeRemoveNode, babuzapb.RaftPeerAttribute{PeerID: peerID}, false)
 }
 
 func (s *Store) AddLearner(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
@@ -221,7 +296,7 @@ func (s *Store) AddLearner(ctx context.Context, groupID ibabuza.RaftGroupID, ses
 	if s.config.DisableProposalForwarding && r.Status().IsLeader() == false {
 		return babuza.NewErrorResult(babuza.ErrNotLeader)
 	}
-	return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddLearnerNode, raftPeerAttr, false)
+	return s.enqueueConfigChange(ctx, groupID, session, raftpb.ConfChangeAddLearnerNode, raftPeerAttr, false)
 }
 
 func (s *Store) PromoteLearner(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
@@ -242,7 +317,7 @@ func (s *Store) PromoteLearner(ctx context.Context, groupID ibabuza.RaftGroupID,
 		if err = r.learnerReady(ctx, peerID); err != nil {
 			return nil, err
 		}
-		return r.EnqueueConfigChange(ctx, session, raftpb.ConfChangeAddNode, p.RaftPeerAttr, true), nil
+		return s.enqueueConfigChange(ctx, groupID, session, raftpb.ConfChangeAddNode, p.RaftPeerAttr, true), nil
 	}()
 	if err != nil {
 		return babuza.NewErrorResult(err)
@@ -362,4 +437,57 @@ func (s *Store) getReplica(groupID ibabuza.RaftGroupID) (*replica, error) {
 		return nil, errors.Errorf("Store[%d] raft group %d not found", s.config.StoreID, groupID)
 	}
 	return r, nil
+}
+
+func (s *Store) getRequestQueue(groupID ibabuza.RaftGroupID) (*replicaRequestQueue, error) {
+	queue, ok := s.requestQueues.Load(groupID)
+	if !ok {
+		return nil, errors.Errorf("Store[%d] request queue for raft group %d not found", s.config.StoreID, groupID)
+	}
+	return queue, nil
+}
+
+func (s *Store) enqueueConfigChange(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession, changeType raftpb.ConfChangeType,
+	raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) babuza.ProposedResult {
+
+	r, err := s.getReplica(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	requestQueue, err := s.getRequestQueue(groupID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+
+	replyID := s.idGenerator.Next()
+	config, err := babuza.EncodeClusterConfigurationChange(replyID, session, changeType,
+		groupID, raftPeerAttr, promoteLearner)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	if err = requestQueue.configChange.Put(configChangeRequest{
+		replyID:    replyID,
+		confChange: config,
+	}); err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	s.scheduler.EnqueueState(stateConfigChange, groupID)
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
+	if err != nil {
+		return babuza.NewErrorResult(err)
+	}
+	return babuza.NewProposalResult(ctx, r.closer, ch)
+}
+
+func (s *Store) enqueueStep(groupID ibabuza.RaftGroupID, msg raftpb.Message) error {
+	requestQueue, err := s.getRequestQueue(groupID)
+	if err != nil {
+		return err
+	}
+
+	if err = requestQueue.step.Put(msg); err != nil {
+		return errors.Wrapf(err, "GroupID[%d] enqueue step error", groupID)
+	}
+	s.scheduler.EnqueueState(stateStep, groupID)
+	return nil
 }

@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
+	github.com/cockroachdb/pebble/v2 v2.0.5
 	github.com/dgraph-io/badger/v4 v4.6.0
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/fanaujie/babuza/ibabuza v0.2.0
@@ -22,7 +23,6 @@ require (
 	golang.org/x/time v0.5.0
 	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.36.5
-	github.com/puzpuzpuz/xsync/v4 v4.1.0
 	github.com/Workiva/go-datastructures v1.1.5
 )
 

@@ -7,7 +7,6 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/queue"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
-	"github.com/pkg/errors"
 	"github.com/puzpuzpuz/xsync/v4"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -80,7 +79,7 @@ type replica struct {
 	readIndexCh               chan struct{}
 	scheduler                 Scheduler
 	applyJobQueue             JobQueue
-	requestQueue              *replicaRequestQueue
+	enqueueStepFunc           func(ibabuza.RaftGroupID, raftpb.Message) error
 	coalescedHeartbeat        *coalescedHeartbeatQueue
 	mu                        struct {
 		lock        sync.Mutex
@@ -104,105 +103,6 @@ func (r *replica) Start() error {
 
 func (r *replica) Stop() {
 	r.closer.Close()
-	r.requestQueue.Dispose()
-}
-
-func (r *replica) EnqueueProposal(ctx context.Context, session babuza.ClientSession, log []byte) babuza.ProposedResult {
-	replyID := r.idGenerator.Next()
-	data, err := babuza.EncodeProposedLog(replyID, session, log)
-	if err != nil {
-		return babuza.NewErrorResult(err)
-	}
-	ch, err := r.resultReplier.AcquireResultChan(replyID)
-	if err != nil {
-		return babuza.NewErrorResult(err)
-	}
-	proposal := poolGetProposal()
-	proposal.replyID = replyID
-	proposal.data = data
-	if err = r.requestQueue.proposal.Put(proposal); err != nil {
-		r.resultReplier.CancelResult(replyID)
-		poolReleaseProposal(proposal)
-		return babuza.NewErrorResult(err)
-	}
-	r.scheduler.EnqueueState(stateProposal, r.raftGroup.GroupID)
-	return babuza.NewProposalResult(ctx, r.closer, ch)
-}
-
-func (r *replica) EnqueueConfigChange(ctx context.Context, session babuza.ClientSession, changeType raftpb.ConfChangeType,
-	raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) babuza.ProposedResult {
-
-	replyID := r.idGenerator.Next()
-	config, err := babuza.EncodeClusterConfigurationChange(replyID, session, changeType,
-		r.cluster.GroupID(), raftPeerAttr, promoteLearner)
-	if err != nil {
-		return babuza.NewErrorResult(err)
-	}
-	if err = r.requestQueue.configChange.Put(configChangeRequest{
-		replyID:    replyID,
-		confChange: config,
-	}); err != nil {
-		return babuza.NewErrorResult(err)
-	}
-	r.scheduler.EnqueueState(stateConfigChange, r.raftGroup.GroupID)
-	ch, err := r.resultReplier.AcquireResultChan(replyID)
-	if err != nil {
-		return babuza.NewErrorResult(err)
-	}
-	return babuza.NewProposalResult(ctx, r.closer, ch)
-}
-
-func (r *replica) RegisterSessionRequest(ctx context.Context) babuza.ProposedResult {
-
-	replyID := r.idGenerator.Next()
-	data, err := babuza.EncodeRegisterSessionRequest(replyID, 0)
-	if err != nil {
-		return babuza.NewErrorResult(err)
-	}
-	proposal := poolGetProposal()
-	proposal.replyID = replyID
-	proposal.data = data
-	if err = r.requestQueue.proposal.Put(proposal); err != nil {
-		poolReleaseProposal(proposal)
-		return babuza.NewErrorResult(err)
-	}
-	r.scheduler.EnqueueState(stateProposal, r.raftGroup.GroupID)
-	ch, err := r.resultReplier.AcquireResultChan(replyID)
-	if err != nil {
-		poolReleaseProposal(proposal)
-		return babuza.NewErrorResult(err)
-	}
-	return babuza.NewProposalResult(ctx, r.closer, ch)
-}
-
-func (r *replica) UnregisterSessionRequest(ctx context.Context, sessionID uint64) babuza.ProposedResult {
-	replyID := r.idGenerator.Next()
-	data, err := babuza.EncodeRegisterSessionRequest(replyID, sessionID)
-	if err != nil {
-		return babuza.NewErrorResult(err)
-	}
-	proposal := poolGetProposal()
-	proposal.replyID = replyID
-	proposal.data = data
-	if err = r.requestQueue.proposal.Put(proposal); err != nil {
-		poolReleaseProposal(proposal)
-		return babuza.NewErrorResult(err)
-	}
-	r.scheduler.EnqueueState(stateProposal, r.raftGroup.GroupID)
-	ch, err := r.resultReplier.AcquireResultChan(replyID)
-	if err != nil {
-		poolReleaseProposal(proposal)
-		return babuza.NewErrorResult(err)
-	}
-	return babuza.NewProposalResult(ctx, r.closer, ch)
-}
-
-func (r *replica) EnqueueStep(msg raftpb.Message) error {
-	if err := r.requestQueue.step.Put(msg); err != nil {
-		return errors.Wrapf(err, "GroupID[%d] enqueue step error", r.raftGroup.GroupID)
-	}
-	r.scheduler.EnqueueState(stateStep, r.raftGroup.GroupID)
-	return nil
 }
 
 func (r *replica) ReportUnreachable(nodeID uint64) error {

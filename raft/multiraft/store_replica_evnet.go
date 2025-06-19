@@ -151,6 +151,7 @@ func (s *Store) replicaListener() {
 				r, ok := s.replicaSet.Load(event.GroupID)
 				if ok {
 					r.Stop()
+					s.requestQueues.Delete(event.GroupID)
 					s.replicaSet.Delete(event.GroupID)
 					s.logger.Infof("Store[%d] remove replica group %d", s.config.StoreID, event.GroupID)
 				} else {

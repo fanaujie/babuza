@@ -106,7 +106,7 @@ func (r *replica) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struc
 }
 
 func (r *replica) raftReadIndexRequest(readCtx []byte) error {
-	if err := r.EnqueueStep(raftpb.Message{
+	if err := r.enqueueStepFunc(r.raftGroup.GroupID, raftpb.Message{
 		Type: raftpb.MsgReadIndex,
 		Entries: []raftpb.Entry{
 			{
@@ -116,6 +116,5 @@ func (r *replica) raftReadIndexRequest(readCtx []byte) error {
 	}); err != nil {
 		return err
 	}
-	r.scheduler.EnqueueState(stateStep, r.raftGroup.GroupID)
 	return nil
 }

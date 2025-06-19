@@ -47,7 +47,7 @@ type BabuzaComponentConfig struct {
 	SessionType   string // builder.NoOpSession, builder.ExpireSession, builder.LRUSession
 	SnapshotType  string // builder.DurableSnapshot, builder.VolatileSnapshot, builder.MinIOSnapshot
 	TransportType string // builder.TcpTransport, builder.TcpMemoryTransport, builder.HttpTransport, builder.GRPCTransport
-	WalType       string // builder.BabuzaWal, builder.ETCDWal, builder.LsmtWalDisk, builder.LsmtWalMemory
+	WalType       string // builder.BabuzaWal, builder.ETCDWal, builder.BadgerWalDisk, builder.BadgerWalMemory
 	MetricType    string // builder.MetricsOtel, builder.MetricsPrometheus, builder.MetricsMock
 
 	CustomLogger        ibabuza.Logger
@@ -311,13 +311,25 @@ func (b *BabuzaComponentBuilder) createWalManager(logger ibabuza.Logger, zapLogg
 		return babuzawal.NewWalManager(walDir, logger)
 	case ETCDWal:
 		return etcdwal.NewWalManager(walDir, zapLogger)
-	case LsmtWalDisk:
-		return lsmtwal.NewBadgerWalManager(lsmtwal.Config{
-			WalDir: walDir,
+	case BadgerWalDisk:
+		return lsmtwal.NewWalManager(lsmtwal.Config{
+			WalDir:      walDir,
+			ManagerType: lsmtwal.WalManagerTypeBadger,
 		}, logger)
-	case LsmtWalMemory:
-		return lsmtwal.NewBadgerWalManager(lsmtwal.Config{
-			InMemory: true,
+	case BadgerWalMemory:
+		return lsmtwal.NewWalManager(lsmtwal.Config{
+			InMemory:    true,
+			ManagerType: lsmtwal.WalManagerTypeBadger,
+		}, logger)
+	case PebbleWalDisk:
+		return lsmtwal.NewWalManager(lsmtwal.Config{
+			WalDir:      walDir,
+			ManagerType: lsmtwal.WalManagerTypePebble,
+		}, logger)
+	case PebbleWalMemory:
+		return lsmtwal.NewWalManager(lsmtwal.Config{
+			InMemory:    true,
+			ManagerType: lsmtwal.WalManagerTypePebble,
 		}, logger)
 	default:
 		return babuzawal.NewWalManager(walDir, logger)

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func (r *replica) ProcessTick() {
+func (r *replica) processTick() {
 	r.mu.lock.Lock()
 	defer r.mu.lock.Unlock()
 	for nodeID, _ := range r.mu.unreachable {
@@ -21,7 +21,7 @@ func (r *replica) ProcessTick() {
 	r.mu.rawNode.Tick()
 }
 
-func (r *replica) ProcessReady() {
+func (r *replica) processReady() {
 	r.mu.lock.Lock()
 	defer r.mu.lock.Unlock()
 	if r.mu.rawNode.HasReady() {
@@ -102,11 +102,11 @@ func (r *replica) ProcessReady() {
 	}
 }
 
-func (r *replica) ProcessStep() {
-	if r.requestQueue.step.Len() == 0 {
+func (r *replica) processStep(requestQueue *replicaRequestQueue) {
+	if requestQueue.step.Len() == 0 {
 		return
 	}
-	items, err := r.requestQueue.step.Get()
+	items, err := requestQueue.step.Get()
 	if err != nil {
 		r.logger.Warningf("groupID[%d] peerID[%d]: error getting step: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
@@ -125,11 +125,11 @@ func (r *replica) ProcessStep() {
 	}
 }
 
-func (r *replica) ProcessProposal() {
-	if r.requestQueue.proposal.Len() == 0 {
+func (r *replica) processProposal(requestQueue *replicaRequestQueue) {
+	if requestQueue.proposal.Len() == 0 {
 		return
 	}
-	items, err := r.requestQueue.proposal.Get()
+	items, err := requestQueue.proposal.Get()
 	if err != nil {
 		r.logger.Warningf("groupID[%d] peerID[%d]: error getting proposals: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)
@@ -155,11 +155,11 @@ func (r *replica) ProcessProposal() {
 	}
 }
 
-func (r *replica) ProcessConfigChange() {
-	if r.requestQueue.configChange.Len() == 0 {
+func (r *replica) ProcessConfigChange(requestQueue *replicaRequestQueue) {
+	if requestQueue.configChange.Len() == 0 {
 		return
 	}
-	items, err := r.requestQueue.configChange.Get()
+	items, err := requestQueue.configChange.Get()
 	if err != nil {
 		r.logger.Warningf("groupID[%d] peerID[%d]: error getting config change: %v", r.cluster.GroupID(),
 			r.cluster.LocalPeerID(), err)

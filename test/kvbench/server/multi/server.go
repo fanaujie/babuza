@@ -122,7 +122,6 @@ func (s *Server) Start() error {
 
 	// Create store configuration
 	storeConfig := multiraft.DefaultStoreConfig(s.cfg.ClusterID, s.cfg.StoreID, s.cfg.DataDir, s.cfg.RaftAddress)
-
 	storeConfig.SnapshotCount = 100000000
 	storeConfig.DisableProposalForwarding = false
 	storeConfig.LearnerReadyPercent = 0.95
@@ -140,10 +139,11 @@ func (s *Server) Start() error {
 	}
 
 	// Create WAL manager
-	walMgr := lsmtwal.NewMultiRaftBadgerWalManager(lsmtwal.MultiRaftConfig{
+	walMgr := lsmtwal.NewMultiRaftWalManager(lsmtwal.MultiRaftConfig{
 		InMemory:           false,
 		WalDir:             filepath.Join(s.cfg.DataDir, "wal"),
 		KeyPrefixCacheSize: 1024,
+		ManagerType:        lsmtwal.WalManagerTypeBadger,
 	}, s.logger)
 
 	// Create snapshot manager

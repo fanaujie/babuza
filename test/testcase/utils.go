@@ -105,7 +105,7 @@ func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
 	var components []BabuzaComponent
 	//// Create a BabuzaComponent for each test case
 	for _, tc := range testCases {
-		for _, walType := range []string{builder.BabuzaWal, builder.ETCDWal, builder.LsmtWalDisk} {
+		for _, walType := range []string{builder.BabuzaWal, builder.ETCDWal, builder.BadgerWalDisk, builder.PebbleWalDisk} {
 			for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
 				components = append(components, BabuzaComponent{
 					CaseName:  fmt.Sprintf("BasicTest: 3nodes-(%s)-(%s)-(%s)-DurableSnapshot-NoOpSession", transportType, tc.caseName, walType),
@@ -210,64 +210,66 @@ func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 
 	// Create a BabuzaComponent for each test case
 	for _, tc := range testCases {
-		for _, snapshotType := range []string{builder.DurableSnapshot, builder.MinIOSnapshot} {
-			for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
-				var mc *minioContainer
-				if snapshotType == builder.MinIOSnapshot {
-					mc = &minioContainer{}
-				}
-				components = append(components, BabuzaComponent{
-					InitFunc: func() error {
-						if mc == nil {
-							return nil
-						}
-						return mc.Setup()
-					},
-					DeferFunc: func() error {
-						if mc == nil {
-							return nil
-						}
-						return mc.Defer()
-					},
-					CaseName:           "BasicTest: 3nodes-" + transportType + "-BabuzaWal-" + snapshotType + "-" + tc.caseName,
-					ClusterId:          1,
-					CreateStateMachine: tc.stateMachineCreator,
-					CreateCustomComponent: func(snapshotType, sessionType, transportType string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
-						return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
-							config.BubuzaConfig.SnapshotCount = snapshotCount
-							chunkSize := 5 * 1024 * 1024
-							b := customBabuzaComponent(sessionType, builder.BabuzaWal, snapshotType,
-								transportType, proxyNet).
-								SetClusterId(config.BubuzaConfig.ClusterID).
-								SetStorageRootDir(storageDir).
-								AddTransportOptions(transport.SetTransportOptionsWithPeerSnapshotChunkSize(
-									int64(chunkSize)))
-							if transportType == builder.GRPCTransport {
-								b.AddGrpcOptions(protocol.SetGrpcOptsWithRecvMsgMaxSize(
-									int(float32(chunkSize) * 1.2)))
+		for _, walType := range []string{builder.BabuzaWal, builder.ETCDWal, builder.BadgerWalDisk, builder.PebbleWalDisk} {
+			for _, snapshotType := range []string{builder.DurableSnapshot, builder.MinIOSnapshot} {
+				for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
+					var mc *minioContainer
+					if snapshotType == builder.MinIOSnapshot {
+						mc = &minioContainer{}
+					}
+					components = append(components, BabuzaComponent{
+						InitFunc: func() error {
+							if mc == nil {
+								return nil
 							}
-							if snapshotType == builder.MinIOSnapshot {
-								// If using MinIO and gRPC, the chunk size must be greater than 5MB.
-								// If the number of chunks is greater than 1, the chunk size must be greater than 5MB.
-								// This is a limitation of MinIO's compose functionality.
-								endpoint, err := mc.minioContainer.ConnectionString(context.Background())
-								if err != nil {
-									panic(err)
+							return mc.Setup()
+						},
+						DeferFunc: func() error {
+							if mc == nil {
+								return nil
+							}
+							return mc.Defer()
+						},
+						CaseName:           "BasicTest: 3nodes-" + transportType + walType + snapshotType + "-" + tc.caseName,
+						ClusterId:          1,
+						CreateStateMachine: tc.stateMachineCreator,
+						CreateCustomComponent: func(snapshotType, sessionType, transportType string) func(*embedapp.KvStoreAppConfig, string, ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+							return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
+								config.BubuzaConfig.SnapshotCount = snapshotCount
+								chunkSize := 5 * 1024 * 1024
+								b := customBabuzaComponent(sessionType, walType, snapshotType,
+									transportType, proxyNet).
+									SetClusterId(config.BubuzaConfig.ClusterID).
+									SetStorageRootDir(storageDir).
+									AddTransportOptions(transport.SetTransportOptionsWithPeerSnapshotChunkSize(
+										int64(chunkSize)))
+								if transportType == builder.GRPCTransport {
+									b.AddGrpcOptions(protocol.SetGrpcOptsWithRecvMsgMaxSize(
+										int(float32(chunkSize) * 1.2)))
 								}
-								b.SetMinIOConfig(&cloudstorage.Config{
-									Endpoint:        endpoint,
-									AccessKeyID:     mc.minioContainer.Username,
-									SecretAccessKey: mc.minioContainer.Password,
-									UseSSL:          false,
-									Bucket:          "test-bucket",
-									Prefix:          "snapshot",
-								})
+								if snapshotType == builder.MinIOSnapshot {
+									// If using MinIO and gRPC, the chunk size must be greater than 5MB.
+									// If the number of chunks is greater than 1, the chunk size must be greater than 5MB.
+									// This is a limitation of MinIO's compose functionality.
+									endpoint, err := mc.minioContainer.ConnectionString(context.Background())
+									if err != nil {
+										panic(err)
+									}
+									b.SetMinIOConfig(&cloudstorage.Config{
+										Endpoint:        endpoint,
+										AccessKeyID:     mc.minioContainer.Username,
+										SecretAccessKey: mc.minioContainer.Password,
+										UseSSL:          false,
+										Bucket:          "test-bucket",
+										Prefix:          "snapshot",
+									})
+								}
+								return *config, *b.Build()
 							}
-							return *config, *b.Build()
-						}
-					}(snapshotType, tc.sessionType, transportType),
-					ProxyNetwork: nil,
-				})
+						}(snapshotType, tc.sessionType, transportType),
+						ProxyNetwork: nil,
+					})
+				}
 			}
 		}
 
@@ -278,7 +280,7 @@ func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 
 func proxyClusterComponents(checkQuorum, preVote bool) []BabuzaComponent {
 	var components []BabuzaComponent
-	for _, walType := range []string{builder.BabuzaWal, builder.ETCDWal, builder.LsmtWalDisk} {
+	for _, walType := range []string{builder.BabuzaWal, builder.ETCDWal, builder.BadgerWalDisk, builder.PebbleWalDisk} {
 		for _, transportType := range []string{builder.TcpTransport} {
 			pn := proxynetwork.New()
 			components = append(components, BabuzaComponent{

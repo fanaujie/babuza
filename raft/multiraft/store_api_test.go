@@ -283,7 +283,7 @@ func createStoreManager(storeConfigs []storeConfig, cuConfig customConfig, rootD
 
 	manager := NewStoreManager()
 	for _, config := range storeConfigs {
-		store, err := createNode(ClusterID, config.storeID, cuConfig, config.raftListenAddr,
+		store, err := createStore(ClusterID, config.storeID, cuConfig, config.raftListenAddr,
 			filepath.Join(rootDir, fmt.Sprintf("%d", config.storeID)), factory)
 		if err != nil {
 			return nil, err
@@ -295,7 +295,7 @@ func createStoreManager(storeConfigs []storeConfig, cuConfig customConfig, rootD
 	return manager, nil
 }
 
-func createNode(clusterID uint64, storeID uint64, cuConfig customConfig, storeRaftListenAddr string,
+func createStore(clusterID uint64, storeID uint64, cuConfig customConfig, storeRaftListenAddr string,
 	rootDir string, factory ComponentsFactory) (*Store, error) {
 	config := DefaultStoreConfig(clusterID, storeID, rootDir, storeRaftListenAddr)
 	config.EnableWalNoSync = cuConfig.EnableWalNoSync
@@ -307,10 +307,11 @@ func createNode(clusterID uint64, storeID uint64, cuConfig customConfig, storeRa
 	config.SchedulerShardWorkerNum = cuConfig.SchedulerShardWorkerNum
 	config.SchedulerQueueSize = cuConfig.SchedulerQueueSize
 	log := factory.GetLogger()
-	walMgr := lsmtwal.NewMultiRaftBadgerWalManager(lsmtwal.MultiRaftConfig{
+	walMgr := lsmtwal.NewMultiRaftWalManager(lsmtwal.MultiRaftConfig{
 		InMemory:           false,
 		WalDir:             filepath.Join(rootDir, "wal"),
 		KeyPrefixCacheSize: 1024,
+		ManagerType:        lsmtwal.WalManagerTypeBadger,
 	}, log)
 	snapshotMgr := snapshot.NewMultiRaftSnapshotManager(snapshot.Config{
 		SnapshotVersion: 1,
@@ -1030,7 +1031,7 @@ func TestSnapshot(t *testing.T) {
 	store3.Stop()
 	assert.NoError(t, nm.Remove(3))
 
-	store3, err = createNode(ClusterID, storeConfigs[2].storeID, cuConfig, storeConfigs[2].raftListenAddr,
+	store3, err = createStore(ClusterID, storeConfigs[2].storeID, cuConfig, storeConfigs[2].raftListenAddr,
 		filepath.Join(rootDir, fmt.Sprintf("%d", storeConfigs[2].storeID)), newComponentFactory(NoOPSessionType))
 	assert.NoError(t, err)
 	assert.NoError(t, store3.Start())
@@ -1065,7 +1066,7 @@ func TestMultipleGroup(t *testing.T) {
 	cuConfig.CoalescedHeartbeatQueueSize = 1024
 	cuConfig.TransportPeerQueueSize = 1024 * 10
 	cuConfig.TransportHeartbeatBufferSize = 1024
-	cuConfig.SchedulerShardNum = 16
+	cuConfig.SchedulerShardNum = 32
 	cuConfig.SchedulerShardWorkerNum = 8
 	cuConfig.SchedulerQueueSize = 128
 	cuConfig.RaftConfig.ElectionTicks = 20

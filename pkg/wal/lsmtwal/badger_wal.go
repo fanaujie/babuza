@@ -143,11 +143,3 @@ func (w *BadgerWal) Sync() error {
 func (w *BadgerWal) Close() error {
 	return nil
 }
-
-func isEmptyHardState(st raftpb.HardState) bool {
-	return st.Term == 0 && st.Vote == 0 && st.Commit == 0
-}
-
-func isEmptySnapshot(snap raftpb.Snapshot) bool {
-	return snap.Metadata.Index == 0
-}
