@@ -211,6 +211,10 @@ func (s *bootstrapStorage) GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuz
 	return babuza.NewRaftStorage(snapshotManager, wal, entryStorage, wrapper.stateMachine, wrapper.bsmInfo), nil
 }
 
+func (s *bootstrapStorage) StartPurgingProcess() {
+	s.walManager.Purger().Start()
+}
+
 func (s *bootstrapStorage) Close() error {
 	m := multierror.New()
 	m.Append(s.walManager.Close())

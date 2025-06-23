@@ -3,6 +3,7 @@ package lsmtwal
 import (
 	"encoding/binary"
 	"github.com/dgraph-io/badger/v4"
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/wal/lsmtwal/storage"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -10,24 +11,31 @@ import (
 )
 
 type BadgerWal struct {
-	db        *badger.DB
-	es        *storage.EntryStorage
-	noFsync   bool
-	keyPrefix *keyPrefix
-	hardState raftpb.HardState
+	db               *badger.DB
+	es               *storage.EntryStorage
+	noFsync          bool
+	keyPrefix        *keyPrefix
+	hardState        raftpb.HardState
+	purgerSnapCh     chan purgeRequest
+	multiRaftGroupID ibabuza.RaftGroupID
 }
 
-func NewBadgerWal(db *badger.DB, es *storage.EntryStorage, keyPrefix *keyPrefix) *BadgerWal {
+func NewBadgerWal(db *badger.DB, es *storage.EntryStorage, keyPrefix *keyPrefix, purgerSnapCh chan purgeRequest) *BadgerWal {
 
 	return &BadgerWal{
-		db:        db,
-		es:        es,
-		keyPrefix: keyPrefix,
+		db:           db,
+		es:           es,
+		keyPrefix:    keyPrefix,
+		purgerSnapCh: purgerSnapCh,
 	}
 }
 
 func (w *BadgerWal) SetUnsafeNoFsync() {
 	w.noFsync = true
+}
+
+func (w *BadgerWal) SetMultiRaftPurger(groupID ibabuza.RaftGroupID) {
+	w.multiRaftGroupID = groupID
 }
 
 func (w *BadgerWal) Save(hardState raftpb.HardState, entries []raftpb.Entry) error {
@@ -99,35 +107,13 @@ func (w *BadgerWal) Purge(snapshot raftpb.Snapshot) error {
 	if isEmptySnapshot(snapshot) {
 		return nil
 	}
-
-	// Delete entries that are included in the snapshot
-	return w.db.Update(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		opts.Reverse = true
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		// Collect keys to delete
-		var keysToDelete [][]byte
-
-		// Prepare seek key with the snapshot index
-		var snapshotIndex [24]byte
-		copy(snapshotIndex[:16], w.keyPrefix.entry)
-		binary.BigEndian.PutUint64(snapshotIndex[16:], snapshot.Metadata.Index)
-		for it.Seek(snapshotIndex[:24]); it.ValidForPrefix(w.keyPrefix.entry); it.Next() {
-			item := it.Item()
-			key := item.Key()
-			keysToDelete = append(keysToDelete, append([]byte{}, key...))
+	if w.purgerSnapCh != nil {
+		w.purgerSnapCh <- purgeRequest{
+			groupID:  w.multiRaftGroupID,
+			snapshot: snapshot,
 		}
-
-		for _, key := range keysToDelete {
-			if err := txn.Delete(key); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 func (w *BadgerWal) Sync() error {

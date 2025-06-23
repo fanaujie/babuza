@@ -178,24 +178,24 @@ func (d *transportProcessor) CreateSnapshotReader(groupID ibabuza.RaftGroupID, s
 	return snapReader, nil
 }
 
-func (d *transportProcessor) validateRequest(groupID ibabuza.RaftGroupID, clusterID uint64, peerID uint64) error {
+func (d *transportProcessor) validateRequest(groupID ibabuza.RaftGroupID, clusterID uint64, peerID uint64) (*replica, error) {
 	r, err := d.getReplica(groupID)
 	if err != nil {
 		d.logger.Warningf("Store[%d] groupID[%d] get replica error: %v",
 			d.config.StoreID, groupID, err)
-		return err
+		return nil, err
 	}
 
 	if clusterID != r.cluster.ClusterID() {
 		d.logger.Warningf("Store[%d] groupID[%d] cluster id %d not match %d",
 			d.config.StoreID, groupID, clusterID, r.cluster.ClusterID())
-		return errors.New("cluster id not match")
+		return nil, errors.New("cluster id not match")
 	}
 
 	if peerID != r.cluster.LocalPeerID() {
 		d.logger.Warningf("Store[%d] groupID[%d] received message with different peer id(%d)",
 			d.config.StoreID, groupID, peerID)
-		return errors.New("peer id not match")
+		return nil, errors.New("peer id not match")
 	}
-	return nil
+	return r, nil
 }

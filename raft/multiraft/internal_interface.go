@@ -43,5 +43,6 @@ type BootstrapStorage interface {
 	OpenStateMachine(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot) (ibabuza.ResponseSerializer, error)
 	SetWalNoFSync(groupID ibabuza.RaftGroupID) error
 	GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuza.RaftStorage, error)
+	StartPurgingProcess()
 	Close() error
 }

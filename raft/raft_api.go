@@ -143,6 +143,7 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster, raftListener iba
 	if err = r.trans.Start(); err != nil {
 		return nil, err
 	}
+	r.walManager.Purger().Start()
 	r.closer.Run(func() {
 		r.processRaftReady()
 	})

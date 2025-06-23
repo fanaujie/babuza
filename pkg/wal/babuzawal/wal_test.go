@@ -34,7 +34,7 @@ func genWal(t *testing.T, cfg logfile.ManagerConfig, enableEntryIndexStorage boo
 
 	logMgr, err := logfile.NewManager(cfg, cp)
 	assert.Nil(t, err)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(t, err)
 
 	if enableEntryIndexStorage {
@@ -79,7 +79,7 @@ func TestWal_Create(t *testing.T) {
 		testWalMgrConfig.WalDir = p
 		logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 		assert.Nil(t, err)
-		w, err := CreateWal(metadata, logMgr)
+		w, err := CreateWal(metadata, logMgr, nil)
 		assert.Nil(t, err)
 		assert.Nil(t, w.Close())
 		lastLogDesc := w.tailLogFileDesc()
@@ -101,7 +101,7 @@ func TestWal_Create(t *testing.T) {
 			[]byte{1, 2, 3, 4}, os.ModeTemporary))
 		logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 		assert.Nil(t, err)
-		_, err = CreateWal(metadata, logMgr)
+		_, err = CreateWal(metadata, logMgr, nil)
 		assert.Error(t, err)
 	})
 
@@ -117,7 +117,7 @@ func TestWal_Create(t *testing.T) {
 			wData, os.ModeTemporary))
 		logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 		assert.Nil(t, err)
-		w, err := CreateWal(metadata, logMgr)
+		w, err := CreateWal(metadata, logMgr, nil)
 		assert.Nil(t, err)
 		defer w.Close()
 
@@ -154,7 +154,7 @@ func TestWal_Save(t *testing.T) {
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(t, err)
 	hs := raftpb.HardState{
 		Term:   1,
@@ -190,7 +190,7 @@ func TestWal_SaveSnapshot(t *testing.T) {
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(t, err)
 	snap := raftpb.Snapshot{
 		Data: nil,
@@ -223,7 +223,7 @@ func TestWal_SaveSnapshot_Cycle(t *testing.T) {
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(t, err)
 	snap := raftpb.Snapshot{
 		Data: nil,
@@ -366,7 +366,7 @@ func TestWal_Open(t *testing.T) {
 		logMgr, err := logfile.NewManagerWithScan(testWalMgrConfig, EmptyWalpbSnapshot, cp)
 		assert.Nil(t, err)
 
-		ow, err := OpenWal(logMgr, result)
+		ow, err := OpenWal(logMgr, result, nil)
 		assert.Nil(t, err)
 		if tc.enableEntryIndex {
 			es := &storage.EntryIndexRaftStorage{
@@ -406,7 +406,7 @@ func TestWal_Open(t *testing.T) {
 
 		logMgr, err = logfile.NewManagerWithScan(testWalMgrConfig, EmptyWalpbSnapshot, cp)
 		assert.Nil(t, err)
-		ow, err = OpenWal(logMgr, result)
+		ow, err = OpenWal(logMgr, result, nil)
 		assert.Nil(t, err)
 		if tc.enableEntryIndex {
 			es := &storage.EntryIndexRaftStorage{
@@ -431,7 +431,7 @@ func TestWal_Open_Snapshot(t *testing.T) {
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(t, err)
 	w.SetEntryIndexStorage(walbase.NewEntryStorage[storage.EntryIndexMetadata](w.logMgr))
 	var testSegs uint64 = 8
@@ -493,7 +493,7 @@ func TestWal_Open_Snapshot(t *testing.T) {
 			assert.Nil(t, replay.Replay(pr.result, false))
 			logMgr, err := logfile.NewManagerWithScan(testWalMgrConfig, walpb.Snapshot{Index: e}, cp)
 			assert.Nil(t, err)
-			ow, err := OpenWal(logMgr, pr.result)
+			ow, err := OpenWal(logMgr, pr.result, nil)
 			assert.Nil(t, err)
 			assert.NotNil(t, ow)
 			assert.Equal(t, metadata, pr.result.Metadata())
@@ -510,7 +510,7 @@ func TestWal_NextEntryChange(t *testing.T) {
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(t, err)
 	var testEntries uint64 = 64
 	var expect []raftpb.Entry
@@ -547,7 +547,7 @@ func TestWal_NextEntry_NotContinuous(t *testing.T) {
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(t, err)
 	defer w.Close()
 	var expect []raftpb.Entry
@@ -620,7 +620,7 @@ func TestWal_CoverEntries(t *testing.T) {
 	metadata := []byte{1, 2, 3, 4}
 	logMgr, err := logfile.NewManager(testWalMgrConfig, cp)
 	assert.Nil(t, err)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(t, err)
 	var testEntries uint64 = 64
 	var expect []raftpb.Entry

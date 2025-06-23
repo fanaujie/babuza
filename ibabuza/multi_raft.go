@@ -73,7 +73,7 @@ type MultiRaftWalManager interface {
 	ReplayWal(groupID RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (EntryStorage,
 		Wal, ReplayWalResult, error)
 	HasExistingWals() ([]RaftGroupID, error)
-	PurgeWals(WalPurgeConfig)
+	Purger() WalPurger
 	Close() error
 }
 

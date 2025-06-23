@@ -69,7 +69,7 @@ func TestManager_CreateNextTempLogFile(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		p := t.TempDir()
-		cp := allocator.NewDefaultTwoLevelPool(1024, 1024*1024*4)
+		cp := allocator.NewByteSlicePool(1024, 1024*1024*4, 2)
 		defaultManagerConfig.WalDir = p
 		m, err := NewManager(defaultManagerConfig, cp)
 		assert.Nil(t, err)
@@ -87,7 +87,7 @@ func TestManager_CreateNextTempLogFile(t *testing.T) {
 
 	t.Run("failure: not expected next id", func(t *testing.T) {
 		p := t.TempDir()
-		cp := allocator.NewDefaultTwoLevelPool(1024, 1024*1024*4)
+		cp := allocator.NewByteSlicePool(1024, 1024*1024*4, 2)
 		defaultManagerConfig.WalDir = p
 		m, err := NewManager(defaultManagerConfig, cp)
 		assert.Nil(t, err)
@@ -98,7 +98,7 @@ func TestManager_CreateNextTempLogFile(t *testing.T) {
 
 func TestManager_FinalizeTempLogFile(t *testing.T) {
 	p := t.TempDir()
-	cp := allocator.NewDefaultTwoLevelPool(1024, 1024*1024*4)
+	cp := allocator.NewByteSlicePool(1024, 1024*1024*4, 2)
 	defaultManagerConfig.WalDir = p
 	m, err := NewManager(defaultManagerConfig, cp)
 	assert.Nil(t, err)
@@ -119,7 +119,7 @@ func TestManager_FinalizeTempLogFile(t *testing.T) {
 
 func TestManager_OpenLogFile(t *testing.T) {
 	p := t.TempDir()
-	cp := allocator.NewDefaultTwoLevelPool(1024, 1024*1024*4)
+	cp := allocator.NewByteSlicePool(1024, 1024*1024*4, 2)
 	defaultManagerConfig.WalDir = p
 	m, err := NewManager(defaultManagerConfig, cp)
 	assert.Nil(t, err)

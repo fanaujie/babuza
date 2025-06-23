@@ -61,7 +61,7 @@ func TestNewWal(t *testing.T) {
 				db, dir := setupTestDB(t)
 				defer cleanup(db, dir)
 
-				wal := NewBadgerWal(db, nil, newKeyPrefix(0))
+				wal := NewBadgerWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				assert.NotNil(t, wal)
@@ -72,7 +72,7 @@ func TestNewWal(t *testing.T) {
 				db := setupTestPebbleDB(t)
 				defer cleanupPebble(db)
 
-				wal := NewPebbleWal(db, nil, newKeyPrefix(0))
+				wal := NewPebbleWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				assert.NotNil(t, wal)
@@ -99,7 +99,7 @@ func TestWal_SetUnsafeNoFsync(t *testing.T) {
 				db, dir := setupTestDB(t)
 				defer cleanup(db, dir)
 
-				wal := NewBadgerWal(db, nil, newKeyPrefix(0))
+				wal := NewBadgerWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				assert.False(t, wal.noFsync)
@@ -110,7 +110,7 @@ func TestWal_SetUnsafeNoFsync(t *testing.T) {
 				db := setupTestPebbleDB(t)
 				defer cleanupPebble(db)
 
-				wal := NewPebbleWal(db, nil, newKeyPrefix(0))
+				wal := NewPebbleWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				assert.False(t, wal.noFsync)
@@ -159,7 +159,7 @@ func TestWal_Save(t *testing.T) {
 				db, dir := setupTestDB(t)
 				defer cleanup(db, dir)
 
-				wal := NewBadgerWal(db, nil, newKeyPrefix(0))
+				wal := NewBadgerWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Save the data
@@ -208,7 +208,7 @@ func TestWal_Save(t *testing.T) {
 				db := setupTestPebbleDB(t)
 				defer cleanupPebble(db)
 
-				wal := NewPebbleWal(db, nil, newKeyPrefix(0))
+				wal := NewPebbleWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Save the data
@@ -268,7 +268,7 @@ func TestWal_SaveEmptyHardState(t *testing.T) {
 				db, dir := setupTestDB(t)
 				defer cleanup(db, dir)
 
-				wal := NewBadgerWal(db, nil, newKeyPrefix(0))
+				wal := NewBadgerWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Save the data
@@ -288,7 +288,7 @@ func TestWal_SaveEmptyHardState(t *testing.T) {
 				db := setupTestPebbleDB(t)
 				defer cleanupPebble(db)
 
-				wal := NewPebbleWal(db, nil, newKeyPrefix(0))
+				wal := NewPebbleWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Save the data
@@ -332,7 +332,7 @@ func TestWal_SaveSnapshot(t *testing.T) {
 				db, dir := setupTestDB(t)
 				defer cleanup(db, dir)
 
-				wal := NewBadgerWal(db, nil, newKeyPrefix(0))
+				wal := NewBadgerWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Save the snapshot
@@ -364,7 +364,7 @@ func TestWal_SaveSnapshot(t *testing.T) {
 				db := setupTestPebbleDB(t)
 				defer cleanupPebble(db)
 
-				wal := NewPebbleWal(db, nil, newKeyPrefix(0))
+				wal := NewPebbleWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Save the snapshot
@@ -416,7 +416,7 @@ func TestWal_SaveEmptySnapshot(t *testing.T) {
 				db, dir := setupTestDB(t)
 				defer cleanup(db, dir)
 
-				wal := NewBadgerWal(db, nil, newKeyPrefix(0))
+				wal := NewBadgerWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Save the snapshot
@@ -440,7 +440,7 @@ func TestWal_SaveEmptySnapshot(t *testing.T) {
 				db := setupTestPebbleDB(t)
 				defer cleanupPebble(db)
 
-				wal := NewPebbleWal(db, nil, newKeyPrefix(0))
+				wal := NewPebbleWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Save the snapshot
@@ -462,6 +462,139 @@ func TestWal_SaveEmptySnapshot(t *testing.T) {
 }
 
 func TestWal_Purge(t *testing.T) {
+	testCases := []struct {
+		name    string
+		walType string
+	}{
+		{"BadgerDB WAL", "badger"},
+		{"PebbleDB WAL", "pebble"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a snapshot at index 3
+			snapshot := raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 3,
+					Term:  1,
+				},
+			}
+
+			switch tc.walType {
+			case "badger":
+				db, dir := setupTestDB(t)
+				defer cleanup(db, dir)
+
+				// Create a channel to receive purge requests
+				purgerSnapCh := make(chan purgeRequest, 1)
+				wal := NewBadgerWal(db, nil, newKeyPrefix(0), purgerSnapCh)
+				defer func() { _ = wal.Close() }()
+
+				// Test purge sends snapshot to channel
+				err := wal.Purge(snapshot)
+				assert.NoError(t, err)
+
+				// Verify snapshot was sent to channel
+				select {
+				case receivedSnapshot := <-purgerSnapCh:
+					assert.Equal(t, snapshot.Metadata.Index, receivedSnapshot.snapshot.Metadata.Index)
+					assert.Equal(t, snapshot.Metadata.Term, receivedSnapshot.snapshot.Metadata.Term)
+				default:
+					t.Fatal("Expected snapshot to be sent to purger channel")
+				}
+
+			case "pebble":
+				db := setupTestPebbleDB(t)
+				defer cleanupPebble(db)
+
+				// Create a channel to receive purge requests
+				purgerSnapCh := make(chan purgeRequest, 1)
+				wal := NewPebbleWal(db, nil, newKeyPrefix(0), purgerSnapCh)
+				defer func() { _ = wal.Close() }()
+
+				// Test purge sends snapshot to channel
+				err := wal.Purge(snapshot)
+				assert.NoError(t, err)
+
+				// Verify snapshot was sent to channel
+				select {
+				case receivedSnapshot := <-purgerSnapCh:
+					assert.Equal(t, snapshot.Metadata.Index, receivedSnapshot.snapshot.Metadata.Index)
+					assert.Equal(t, snapshot.Metadata.Term, receivedSnapshot.snapshot.Metadata.Term)
+				default:
+					t.Fatal("Expected snapshot to be sent to purger channel")
+				}
+			}
+		})
+	}
+}
+
+func TestWal_PurgeEmptySnapshot(t *testing.T) {
+	testCases := []struct {
+		name    string
+		walType string
+	}{
+		{"BadgerDB WAL", "badger"},
+		{"PebbleDB WAL", "pebble"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create an empty snapshot
+			snapshot := raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 0, // Empty snapshot has Index = 0
+				},
+			}
+
+			switch tc.walType {
+			case "badger":
+				db, dir := setupTestDB(t)
+				defer cleanup(db, dir)
+
+				// Create a channel to receive purge requests
+				purgerSnapCh := make(chan purgeRequest, 1)
+				wal := NewBadgerWal(db, nil, newKeyPrefix(0), purgerSnapCh)
+				defer func() { _ = wal.Close() }()
+
+				// Purge with empty snapshot (should do nothing)
+				err := wal.Purge(snapshot)
+				assert.NoError(t, err)
+
+				// Verify no snapshot was sent to channel (empty snapshot should be ignored)
+				select {
+				case <-purgerSnapCh:
+					t.Fatal("Empty snapshot should not be sent to purger channel")
+				default:
+					// Expected behavior - no snapshot should be sent
+				}
+
+			case "pebble":
+				db := setupTestPebbleDB(t)
+				defer cleanupPebble(db)
+
+				// Create a channel to receive purge requests
+				purgerSnapCh := make(chan purgeRequest, 1)
+				wal := NewPebbleWal(db, nil, newKeyPrefix(0), purgerSnapCh)
+				defer func() { _ = wal.Close() }()
+
+				// Purge with empty snapshot (should do nothing)
+				err := wal.Purge(snapshot)
+				assert.NoError(t, err)
+
+				// Verify no snapshot was sent to channel (empty snapshot should be ignored)
+				select {
+				case <-purgerSnapCh:
+					t.Fatal("Empty snapshot should not be sent to purger channel")
+				default:
+					// Expected behavior - no snapshot should be sent
+				}
+			}
+		})
+	}
+}
+
+func TestPurgerLogic(t *testing.T) {
 	testCases := []struct {
 		name    string
 		walType string
@@ -494,15 +627,23 @@ func TestWal_Purge(t *testing.T) {
 				db, dir := setupTestDB(t)
 				defer cleanup(db, dir)
 
-				wal := NewBadgerWal(db, nil, newKeyPrefix(0))
-				defer func() { _ = wal.Close() }()
+				// Create manager and purger
+				manager := &BadgerWalManager{
+					logger:       nil,
+					db:           db,
+					keyPrefix:    newKeyPrefix(0),
+					purgerSnapCh: make(chan purgeRequest, 1),
+					purgerStopCh: make(chan struct{}),
+				}
+				purger := manager.Purger().(*badgerPurger)
 
-				// Save entries
+				// Create WAL and save entries
+				wal := NewBadgerWal(db, nil, manager.keyPrefix, nil)
 				err := wal.Save(raftpb.HardState{}, entries)
 				assert.NoError(t, err)
 
-				// Purge entries up to snapshot index
-				err = wal.Purge(snapshot)
+				// Test direct purge logic
+				err = purger.purgeSnapshot(snapshot)
 				assert.NoError(t, err)
 
 				// Verify entries 1-3 are deleted, 4-5 still exist
@@ -510,7 +651,7 @@ func TestWal_Purge(t *testing.T) {
 					// Check that entries 1-3 are purged
 					for i := uint64(1); i <= 3; i++ {
 						var key [24]byte
-						copy(key[:16], wal.keyPrefix.entry)
+						copy(key[:16], manager.keyPrefix.entry)
 						binary.BigEndian.PutUint64(key[16:], i)
 
 						_, err = txn.Get(key[:24])
@@ -521,7 +662,7 @@ func TestWal_Purge(t *testing.T) {
 					// Check that entries 4-5 still exist
 					for i := uint64(4); i <= 5; i++ {
 						var key [24]byte
-						copy(key[:16], wal.keyPrefix.entry)
+						copy(key[:16], manager.keyPrefix.entry)
 						binary.BigEndian.PutUint64(key[16:], i)
 
 						item, err := txn.Get(key[:24])
@@ -544,22 +685,30 @@ func TestWal_Purge(t *testing.T) {
 				db := setupTestPebbleDB(t)
 				defer cleanupPebble(db)
 
-				wal := NewPebbleWal(db, nil, newKeyPrefix(0))
-				defer func() { _ = wal.Close() }()
+				// Create manager and purger
+				manager := &PebbleWalManager{
+					logger:       nil,
+					db:           db,
+					keyPrefix:    newKeyPrefix(0),
+					purgerSnapCh: make(chan purgeRequest, 1),
+					purgerStopCh: make(chan struct{}),
+				}
+				purger := manager.Purger().(*pebblePurger)
 
-				// Save entries
+				// Create WAL and save entries
+				wal := NewPebbleWal(db, nil, manager.keyPrefix, nil)
 				err := wal.Save(raftpb.HardState{}, entries)
 				assert.NoError(t, err)
 
-				// Purge entries up to snapshot index
-				err = wal.Purge(snapshot)
+				// Test direct purge logic
+				err = purger.purgeSnapshot(snapshot)
 				assert.NoError(t, err)
 
 				// Verify entries 1-3 are deleted, 4-5 still exist
 				// Check that entries 1-3 are purged
 				for i := uint64(1); i <= 3; i++ {
 					var key [24]byte
-					copy(key[:16], wal.keyPrefix.entry)
+					copy(key[:16], manager.keyPrefix.entry)
 					binary.BigEndian.PutUint64(key[16:], i)
 
 					_, _, err := db.Get(key[:24])
@@ -570,105 +719,7 @@ func TestWal_Purge(t *testing.T) {
 				// Check that entries 4-5 still exist
 				for i := uint64(4); i <= 5; i++ {
 					var key [24]byte
-					copy(key[:16], wal.keyPrefix.entry)
-					binary.BigEndian.PutUint64(key[16:], i)
-
-					val, closer, err := db.Get(key[:24])
-					assert.NoError(t, err, "Entry with index %d should still exist", i)
-
-					var entry raftpb.Entry
-					err = entry.Unmarshal(val)
-					_ = closer.Close()
-					assert.NoError(t, err)
-					assert.Equal(t, i, entry.Index)
-				}
-			}
-		})
-	}
-}
-
-func TestWal_PurgeEmptySnapshot(t *testing.T) {
-	testCases := []struct {
-		name    string
-		walType string
-	}{
-		{"BadgerDB WAL", "badger"},
-		{"PebbleDB WAL", "pebble"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Add some entries
-			entries := []raftpb.Entry{
-				{Term: 1, Index: 1, Data: []byte("data1")},
-				{Term: 1, Index: 2, Data: []byte("data2")},
-			}
-
-			// Create an empty snapshot
-			snapshot := raftpb.Snapshot{
-				Metadata: raftpb.SnapshotMetadata{
-					Index: 0, // Empty snapshot has Index = 0
-				},
-			}
-
-			switch tc.walType {
-			case "badger":
-				db, dir := setupTestDB(t)
-				defer cleanup(db, dir)
-
-				wal := NewBadgerWal(db, nil, newKeyPrefix(0))
-				defer func() { _ = wal.Close() }()
-
-				// Save entries
-				err := wal.Save(raftpb.HardState{}, entries)
-				assert.NoError(t, err)
-
-				// Purge with empty snapshot (should do nothing)
-				err = wal.Purge(snapshot)
-				assert.NoError(t, err)
-
-				// Verify entries still exist
-				err = db.View(func(txn *badger.Txn) error {
-					for i := uint64(1); i <= 2; i++ {
-						var key [24]byte
-						copy(key[:16], wal.keyPrefix.entry)
-						binary.BigEndian.PutUint64(key[16:], i)
-
-						item, err := txn.Get(key[:24])
-						assert.NoError(t, err, "Entry with index %d should still exist", i)
-
-						err = item.Value(func(val []byte) error {
-							var entry raftpb.Entry
-							err := entry.Unmarshal(val)
-							assert.NoError(t, err)
-							assert.Equal(t, i, entry.Index)
-							return nil
-						})
-						assert.NoError(t, err)
-					}
-					return nil
-				})
-				assert.NoError(t, err)
-
-			case "pebble":
-				db := setupTestPebbleDB(t)
-				defer cleanupPebble(db)
-
-				wal := NewPebbleWal(db, nil, newKeyPrefix(0))
-				defer func() { _ = wal.Close() }()
-
-				// Save entries
-				err := wal.Save(raftpb.HardState{}, entries)
-				assert.NoError(t, err)
-
-				// Purge with empty snapshot (should do nothing)
-				err = wal.Purge(snapshot)
-				assert.NoError(t, err)
-
-				// Verify entries still exist
-				for i := uint64(1); i <= 2; i++ {
-					var key [24]byte
-					copy(key[:16], wal.keyPrefix.entry)
+					copy(key[:16], manager.keyPrefix.entry)
 					binary.BigEndian.PutUint64(key[16:], i)
 
 					val, closer, err := db.Get(key[:24])
@@ -701,7 +752,7 @@ func TestWal_Sync(t *testing.T) {
 				db, dir := setupTestDB(t)
 				defer cleanup(db, dir)
 
-				wal := NewBadgerWal(db, nil, newKeyPrefix(0))
+				wal := NewBadgerWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Test normal sync
@@ -717,7 +768,7 @@ func TestWal_Sync(t *testing.T) {
 				db := setupTestPebbleDB(t)
 				defer cleanupPebble(db)
 
-				wal := NewPebbleWal(db, nil, newKeyPrefix(0))
+				wal := NewPebbleWal(db, nil, newKeyPrefix(0), nil)
 				defer func() { _ = wal.Close() }()
 
 				// Test normal sync

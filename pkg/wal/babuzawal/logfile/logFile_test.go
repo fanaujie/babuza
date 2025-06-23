@@ -60,7 +60,7 @@ var (
 )
 
 func newTestLogFile(t *testing.T, dir string, cfg logRWConfig, desc iwal.LogFileDesc) *LogFile {
-	cp := allocator.NewDefaultTwoLevelPool(cfg.firstBufferSize, cfg.secondMaxBufferSize)
+	cp := allocator.NewByteSlicePool(cfg.firstBufferSize, cfg.secondMaxBufferSize, 2)
 	handle, err := utility.CreateLogFileHandle(filepath.Join(dir, desc.GetLogFileName()), cfg.segmentSize)
 	assert.Nil(t, err)
 	pw, err := page.CreateWriter(cfg.segmentSize, cfg.alignmentPageSize, cfg.pageBufferSize, handle)
@@ -73,7 +73,7 @@ func newTestLogFile(t *testing.T, dir string, cfg logRWConfig, desc iwal.LogFile
 }
 
 func newTestLogParser(t *testing.T, entryParser iwal.EntryCollection) (*player.Parser, *player.ReplayResult) {
-	cp := allocator.NewDefaultTwoLevelPool(defaultLogRWConfig.firstBufferSize, defaultLogRWConfig.secondMaxBufferSize)
+	cp := allocator.NewByteSlicePool(defaultLogRWConfig.firstBufferSize, defaultLogRWConfig.secondMaxBufferSize, 2)
 	r := player.NewReplayResult(entryParser)
 	return player.NewParser(r, walpb.Snapshot{}, cp), r
 }

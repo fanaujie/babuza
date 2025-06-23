@@ -16,10 +16,12 @@ import (
 )
 
 type BadgerWalManager struct {
-	logger    ibabuza.Logger
-	db        *badger.DB
-	keyPrefix *keyPrefix
-	stopCh    chan struct{}
+	logger       ibabuza.Logger
+	db           *badger.DB
+	keyPrefix    *keyPrefix
+	stopCh       chan struct{}
+	purgerSnapCh chan purgeRequest
+	purgerStopCh chan struct{}
 }
 
 var _ ibabuza.WalManager = (*BadgerWalManager)(nil)
@@ -53,10 +55,12 @@ func NewBadgerWalManager(config Config, logger ibabuza.Logger) *BadgerWalManager
 		}
 	}()
 	return &BadgerWalManager{
-		logger:    logger,
-		db:        db,
-		keyPrefix: newKeyPrefix(0),
-		stopCh:    stopCh,
+		logger:       logger,
+		db:           db,
+		keyPrefix:    newKeyPrefix(0),
+		stopCh:       stopCh,
+		purgerSnapCh: make(chan purgeRequest, 1),
+		purgerStopCh: make(chan struct{}),
 	}
 }
 
@@ -93,7 +97,7 @@ func (m *BadgerWalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.Ent
 	es := &storage.EntryStorage{
 		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
 	}
-	w := NewBadgerWal(m.db, es, m.keyPrefix)
+	w := NewBadgerWal(m.db, es, m.keyPrefix, m.purgerSnapCh)
 	// write empty snapshot and metadata to the database
 	if err := m.db.Update(func(txn *badger.Txn) error {
 		snapshot := walpb.Snapshot{}
@@ -196,7 +200,8 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 	if err = es.Append(entries); err != nil {
 		return nil, nil, nil, err
 	}
-	return es, NewBadgerWal(m.db, es, m.keyPrefix), result, nil
+	w := NewBadgerWal(m.db, es, m.keyPrefix, m.purgerSnapCh)
+	return es, w, result, nil
 }
 
 func (m *BadgerWalManager) HasExistingWals() (bool, error) {
@@ -218,8 +223,64 @@ func (m *BadgerWalManager) HasExistingWals() (bool, error) {
 	return true, nil
 }
 
-func (m *BadgerWalManager) PurgeWals(config ibabuza.WalPurgeConfig) {
-	//TODO: implement this
+func (m *BadgerWalManager) Purger() ibabuza.WalPurger {
+	return &badgerPurger{
+		BadgerWalManager: m,
+	}
+}
+
+type badgerPurger struct {
+	*BadgerWalManager
+}
+
+func (p *badgerPurger) Start() {
+	go func() {
+		for {
+			select {
+			case req := <-p.purgerSnapCh:
+				if err := p.purgeSnapshot(req.snapshot); err != nil {
+					p.logger.Errorf("failed to purge snapshot index=%d: %v", req.snapshot.Metadata.Index, err)
+				}
+			case <-p.purgerStopCh:
+				return
+			}
+		}
+	}()
+}
+
+func (p *badgerPurger) purgeSnapshot(snapshot raftpb.Snapshot) error {
+	if isEmptySnapshot(snapshot) {
+		return nil
+	}
+
+	// Delete entries that are included in the snapshot
+	return p.db.Update(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		opts.Reverse = true
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		// Collect keys to delete
+		var keysToDelete [][]byte
+
+		// Prepare seek key with the snapshot index
+		var snapshotIndex [24]byte
+		copy(snapshotIndex[:16], p.keyPrefix.entry)
+		binary.BigEndian.PutUint64(snapshotIndex[16:], snapshot.Metadata.Index)
+		for it.Seek(snapshotIndex[:24]); it.ValidForPrefix(p.keyPrefix.entry); it.Next() {
+			item := it.Item()
+			key := item.Key()
+			keysToDelete = append(keysToDelete, append([]byte{}, key...))
+		}
+
+		for _, key := range keysToDelete {
+			if err := txn.Delete(key); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryMetadata],
@@ -262,6 +323,11 @@ func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[s
 }
 
 func (m *BadgerWalManager) Close() error {
+	select {
+	case <-m.purgerStopCh:
+	default:
+		close(m.purgerStopCh)
+	}
 	close(m.stopCh)
 	return m.db.Close()
 }

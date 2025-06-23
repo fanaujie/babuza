@@ -21,10 +21,12 @@ func NewMultiRaftBadgerWalManager(config MultiRaftConfig, logger ibabuza.Logger)
 	}
 	stopCh := make(chan struct{})
 	manager := &MultiRaftBadgerWalManager{
-		logger:      logger,
-		db:          db,
-		prefixCache: newKeyPrefixCache(config.KeyPrefixCacheSize),
-		stopCh:      stopCh,
+		logger:       logger,
+		db:           db,
+		prefixCache:  newKeyPrefixCache(config.KeyPrefixCacheSize),
+		stopCh:       stopCh,
+		purgerSnapCh: make(chan purgeRequest, 1),
+		purgerStopCh: make(chan struct{}),
 	}
 
 	// Start a background goroutine to run value log GC periodically
@@ -92,7 +94,8 @@ func (m *MultiRaftBadgerWalManager) CreateWal(groupID ibabuza.RaftGroupID, metad
 		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](reader),
 	}
 
-	w := NewBadgerWal(m.db, es, m.prefixCache.get(groupID))
+	w := NewBadgerWal(m.db, es, m.prefixCache.get(groupID), m.purgerSnapCh)
+	w.SetMultiRaftPurger(groupID)
 
 	// write empty snapshot and metadata to the database
 	if err := m.db.Update(func(txn *badger.Txn) error {
@@ -209,7 +212,9 @@ func (m *MultiRaftBadgerWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snaps
 		return nil, nil, nil, err
 	}
 
-	return es, NewBadgerWal(m.db, es, m.prefixCache.get(groupID)), result, nil
+	w := NewBadgerWal(m.db, es, m.prefixCache.get(groupID), m.purgerSnapCh)
+	w.SetMultiRaftPurger(groupID)
+	return es, w, result, nil
 }
 
 func (m *MultiRaftBadgerWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {
@@ -231,10 +236,6 @@ func (m *MultiRaftBadgerWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, er
 		return nil, err
 	}
 	return groupIDs, nil
-}
-
-func (m *MultiRaftBadgerWalManager) PurgeWals(config ibabuza.WalPurgeConfig) {
-	// TODO: implement this
 }
 
 func (m *MultiRaftBadgerWalManager) ReadEntriesData(groupID ibabuza.RaftGroupID, readEntryIndex []walbase.EntryIndex[storage.EntryMetadata],
@@ -287,7 +288,82 @@ func (m *MultiRaftBadgerWalManager) ReadEntriesData(groupID ibabuza.RaftGroupID,
 	})
 }
 
+func (m *MultiRaftBadgerWalManager) Purger() ibabuza.WalPurger {
+	return &multiRaftBadgerPurger{
+		MultiRaftBadgerWalManager: m,
+	}
+}
+
+type multiRaftBadgerPurger struct {
+	*MultiRaftBadgerWalManager
+}
+
+func (p *multiRaftBadgerPurger) Start() {
+	go func() {
+		for {
+			select {
+			case req := <-p.purgerSnapCh:
+				if err := p.purgeSnapshot(req.groupID, req.snapshot); err != nil {
+					p.logger.Errorf("failed to purge snapshot groupID=%d index=%d: %v", req.groupID, req.snapshot.Metadata.Index, err)
+				}
+			case <-p.purgerStopCh:
+				return
+			}
+		}
+	}()
+}
+
+func (p *multiRaftBadgerPurger) Stop() {
+	select {
+	case <-p.purgerStopCh:
+	default:
+		close(p.purgerStopCh)
+	}
+}
+
+func (p *multiRaftBadgerPurger) purgeSnapshot(groupID ibabuza.RaftGroupID, snapshot raftpb.Snapshot) error {
+	if isEmptySnapshot(snapshot) {
+		return nil
+	}
+
+	groupPrefix := p.prefixCache.get(groupID)
+
+	// Delete entries that are included in the snapshot
+	return p.db.Update(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		opts.Reverse = true
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		// Collect keys to delete
+		var keysToDelete [][]byte
+
+		// Prepare seek key with the snapshot index
+		var snapshotIndex [24]byte
+		copy(snapshotIndex[:16], groupPrefix.entry)
+		binary.BigEndian.PutUint64(snapshotIndex[16:], snapshot.Metadata.Index)
+		for it.Seek(snapshotIndex[:24]); it.ValidForPrefix(groupPrefix.entry); it.Next() {
+			item := it.Item()
+			key := item.Key()
+			keysToDelete = append(keysToDelete, append([]byte{}, key...))
+		}
+
+		for _, key := range keysToDelete {
+			if err := txn.Delete(key); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (m *MultiRaftBadgerWalManager) Close() error {
+	select {
+	case <-m.purgerStopCh:
+	default:
+		close(m.purgerStopCh)
+	}
 	close(m.stopCh)
 	return m.db.Close()
 }

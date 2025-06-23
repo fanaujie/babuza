@@ -3,6 +3,7 @@ package lsmtwal
 import (
 	"encoding/binary"
 	"github.com/cockroachdb/pebble/v2"
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/wal/lsmtwal/storage"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -10,23 +11,30 @@ import (
 )
 
 type PebbleWal struct {
-	db        *pebble.DB
-	es        *storage.EntryStorage
-	noFsync   bool
-	keyPrefix *keyPrefix
-	hardState raftpb.HardState
+	db               *pebble.DB
+	es               *storage.EntryStorage
+	noFsync          bool
+	keyPrefix        *keyPrefix
+	hardState        raftpb.HardState
+	purgerSnapCh     chan purgeRequest
+	multiRaftGroupID ibabuza.RaftGroupID
 }
 
-func NewPebbleWal(db *pebble.DB, es *storage.EntryStorage, keyPrefix *keyPrefix) *PebbleWal {
+func NewPebbleWal(db *pebble.DB, es *storage.EntryStorage, keyPrefix *keyPrefix, purgerSnapCh chan purgeRequest) *PebbleWal {
 	return &PebbleWal{
-		db:        db,
-		es:        es,
-		keyPrefix: keyPrefix,
+		db:           db,
+		es:           es,
+		keyPrefix:    keyPrefix,
+		purgerSnapCh: purgerSnapCh,
 	}
 }
 
 func (w *PebbleWal) SetUnsafeNoFsync() {
 	w.noFsync = true
+}
+
+func (w *PebbleWal) SetMultiRaftPurger(groupID ibabuza.RaftGroupID) {
+	w.multiRaftGroupID = groupID
 }
 
 func (w *PebbleWal) Save(hardState raftpb.HardState, entries []raftpb.Entry) error {
@@ -96,36 +104,13 @@ func (w *PebbleWal) Purge(snapshot raftpb.Snapshot) error {
 	if isEmptySnapshot(snapshot) {
 		return nil
 	}
-
-	// Delete entries that are included in the snapshot
-	batch := w.db.NewBatch()
-	defer batch.Close()
-
-	// Prepare seek key with the snapshot index + 1 (to include the snapshot index in deletion)
-	var snapshotIndexPlusOne [24]byte
-	copy(snapshotIndexPlusOne[:16], w.keyPrefix.entry)
-	binary.BigEndian.PutUint64(snapshotIndexPlusOne[16:], snapshot.Metadata.Index+1)
-
-	iter, err := w.db.NewIter(&pebble.IterOptions{
-		LowerBound: w.keyPrefix.entry,
-		UpperBound: snapshotIndexPlusOne[:24],
-	})
-	if err != nil {
-		return err
-	}
-	defer iter.Close()
-
-	for iter.First(); iter.Valid(); iter.Next() {
-		if err = batch.Delete(iter.Key(), pebble.Sync); err != nil {
-			return err
+	if w.purgerSnapCh != nil {
+		w.purgerSnapCh <- purgeRequest{
+			groupID:  w.multiRaftGroupID,
+			snapshot: snapshot,
 		}
 	}
-
-	if err = iter.Error(); err != nil {
-		return err
-	}
-
-	return batch.Commit(pebble.Sync)
+	return nil
 }
 
 func (w *PebbleWal) Sync() error {

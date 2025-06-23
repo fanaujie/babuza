@@ -14,20 +14,55 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
+type Options struct {
+	MaxKeepWalFiles   uint
+	PurgeFileInterval time.Duration
+}
+
+type SetOptions func(*Options)
+
+func SetOptionWithMaxKeepWalFiles(maxKeepWalFiles uint) SetOptions {
+	return func(cfg *Options) {
+		cfg.MaxKeepWalFiles = maxKeepWalFiles
+	}
+}
+
+func SetOptionWithPurgeFileInterval(purgeFileInterval time.Duration) SetOptions {
+	return func(cfg *Options) {
+		cfg.PurgeFileInterval = purgeFileInterval
+	}
+}
+
+func defaultWalPurgeConfig() *Options {
+	return &Options{
+		MaxKeepWalFiles:   3,
+		PurgeFileInterval: 30 * time.Second,
+	}
+}
+
 type WalManager struct {
-	walDir string
-	wal    *wal.WAL
-	logger *zap.Logger
+	walDir       string
+	config       *Options
+	wal          *wal.WAL
+	logger       *zap.Logger
+	purgerStopCh chan struct{}
 }
 
 var _ ibabuza.WalManager = (*WalManager)(nil)
 
-func NewWalManager(walDir string, logger *zap.Logger) *WalManager {
+func NewWalManager(walDir string, logger *zap.Logger, opts ...SetOptions) *WalManager {
+	config := defaultWalPurgeConfig()
+	for _, opt := range opts {
+		opt(config)
+	}
 	return &WalManager{
-		walDir: walDir,
-		logger: logger,
+		walDir:       walDir,
+		config:       config,
+		logger:       logger,
+		purgerStopCh: make(chan struct{}),
 	}
 }
 
@@ -118,25 +153,12 @@ func (e *WalManager) HasExistingWals() (bool, error) {
 	return false, nil
 }
 
-// StartWalPurgingProcess is to release the locks, which has smaller index than the given index
-// except the largest one among them.
-// For example, if WAL is holding lock 1,2,3,4,5,6, ReleaseLockTo(4) will release
-// lock 1,2 but keep 3. ReleaseLockTo(5) will release 1,2,3 but keep 4.
-func (e *WalManager) PurgeWals(purgeCfg ibabuza.WalPurgeConfig) {
-	//TODO: add stop purging process
-	if purgeCfg.MaxKeepWalFiles > 0 {
-		go func() {
-			var errCh <-chan error
-			var doneCh <-chan struct{}
-			doneCh, errCh = etcdfileutil.PurgeFileWithDoneNotify(e.logger, purgeCfg.WalDir, "wal", purgeCfg.MaxKeepWalFiles,
-				purgeCfg.PurgeFileInterval, purgeCfg.StopCh)
-			select {
-			case _ = <-errCh:
-				return
-			case <-doneCh:
-				return
-			}
-		}()
+func (e *WalManager) Purger() ibabuza.WalPurger {
+	return &purger{
+		walDir: e.walDir,
+		config: e.config,
+		logger: e.logger,
+		stopCh: e.purgerStopCh,
 	}
 }
 
@@ -144,5 +166,48 @@ func (e *WalManager) Close() error {
 	if e.wal != nil {
 		return e.wal.Close()
 	}
+	select {
+	case <-e.purgerStopCh:
+	default:
+		close(e.purgerStopCh)
+	}
 	return nil
+}
+
+type purger struct {
+	walDir string
+	config *Options
+	logger *zap.Logger
+	stopCh chan struct{}
+}
+
+// Start is to release the locks, which has smaller index than the given index
+// except the largest one among them.
+// For example, if WAL is holding lock 1,2,3,4,5,6, ReleaseLockTo(4) will release
+// lock 1,2 but keep 3. ReleaseLockTo(5) will release 1,2,3 but keep 4.
+func (p *purger) Start() {
+	if p.config.MaxKeepWalFiles > 0 {
+		go func() {
+			var errCh <-chan error
+			var doneCh <-chan struct{}
+			doneCh, errCh = etcdfileutil.PurgeFileWithDoneNotify(p.logger, p.walDir, "wal", p.config.MaxKeepWalFiles,
+				p.config.PurgeFileInterval, p.stopCh)
+			select {
+			case _ = <-errCh:
+				return
+			case <-doneCh:
+				return
+			case <-p.stopCh:
+				return
+			}
+		}()
+	}
+}
+
+func (p *purger) Stop() {
+	select {
+	case <-p.stopCh:
+	default:
+		close(p.stopCh)
+	}
 }

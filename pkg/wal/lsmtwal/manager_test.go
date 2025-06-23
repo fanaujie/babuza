@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"testing"
+	"time"
 )
 
 func TestNewWalManager(t *testing.T) {
@@ -407,6 +408,384 @@ func TestWalManager_FullWorkflow(t *testing.T) {
 			hasWals, err := manager.HasExistingWals()
 			assert.NoError(t, err)
 			assert.True(t, hasWals)
+		})
+	}
+}
+
+func TestWalManager_CreatePurger(t *testing.T) {
+	testCases := []struct {
+		name        string
+		managerType WalManagerType
+	}{
+		{"BadgerDB", WalManagerTypeBadger},
+		{"PebbleDB", WalManagerTypePebble},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := setupTestManagerWithType(Config{
+				InMemory: true,
+			}, tc.managerType)
+			defer manager.Close()
+
+			// Create purger
+			purger := manager.Purger()
+			assert.NotNil(t, purger)
+
+			// Test Start and Stop
+			purger.Start()
+		})
+	}
+}
+
+func TestWalPurger_PurgeEntries(t *testing.T) {
+	testCases := []struct {
+		name        string
+		managerType WalManagerType
+	}{
+		{"BadgerDB", WalManagerTypeBadger},
+		{"PebbleDB", WalManagerTypePebble},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := setupTestManagerWithType(Config{
+				InMemory: true,
+			}, tc.managerType)
+			defer manager.Close()
+
+			// Create WAL and add entries
+			metadata := babuzapb.WalMetadata{
+				ClusterID:   123,
+				LocalPeerID: 456,
+			}
+			_, wal, err := manager.CreateWal(metadata)
+			assert.NoError(t, err)
+			defer wal.Close()
+
+			// Add entries that will be purged
+			entries := []raftpb.Entry{
+				{Term: 1, Index: 1, Type: raftpb.EntryNormal, Data: []byte("data1")},
+				{Term: 1, Index: 2, Type: raftpb.EntryNormal, Data: []byte("data2")},
+				{Term: 1, Index: 3, Type: raftpb.EntryNormal, Data: []byte("data3")},
+				{Term: 1, Index: 4, Type: raftpb.EntryNormal, Data: []byte("data4")},
+				{Term: 1, Index: 5, Type: raftpb.EntryNormal, Data: []byte("data5")},
+			}
+			hardState := raftpb.HardState{
+				Term:   1,
+				Vote:   1,
+				Commit: 5,
+			}
+			err = wal.Save(hardState, entries)
+			assert.NoError(t, err)
+
+			// Create and start purger
+			purger := manager.Purger()
+			purger.Start()
+
+			// Create snapshot at index 3 (entries 1-3 should be purged)
+			snapshot := raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 3,
+					Term:  1,
+				},
+			}
+
+			// Trigger purge by calling WAL.Purge (which sends to purger channel)
+			err = wal.Purge(snapshot)
+			assert.NoError(t, err)
+
+			// Give some time for the purger to process
+			time.Sleep(100 * time.Millisecond)
+
+			// Verify entries 1-3 are purged, 4-5 still exist
+			switch tc.managerType {
+			case WalManagerTypeBadger:
+				badgerMgr := manager.(*BadgerWalManager)
+
+				// Try to read entries 1-3 (should fail)
+				for i := uint64(1); i <= 3; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = badgerMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.Error(t, err, "Entry %d should be purged", i)
+				}
+
+				// Try to read entries 4-5 (should succeed)
+				for i := uint64(4); i <= 5; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = badgerMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.NoError(t, err, "Entry %d should still exist", i)
+					assert.Equal(t, i, destEnts[0].Index)
+				}
+
+			case WalManagerTypePebble:
+				pebbleMgr := manager.(*PebbleWalManager)
+
+				// Try to read entries 1-3 (should fail)
+				for i := uint64(1); i <= 3; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = pebbleMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.Error(t, err, "Entry %d should be purged", i)
+				}
+
+				// Try to read entries 4-5 (should succeed)
+				for i := uint64(4); i <= 5; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = pebbleMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.NoError(t, err, "Entry %d should still exist", i)
+					assert.Equal(t, i, destEnts[0].Index)
+				}
+			}
+		})
+	}
+}
+
+func TestWalPurger_EmptySnapshot(t *testing.T) {
+	testCases := []struct {
+		name        string
+		managerType WalManagerType
+	}{
+		{"BadgerDB", WalManagerTypeBadger},
+		{"PebbleDB", WalManagerTypePebble},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := setupTestManagerWithType(Config{
+				InMemory: true,
+			}, tc.managerType)
+			defer manager.Close()
+
+			// Create WAL and add entries
+			metadata := babuzapb.WalMetadata{
+				ClusterID:   123,
+				LocalPeerID: 456,
+			}
+			_, wal, err := manager.CreateWal(metadata)
+			assert.NoError(t, err)
+			defer wal.Close()
+
+			// Add entries
+			entries := []raftpb.Entry{
+				{Term: 1, Index: 1, Type: raftpb.EntryNormal, Data: []byte("data1")},
+				{Term: 1, Index: 2, Type: raftpb.EntryNormal, Data: []byte("data2")},
+			}
+			hardState := raftpb.HardState{
+				Term:   1,
+				Vote:   1,
+				Commit: 2,
+			}
+			err = wal.Save(hardState, entries)
+			assert.NoError(t, err)
+
+			// Create and start purger
+			purger := manager.Purger()
+			purger.Start()
+
+			// Create empty snapshot (index 0)
+			emptySnapshot := raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 0,
+					Term:  1,
+				},
+			}
+
+			// Trigger purge with empty snapshot (should do nothing)
+			err = wal.Purge(emptySnapshot)
+			assert.NoError(t, err)
+
+			// Give some time for the purger to process
+			time.Sleep(100 * time.Millisecond)
+
+			// Verify entries still exist (no purging should have occurred)
+			switch tc.managerType {
+			case WalManagerTypeBadger:
+				badgerMgr := manager.(*BadgerWalManager)
+				for i := uint64(1); i <= 2; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = badgerMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.NoError(t, err, "Entry %d should still exist", i)
+					assert.Equal(t, i, destEnts[0].Index)
+				}
+
+			case WalManagerTypePebble:
+				pebbleMgr := manager.(*PebbleWalManager)
+				for i := uint64(1); i <= 2; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = pebbleMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.NoError(t, err, "Entry %d should still exist", i)
+					assert.Equal(t, i, destEnts[0].Index)
+				}
+			}
+		})
+	}
+}
+
+func TestWalPurger_MultipleSnapshots(t *testing.T) {
+	testCases := []struct {
+		name        string
+		managerType WalManagerType
+	}{
+		{"BadgerDB", WalManagerTypeBadger},
+		{"PebbleDB", WalManagerTypePebble},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := setupTestManagerWithType(Config{
+				InMemory: true,
+			}, tc.managerType)
+			defer manager.Close()
+
+			// Create WAL and add entries
+			metadata := babuzapb.WalMetadata{
+				ClusterID:   123,
+				LocalPeerID: 456,
+			}
+			_, wal, err := manager.CreateWal(metadata)
+			assert.NoError(t, err)
+			defer wal.Close()
+
+			// Add entries that will be purged in stages
+			entries := []raftpb.Entry{
+				{Term: 1, Index: 1, Type: raftpb.EntryNormal, Data: []byte("data1")},
+				{Term: 1, Index: 2, Type: raftpb.EntryNormal, Data: []byte("data2")},
+				{Term: 1, Index: 3, Type: raftpb.EntryNormal, Data: []byte("data3")},
+				{Term: 1, Index: 4, Type: raftpb.EntryNormal, Data: []byte("data4")},
+				{Term: 1, Index: 5, Type: raftpb.EntryNormal, Data: []byte("data5")},
+				{Term: 1, Index: 6, Type: raftpb.EntryNormal, Data: []byte("data6")},
+				{Term: 1, Index: 7, Type: raftpb.EntryNormal, Data: []byte("data7")},
+			}
+			hardState := raftpb.HardState{
+				Term:   1,
+				Vote:   1,
+				Commit: 7,
+			}
+			err = wal.Save(hardState, entries)
+			assert.NoError(t, err)
+
+			// Create and start purger
+			purger := manager.Purger()
+			purger.Start()
+
+			// First purge: snapshot at index 3
+			snapshot1 := raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 3,
+					Term:  1,
+				},
+			}
+			err = wal.Purge(snapshot1)
+			assert.NoError(t, err)
+			time.Sleep(100 * time.Millisecond)
+
+			// Second purge: snapshot at index 5
+			snapshot2 := raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 5,
+					Term:  1,
+				},
+			}
+			err = wal.Purge(snapshot2)
+			assert.NoError(t, err)
+			time.Sleep(100 * time.Millisecond)
+
+			// Verify only entries 6-7 still exist
+			switch tc.managerType {
+			case WalManagerTypeBadger:
+				badgerMgr := manager.(*BadgerWalManager)
+
+				// Entries 1-5 should be purged
+				for i := uint64(1); i <= 5; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = badgerMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.Error(t, err, "Entry %d should be purged", i)
+				}
+
+				// Entries 6-7 should still exist
+				for i := uint64(6); i <= 7; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = badgerMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.NoError(t, err, "Entry %d should still exist", i)
+					assert.Equal(t, i, destEnts[0].Index)
+				}
+
+			case WalManagerTypePebble:
+				pebbleMgr := manager.(*PebbleWalManager)
+
+				// Entries 1-5 should be purged
+				for i := uint64(1); i <= 5; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = pebbleMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.Error(t, err, "Entry %d should be purged", i)
+				}
+
+				// Entries 6-7 should still exist
+				for i := uint64(6); i <= 7; i++ {
+					readEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+						{Index: i, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+					}
+					destEnts := make([]raftpb.Entry, 1)
+					err = pebbleMgr.ReadEntriesData(readEntryIndex, destEnts)
+					assert.NoError(t, err, "Entry %d should still exist", i)
+					assert.Equal(t, i, destEnts[0].Index)
+				}
+			}
+		})
+	}
+}
+
+func TestWalPurger_StartStop(t *testing.T) {
+	testCases := []struct {
+		name        string
+		managerType WalManagerType
+	}{
+		{"BadgerDB", WalManagerTypeBadger},
+		{"PebbleDB", WalManagerTypePebble},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := setupTestManagerWithType(Config{
+				InMemory: true,
+			}, tc.managerType)
+			defer manager.Close()
+
+			// Create multiple purgers to test Start/Stop behavior
+			purger1 := manager.Purger()
+			purger2 := manager.Purger()
+
+			// Test multiple Start calls (should be safe)
+			purger1.Start()
+			purger1.Start()
+			purger2.Start()
 		})
 	}
 }

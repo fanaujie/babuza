@@ -38,10 +38,11 @@ type Wal struct {
 	currentLogFile    iwal.LogFile
 	entryIndexStorage EntryIndexStorage
 	enableNoSync      bool
+	purgerCh          chan raftpb.Snapshot
 	mu                sync.Mutex
 }
 
-func CreateWal(metadata []byte, logMgr iwal.LogFileManager) (*Wal, error) {
+func CreateWal(metadata []byte, logMgr iwal.LogFileManager, purgerCh chan raftpb.Snapshot) (*Wal, error) {
 	startLogId := uint64(0)
 	startLogIndex := uint64(0)
 
@@ -90,10 +91,11 @@ func CreateWal(metadata []byte, logMgr iwal.LogFileManager) (*Wal, error) {
 			metadata: metadata,
 		},
 		currentLogFile: openLogFile,
+		purgerCh:       purgerCh,
 	}, nil
 }
 
-func OpenWal(logMgr iwal.LogFileManager, lastLogMeta iwal.ReplayLastLogFileResult) (*Wal, error) {
+func OpenWal(logMgr iwal.LogFileManager, lastLogMeta iwal.ReplayLastLogFileResult, purgerCh chan raftpb.Snapshot) (*Wal, error) {
 	logWriter, err := logMgr.OpenLogFile(lastLogMeta.LastLogFileDesc().Id, lastLogMeta.LastValidLogOffset(),
 		lastLogMeta.LastValidLogCrc())
 	if err != nil {
@@ -109,6 +111,7 @@ func OpenWal(logMgr iwal.LogFileManager, lastLogMeta iwal.ReplayLastLogFileResul
 		currentLogFile:    logWriter,
 		entryIndexStorage: nil,
 		enableNoSync:      false,
+		purgerCh:          purgerCh,
 	}
 	return w, nil
 }
@@ -165,7 +168,10 @@ func (w *Wal) SaveSnapshot(snapshot raftpb.Snapshot) error {
 }
 
 func (w *Wal) Purge(snap raftpb.Snapshot) error {
-	return w.logMgr.Purge(snap.Metadata.Index)
+	if w.purgerCh != nil {
+		w.purgerCh <- snap
+	}
+	return nil
 }
 
 func (w *Wal) Sync() error {

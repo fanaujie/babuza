@@ -15,9 +15,11 @@ import (
 )
 
 type MultiRaftPebbleWalManager struct {
-	logger      ibabuza.Logger
-	db          *pebble.DB
-	prefixCache *keyPrefixCache
+	logger       ibabuza.Logger
+	db           *pebble.DB
+	prefixCache  *keyPrefixCache
+	purgerSnapCh chan purgeRequest
+	purgerStopCh chan struct{}
 }
 
 type PebbleGroupEntryDataReader struct {
@@ -41,9 +43,11 @@ func NewMultiRaftPebbleWalManager(config MultiRaftConfig, logger ibabuza.Logger)
 		logger.Panicf("failed to open pebble database: %v", err)
 	}
 	manager := &MultiRaftPebbleWalManager{
-		logger:      logger,
-		db:          db,
-		prefixCache: newKeyPrefixCache(config.KeyPrefixCacheSize),
+		logger:       logger,
+		db:           db,
+		prefixCache:  newKeyPrefixCache(config.KeyPrefixCacheSize),
+		purgerSnapCh: make(chan purgeRequest, 1),
+		purgerStopCh: make(chan struct{}),
 	}
 	return manager
 }
@@ -91,7 +95,8 @@ func (m *MultiRaftPebbleWalManager) CreateWal(groupID ibabuza.RaftGroupID, metad
 		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](reader),
 	}
 
-	w := NewPebbleWal(m.db, es, m.prefixCache.get(groupID))
+	w := NewPebbleWal(m.db, es, m.prefixCache.get(groupID), m.purgerSnapCh)
+	w.SetMultiRaftPurger(groupID)
 
 	// write empty snapshot and metadata to the database
 	batch := m.db.NewBatch()
@@ -215,7 +220,9 @@ func (m *MultiRaftPebbleWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snaps
 		return nil, nil, nil, err
 	}
 
-	return es, NewPebbleWal(m.db, es, m.prefixCache.get(groupID)), result, nil
+	w := NewPebbleWal(m.db, es, m.prefixCache.get(groupID), m.purgerSnapCh)
+	w.SetMultiRaftPurger(groupID)
+	return es, w, result, nil
 }
 
 func (m *MultiRaftPebbleWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {
@@ -245,10 +252,6 @@ func (m *MultiRaftPebbleWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, er
 	}
 
 	return groupIDs, nil
-}
-
-func (m *MultiRaftPebbleWalManager) PurgeWals(config ibabuza.WalPurgeConfig) {
-	// TODO: implement this
 }
 
 func (m *MultiRaftPebbleWalManager) ReadEntriesData(groupID ibabuza.RaftGroupID, readEntryIndex []walbase.EntryIndex[storage.EntryMetadata],
@@ -282,6 +285,82 @@ func (m *MultiRaftPebbleWalManager) ReadEntriesData(groupID ibabuza.RaftGroupID,
 	return nil
 }
 
+func (m *MultiRaftPebbleWalManager) Purger() ibabuza.WalPurger {
+	return &multiRaftPebblePurger{
+		MultiRaftPebbleWalManager: m,
+	}
+}
+
+type multiRaftPebblePurger struct {
+	*MultiRaftPebbleWalManager
+}
+
+func (p *multiRaftPebblePurger) Start() {
+	go func() {
+		for {
+			select {
+			case req := <-p.purgerSnapCh:
+				if err := p.purgeSnapshot(req.groupID, req.snapshot); err != nil {
+					p.logger.Errorf("failed to purge snapshot groupID=%d index=%d: %v", req.groupID, req.snapshot.Metadata.Index, err)
+				}
+			case <-p.purgerStopCh:
+				return
+			}
+		}
+	}()
+}
+
+func (p *multiRaftPebblePurger) Stop() {
+	select {
+	case <-p.purgerStopCh:
+	default:
+		close(p.purgerStopCh)
+	}
+}
+
+func (p *multiRaftPebblePurger) purgeSnapshot(groupID ibabuza.RaftGroupID, snapshot raftpb.Snapshot) error {
+	if isEmptySnapshot(snapshot) {
+		return nil
+	}
+
+	groupPrefix := p.prefixCache.get(groupID)
+
+	// Delete entries that are included in the snapshot
+	batch := p.db.NewBatch()
+	defer batch.Close()
+
+	// Prepare seek key with the snapshot index + 1 (to include the snapshot index in deletion)
+	var snapshotIndexPlusOne [24]byte
+	copy(snapshotIndexPlusOne[:16], groupPrefix.entry)
+	binary.BigEndian.PutUint64(snapshotIndexPlusOne[16:], snapshot.Metadata.Index+1)
+
+	iter, err := p.db.NewIter(&pebble.IterOptions{
+		LowerBound: groupPrefix.entry,
+		UpperBound: snapshotIndexPlusOne[:24],
+	})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		if err = batch.Delete(iter.Key(), pebble.Sync); err != nil {
+			return err
+		}
+	}
+
+	if err = iter.Error(); err != nil {
+		return err
+	}
+
+	return batch.Commit(pebble.Sync)
+}
+
 func (m *MultiRaftPebbleWalManager) Close() error {
+	select {
+	case <-m.purgerStopCh:
+	default:
+		close(m.purgerStopCh)
+	}
 	return m.db.Close()
 }

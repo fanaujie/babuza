@@ -41,19 +41,19 @@ func findSnapshotInternal(walDir string, memPool *allocator.ByteSlicePool) ([]wa
 }
 
 func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Options,
-	memPool *allocator.ByteSlicePool) (ibabuza.EntryStorage, ibabuza.Wal, error) {
+	memPool *allocator.ByteSlicePool, purgerSnapCh chan raftpb.Snapshot) (ibabuza.EntryStorage, ibabuza.Wal, *logfile.Manager, error) {
 	if fileutil.Exist(walDir) {
 		if err := os.RemoveAll(walDir); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	if err := fileutil.CreateDirAndTouch(walDir); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	md, err := metadata.Marshal()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	logMgr, err := logfile.NewManager(logfile.ManagerConfig{
@@ -64,12 +64,12 @@ func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Opt
 		MaxKeepLogFiles:   options.WalMaxKeepLogFiles,
 	}, memPool)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	wal, err := CreateWal(md, logMgr)
+	wal, err := CreateWal(md, logMgr, purgerSnapCh)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	var entryStorage ibabuza.EntryStorage
@@ -83,11 +83,11 @@ func createWalInternal(walDir string, metadata babuzapb.WalMetadata, options Opt
 		entryStorage = raft.NewMemoryStorage()
 	}
 
-	return entryStorage, wal, nil
+	return entryStorage, wal, logMgr, nil
 }
 
 func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitted bool, options Options,
-	memPool *allocator.ByteSlicePool) (ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
+	memPool *allocator.ByteSlicePool, purgerSnapCh chan raftpb.Snapshot) (ibabuza.EntryStorage, ibabuza.Wal, *logfile.Manager, ibabuza.ReplayWalResult, error) {
 	walSnap := EmptyWalpbSnapshot
 	if snapshot != nil {
 		walSnap = walpb.Snapshot{
@@ -99,7 +99,7 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 
 	p, err := player.Create(walDir, walSnap, memPool)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	var result *player.ReplayResult
@@ -111,7 +111,7 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 
 	if err = p.Replay(result, true); err != nil {
 		if err != io.ErrUnexpectedEOF {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 
@@ -123,12 +123,12 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 		MaxKeepLogFiles:   options.WalMaxKeepLogFiles,
 	}, walSnap, memPool)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	wal, err := OpenWal(logMgr, result)
+	wal, err := OpenWal(logMgr, result, purgerSnapCh)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	var entryStorage ibabuza.EntryStorage
@@ -150,26 +150,26 @@ func replayWalInternal(walDir string, snapshot *raftpb.Snapshot, deleteUncommitt
 	entryStorage.SetHardState(result.HardState())
 	if deleteUncommitted {
 		if err = result.EntryCollection().DeleteUncommittedEntry(result.HardState().Commit); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 
 	ents, err := result.EntryCollection().Entries()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	if !options.DisableEntryIndex {
 		if err = entryStorage.(*storage.EntryIndexRaftStorage).AppendEntryIndex(ents.([]walbase.EntryIndex[storage.EntryIndexMetadata])); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	} else {
 		if err = entryStorage.Append(ents.([]raftpb.Entry)); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 	}
 
-	return entryStorage, wal, result, nil
+	return entryStorage, wal, logMgr, result, nil
 }
 
 func hasWalFilesInDir(dir string) (bool, error) {

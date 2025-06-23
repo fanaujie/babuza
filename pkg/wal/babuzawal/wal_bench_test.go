@@ -60,7 +60,7 @@ func benchmarkBabuzaWalWriteEntry(b *testing.B, size int, batch int) {
 	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte("somedata")
 	logMgr, err := logfile.NewManager(cfg, cp)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(b, err)
 	data := make([]byte, size)
 	for i := 0; i < size; i++ {
@@ -103,7 +103,7 @@ func benchmarkBabuzaWalWriteEntryWithEntryIndex(b *testing.B, size int, batch in
 	metadata := []byte("somedata")
 	logMgr, err := logfile.NewManager(cfg, cp)
 	assert.Nil(b, err)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(b, err)
 	w.SetEntryIndexStorage(walbase.NewEntryStorage[storage.EntryIndexMetadata](w.logMgr))
 	data := make([]byte, size)

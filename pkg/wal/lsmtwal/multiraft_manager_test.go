@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"testing"
+	"time"
 )
 
 func setupTestMultiRaftManagerWithType(cfg MultiRaftConfig, managerType WalManagerType) ibabuza.MultiRaftWalManager {
@@ -461,6 +462,146 @@ func TestMultiRaftWalManager_ReadEntriesData(t *testing.T) {
 				err = pebbleMgr.ReadEntriesData(groupID, invalidIndex, invalidDest)
 				assert.Error(t, err) // Should return an error for non-existent entry
 			}
+		})
+	}
+}
+
+func TestMultiRaftWalManager_CreatePurger(t *testing.T) {
+	testCases := []struct {
+		name        string
+		managerType WalManagerType
+	}{
+		{"BadgerDB", WalManagerTypeBadger},
+		{"PebbleDB", WalManagerTypePebble},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := setupTestMultiRaftManagerWithType(MultiRaftConfig{
+				InMemory:           true,
+				WalDir:             "",
+				KeyPrefixCacheSize: 10,
+			}, tc.managerType)
+			defer manager.Close()
+
+			// Test Purger method
+			purger := manager.Purger()
+			assert.NotNil(t, purger)
+
+			purger.Start()
+			purger.Start()
+		})
+	}
+}
+
+func TestMultiRaftWalManager_PurgerIntegration(t *testing.T) {
+	testCases := []struct {
+		name        string
+		managerType WalManagerType
+	}{
+		{"BadgerDB", WalManagerTypeBadger},
+		{"PebbleDB", WalManagerTypePebble},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := setupTestMultiRaftManagerWithType(MultiRaftConfig{
+				InMemory:           true,
+				WalDir:             "",
+				KeyPrefixCacheSize: 10,
+			}, tc.managerType)
+			defer manager.Close()
+
+			groupID := ibabuza.RaftGroupID(1)
+
+			// Create WAL and add entries
+			metadata := babuzapb.WalMetadata{
+				ClusterID:   123,
+				LocalPeerID: 456,
+			}
+			_, wal, err := manager.CreateWal(groupID, metadata)
+			assert.NoError(t, err)
+			defer wal.Close()
+
+			// Create and start purger
+			purger := manager.Purger()
+			assert.NotNil(t, purger)
+			purger.Start()
+
+			// Add some entries
+			entries := []raftpb.Entry{
+				{Term: 1, Index: 1, Type: raftpb.EntryNormal, Data: []byte("data1")},
+				{Term: 1, Index: 2, Type: raftpb.EntryNormal, Data: []byte("data2")},
+				{Term: 1, Index: 3, Type: raftpb.EntryNormal, Data: []byte("data3")},
+			}
+			hardState := raftpb.HardState{
+				Term:   1,
+				Vote:   1,
+				Commit: 3,
+			}
+			err = wal.Save(hardState, entries)
+			assert.NoError(t, err)
+
+			// Save a snapshot to trigger purging
+			snapshot := raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 2,
+					Term:  1,
+				},
+			}
+			err = wal.SaveSnapshot(snapshot)
+			assert.NoError(t, err)
+
+			// Trigger purge by calling wal.Purge with the snapshot
+			err = wal.Purge(snapshot)
+			assert.NoError(t, err)
+			// Wait for the purger to process
+			time.Sleep(time.Second)
+
+			// Verify that entries before snapshot index were purged
+			// Try to read entries directly from the WAL to verify purge worked
+			switch tc.managerType {
+			case WalManagerTypeBadger:
+				badgerMgr := manager.(*MultiRaftBadgerWalManager)
+				// Try to read entry at index 1 (should be purged)
+				purgedEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+					{Index: 1, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+				}
+				destEnt := make([]raftpb.Entry, 1)
+				err = badgerMgr.ReadEntriesData(groupID, purgedEntryIndex, destEnt)
+				assert.Error(t, err, "Reading purged entry should return error")
+
+				// Try to read entry at index 3 (should still exist)
+				remainingEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+					{Index: 3, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+				}
+				destEnt = make([]raftpb.Entry, 1)
+				err = badgerMgr.ReadEntriesData(groupID, remainingEntryIndex, destEnt)
+				assert.NoError(t, err, "Reading remaining entry should succeed")
+				assert.Equal(t, uint64(3), destEnt[0].Index)
+				assert.Equal(t, []byte("data3"), destEnt[0].Data)
+
+			case WalManagerTypePebble:
+				pebbleMgr := manager.(*MultiRaftPebbleWalManager)
+				// Try to read entry at index 1 (should be purged)
+				purgedEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+					{Index: 1, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+				}
+				destEnt := make([]raftpb.Entry, 1)
+				err = pebbleMgr.ReadEntriesData(groupID, purgedEntryIndex, destEnt)
+				assert.Error(t, err, "Reading purged entry should return error")
+
+				// Try to read entry at index 3 (should still exist)
+				remainingEntryIndex := []walbase.EntryIndex[storage.EntryMetadata]{
+					{Index: 3, Term: 1, Type: raftpb.EntryNormal, Metadata: storage.EntryMetadata{}},
+				}
+				destEnt = make([]raftpb.Entry, 1)
+				err = pebbleMgr.ReadEntriesData(groupID, remainingEntryIndex, destEnt)
+				assert.NoError(t, err, "Reading remaining entry should succeed")
+				assert.Equal(t, uint64(3), destEnt[0].Index)
+				assert.Equal(t, []byte("data3"), destEnt[0].Data)
+			}
+
 		})
 	}
 }

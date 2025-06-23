@@ -8,11 +8,18 @@ import (
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
+type purgeRequest struct {
+	groupID  ibabuza.RaftGroupID
+	snapshot raftpb.Snapshot
+}
+
 type MultiRaftBadgerWalManager struct {
-	logger      ibabuza.Logger
-	db          *badger.DB
-	prefixCache *keyPrefixCache
-	stopCh      chan struct{}
+	logger       ibabuza.Logger
+	db           *badger.DB
+	prefixCache  *keyPrefixCache
+	stopCh       chan struct{}
+	purgerSnapCh chan purgeRequest
+	purgerStopCh chan struct{}
 }
 
 type GroupEntryDataReader struct {

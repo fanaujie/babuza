@@ -185,14 +185,14 @@ func (s *raftStorage) CompactAndReleaseSnapshot(index uint64, snapshot raftpb.Sn
 	if err := s.entryStorage.Compact(index); err != nil {
 		return err
 	}
-	return s.release(snapshot)
+	return s.purgeWalAndSnapshot(snapshot)
 }
 
 func (s *raftStorage) ApplyAndReleaseSnapshot(snapshot raftpb.Snapshot) error {
 	if err := s.entryStorage.ApplySnapshot(snapshot); err != nil {
 		return err
 	}
-	return s.release(snapshot)
+	return s.purgeWalAndSnapshot(snapshot)
 }
 
 func (s *raftStorage) EntryStorageApplySnapshot(snapshot raftpb.Snapshot) error {
@@ -247,7 +247,7 @@ func (s *raftStorage) prepareSnapshotContext() (ibabuza.StateMachineSnapshotCont
 	return nil, nil
 }
 
-func (s *raftStorage) release(snapshot raftpb.Snapshot) error {
+func (s *raftStorage) purgeWalAndSnapshot(snapshot raftpb.Snapshot) error {
 	if err := s.wal.Purge(snapshot); err != nil {
 		return err
 	}

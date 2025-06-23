@@ -5,19 +5,34 @@ import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 )
 
 type MultiRaftWalManager struct {
-	WalRootDir string
-	options    Options
-	memPool    *allocator.ByteSlicePool
-	logger     ibabuza.Logger
+	WalRootDir   string
+	options      Options
+	memPool      *allocator.ByteSlicePool
+	logger       ibabuza.Logger
+	purgerSnapCh chan purgerSnapshot
+	purgerStopCh chan struct{}
+	logMgrMu     struct {
+		mu  sync.Mutex
+		mgr map[ibabuza.RaftGroupID]*logfile.Manager
+	}
 }
+
+type purgerSnapshot struct {
+	groupID  ibabuza.RaftGroupID
+	snapshot raftpb.Snapshot
+}
+
+var _ ibabuza.MultiRaftWalManager = (*MultiRaftWalManager)(nil)
 
 func NewMultiRaftWalManager(walRootDir string, logger ibabuza.Logger, setOptions ...SetOptions) *MultiRaftWalManager {
 	opts := defaultOptions()
@@ -27,10 +42,18 @@ func NewMultiRaftWalManager(walRootDir string, logger ibabuza.Logger, setOptions
 	memPool := allocator.NewByteSlicePool(opts.WalMinEntryBufferSize, opts.WalMaxEntryBufferSize, 2)
 	logger.Infof("MultiRaftWalManager: create multi-raft wal manager with walRootDir=%s", walRootDir)
 	return &MultiRaftWalManager{
-		WalRootDir: walRootDir,
-		options:    opts,
-		memPool:    memPool,
-		logger:     logger,
+		WalRootDir:   walRootDir,
+		options:      opts,
+		memPool:      memPool,
+		logger:       logger,
+		purgerSnapCh: make(chan purgerSnapshot, 10),
+		purgerStopCh: make(chan struct{}),
+		logMgrMu: struct {
+			mu  sync.Mutex
+			mgr map[ibabuza.RaftGroupID]*logfile.Manager
+		}{
+			mgr: make(map[ibabuza.RaftGroupID]*logfile.Manager),
+		},
 	}
 }
 
@@ -45,12 +68,32 @@ func (m *MultiRaftWalManager) FindSnapshot(groupID ibabuza.RaftGroupID) ([]walpb
 
 func (m *MultiRaftWalManager) CreateWal(groupID ibabuza.RaftGroupID, metadata babuzapb.WalMetadata) (ibabuza.EntryStorage, ibabuza.Wal, error) {
 	walDir := m.getGroupWalDir(groupID)
-	return createWalInternal(walDir, metadata, m.options, m.memPool)
+	es, wal, logMgr, err := createWalInternal(walDir, metadata, m.options, m.memPool, m.createGroupPurgerChannel(groupID))
+	if err != nil {
+		return nil, nil, err
+	}
+	m.logMgrMu.mu.Lock()
+	defer m.logMgrMu.mu.Unlock()
+	if _, exists := m.logMgrMu.mgr[groupID]; exists {
+		m.logger.Panicf("WAL for group %d already exists, overwriting", groupID)
+	}
+	m.logMgrMu.mgr[groupID] = logMgr
+	return es, wal, nil
 }
 
 func (m *MultiRaftWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
 	walDir := m.getGroupWalDir(groupID)
-	return replayWalInternal(walDir, snapshot, deleteUncommitted, m.options, m.memPool)
+	es, wal, logMgr, result, err := replayWalInternal(walDir, snapshot, deleteUncommitted, m.options, m.memPool, m.createGroupPurgerChannel(groupID))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	m.logMgrMu.mu.Lock()
+	defer m.logMgrMu.mu.Unlock()
+	if _, exists := m.logMgrMu.mgr[groupID]; exists {
+		m.logger.Panicf("WAL for group %d already exists, overwriting", groupID)
+	}
+	m.logMgrMu.mgr[groupID] = logMgr
+	return es, wal, result, nil
 }
 
 func (m *MultiRaftWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {
@@ -91,11 +134,59 @@ func (m *MultiRaftWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {
 	return groupIDs, nil
 }
 
-func (m *MultiRaftWalManager) PurgeWals(config ibabuza.WalPurgeConfig) {
+func (m *MultiRaftWalManager) createGroupPurgerChannel(groupID ibabuza.RaftGroupID) chan raftpb.Snapshot {
+	ch := make(chan raftpb.Snapshot, 1)
+	go func() {
+		for snap := range ch {
+			select {
+			case m.purgerSnapCh <- purgerSnapshot{groupID: groupID, snapshot: snap}:
+			case <-m.purgerStopCh:
+				return
+			}
+		}
+	}()
+	return ch
+}
 
+func (m *MultiRaftWalManager) Purger() ibabuza.WalPurger {
+	return &multiRaftPurger{
+		MultiRaftWalManager: m,
+	}
 }
 
 func (m *MultiRaftWalManager) Close() error {
-	// No resources to close in this implementation
+	select {
+	case <-m.purgerStopCh:
+	default:
+		close(m.purgerStopCh)
+	}
 	return nil
+}
+
+type multiRaftPurger struct {
+	*MultiRaftWalManager
+}
+
+func (p *multiRaftPurger) Start() {
+	go func() {
+		for {
+			select {
+			case purgerSnap := <-p.purgerSnapCh:
+				p.logMgrMu.mu.Lock()
+				logMgr, exists := p.logMgrMu.mgr[purgerSnap.groupID]
+				p.logMgrMu.mu.Unlock()
+
+				if !exists {
+					p.logger.Warningf("failed to purge snapshot for group %d: log manager not found", purgerSnap.groupID)
+					continue
+				}
+
+				if err := logMgr.Purge(purgerSnap.snapshot.Metadata.Index); err != nil {
+					p.logger.Errorf("failed to purge snapshot for group %d index=%d: %v", purgerSnap.groupID, purgerSnap.snapshot.Metadata.Index, err)
+				}
+			case <-p.purgerStopCh:
+				return
+			}
+		}
+	}()
 }

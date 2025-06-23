@@ -45,6 +45,7 @@ type Store struct {
 
 func (s *Store) Start() error {
 	var err error
+	s.storage.StartPurgingProcess()
 	tp := &transportProcessor{
 		Store: s,
 	}

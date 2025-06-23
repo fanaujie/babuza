@@ -16,9 +16,11 @@ import (
 )
 
 type PebbleWalManager struct {
-	logger    ibabuza.Logger
-	db        *pebble.DB
-	keyPrefix *keyPrefix
+	logger       ibabuza.Logger
+	db           *pebble.DB
+	keyPrefix    *keyPrefix
+	purgerSnapCh chan purgeRequest
+	purgerStopCh chan struct{}
 }
 
 var _ ibabuza.WalManager = (*PebbleWalManager)(nil)
@@ -43,9 +45,11 @@ func NewPebbleWalManager(config Config, logger ibabuza.Logger) *PebbleWalManager
 	}
 
 	return &PebbleWalManager{
-		logger:    logger,
-		db:        db,
-		keyPrefix: newKeyPrefix(0),
+		logger:       logger,
+		db:           db,
+		keyPrefix:    newKeyPrefix(0),
+		purgerSnapCh: make(chan purgeRequest, 1),
+		purgerStopCh: make(chan struct{}),
 	}
 }
 
@@ -84,7 +88,7 @@ func (m *PebbleWalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.Ent
 	es := &storage.EntryStorage{
 		EntryStorage: walbase.NewEntryStorage[storage.EntryMetadata](m),
 	}
-	w := NewPebbleWal(m.db, es, m.keyPrefix)
+	w := NewPebbleWal(m.db, es, m.keyPrefix, m.purgerSnapCh)
 
 	// write empty snapshot and metadata to the database
 	batch := m.db.NewBatch()
@@ -199,7 +203,8 @@ func (m *PebbleWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 	if err = es.Append(entries); err != nil {
 		return nil, nil, nil, err
 	}
-	return es, NewPebbleWal(m.db, es, m.keyPrefix), result, nil
+	w := NewPebbleWal(m.db, es, m.keyPrefix, m.purgerSnapCh)
+	return es, w, result, nil
 }
 
 func (m *PebbleWalManager) HasExistingWals() (bool, error) {
@@ -223,8 +228,65 @@ func (m *PebbleWalManager) HasExistingWals() (bool, error) {
 	return false, nil
 }
 
-func (m *PebbleWalManager) PurgeWals(config ibabuza.WalPurgeConfig) {
-	//TODO: implement this
+func (m *PebbleWalManager) Purger() ibabuza.WalPurger {
+	return &pebblePurger{
+		PebbleWalManager: m,
+	}
+}
+
+type pebblePurger struct {
+	*PebbleWalManager
+}
+
+func (p *pebblePurger) Start() {
+	go func() {
+		for {
+			select {
+			case req := <-p.purgerSnapCh:
+				if err := p.purgeSnapshot(req.snapshot); err != nil {
+					p.logger.Errorf("failed to purge snapshot index=%d: %v", req.snapshot.Metadata.Index, err)
+				}
+			case <-p.purgerStopCh:
+				return
+			}
+		}
+	}()
+}
+
+func (p *pebblePurger) purgeSnapshot(snapshot raftpb.Snapshot) error {
+	if isEmptySnapshot(snapshot) {
+		return nil
+	}
+
+	// Delete entries that are included in the snapshot
+	batch := p.db.NewBatch()
+	defer batch.Close()
+
+	// Prepare seek key with the snapshot index + 1 (to include the snapshot index in deletion)
+	var snapshotIndexPlusOne [24]byte
+	copy(snapshotIndexPlusOne[:16], p.keyPrefix.entry)
+	binary.BigEndian.PutUint64(snapshotIndexPlusOne[16:], snapshot.Metadata.Index+1)
+
+	iter, err := p.db.NewIter(&pebble.IterOptions{
+		LowerBound: p.keyPrefix.entry,
+		UpperBound: snapshotIndexPlusOne[:24],
+	})
+	if err != nil {
+		return err
+	}
+	defer iter.Close()
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		if err = batch.Delete(iter.Key(), pebble.Sync); err != nil {
+			return err
+		}
+	}
+
+	if err = iter.Error(); err != nil {
+		return err
+	}
+
+	return batch.Commit(pebble.Sync)
 }
 
 func (m *PebbleWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryMetadata],
@@ -257,5 +319,10 @@ func (m *PebbleWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[s
 }
 
 func (m *PebbleWalManager) Close() error {
+	select {
+	case <-m.purgerStopCh:
+	default:
+		close(m.purgerStopCh)
+	}
 	return m.db.Close()
 }
