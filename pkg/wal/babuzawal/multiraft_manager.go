@@ -154,6 +154,28 @@ func (m *MultiRaftWalManager) Purger() ibabuza.WalPurger {
 	}
 }
 
+func (m *MultiRaftWalManager) RemoveData(groupID ibabuza.RaftGroupID) error {
+	m.logMgrMu.mu.Lock()
+	defer m.logMgrMu.mu.Unlock()
+
+	// Close the log manager for this group if it exists
+	if logMgr, exists := m.logMgrMu.mgr[groupID]; exists {
+		if err := logMgr.Close(); err != nil {
+			m.logger.Warningf("Failed to close log manager for group %d: %v", groupID, err)
+		}
+		delete(m.logMgrMu.mgr, groupID)
+	}
+
+	// Remove the group's WAL directory
+	walDir := m.getGroupWalDir(groupID)
+	if err := os.RemoveAll(walDir); err != nil {
+		return err
+	}
+
+	m.logger.Infof("Successfully removed WAL data for group %d", groupID)
+	return nil
+}
+
 func (m *MultiRaftWalManager) Close() error {
 	select {
 	case <-m.purgerStopCh:

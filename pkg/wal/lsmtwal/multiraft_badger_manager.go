@@ -280,8 +280,8 @@ func (m *MultiRaftBadgerWalManager) ReadEntriesData(groupID ibabuza.RaftGroupID,
 			startIndex++
 		}
 
-		if startIndex == 0 {
-			return fmt.Errorf("no entries found for readEntryIndex %v", readEntryIndex)
+		if startIndex != len(readEntryIndex) {
+			return fmt.Errorf("only found %d of %d requested entries for readEntryIndex %v", startIndex, len(readEntryIndex), readEntryIndex)
 		}
 
 		return nil
@@ -292,6 +292,25 @@ func (m *MultiRaftBadgerWalManager) Purger() ibabuza.WalPurger {
 	return &multiRaftBadgerPurger{
 		MultiRaftBadgerWalManager: m,
 	}
+}
+
+func (m *MultiRaftBadgerWalManager) RemoveData(groupID ibabuza.RaftGroupID) error {
+	groupPrefix := m.prefixCache.get(groupID)
+
+	// Use DropPrefix for more efficient batch deletion
+	prefixes := [][]byte{
+		groupPrefix.hardState,
+		groupPrefix.snapshot,
+		groupPrefix.metadata,
+		groupPrefix.entry,
+	}
+
+	if err := m.db.DropPrefix(prefixes...); err != nil {
+		return fmt.Errorf("failed to drop prefixes for group %d: %v", groupID, err)
+	}
+
+	m.logger.Infof("Successfully removed WAL data for group %d", groupID)
+	return nil
 }
 
 type multiRaftBadgerPurger struct {
@@ -332,25 +351,18 @@ func (p *multiRaftBadgerPurger) purgeSnapshot(groupID ibabuza.RaftGroupID, snaps
 	return p.db.Update(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
-		opts.Reverse = true
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		// Collect keys to delete
-		var keysToDelete [][]byte
-
-		// Prepare seek key with the snapshot index
-		var snapshotIndex [24]byte
-		copy(snapshotIndex[:16], groupPrefix.entry)
-		binary.BigEndian.PutUint64(snapshotIndex[16:], snapshot.Metadata.Index)
-		for it.Seek(snapshotIndex[:24]); it.ValidForPrefix(groupPrefix.entry); it.Next() {
-			item := it.Item()
-			key := item.Key()
-			keysToDelete = append(keysToDelete, append([]byte{}, key...))
-		}
-
-		for _, key := range keysToDelete {
-			if err := txn.Delete(key); err != nil {
+		// Iterate from the beginning of entries up to (but not including) snapshot.Index + 1
+		for it.Seek(groupPrefix.entry); it.ValidForPrefix(groupPrefix.entry); it.Next() {
+			entryIndex := binary.BigEndian.Uint64(it.Item().Key()[16:])
+			// Check if we've reached the upper bound (snapshot.Index + 1)
+			if entryIndex >= snapshot.Metadata.Index+1 {
+				break
+			}
+			copyKey := it.Item().KeyCopy(nil)
+			if err := txn.Delete(copyKey); err != nil {
 				return err
 			}
 		}

@@ -44,5 +44,6 @@ type BootstrapStorage interface {
 	SetWalNoFSync(groupID ibabuza.RaftGroupID) error
 	GetReplicaStorage(groupID ibabuza.RaftGroupID) (babuza.RaftStorage, error)
 	StartPurgingProcess()
+	RemoveData(groupID ibabuza.RaftGroupID) error
 	Close() error
 }

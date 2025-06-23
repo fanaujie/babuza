@@ -291,6 +291,35 @@ func (m *MultiRaftPebbleWalManager) Purger() ibabuza.WalPurger {
 	}
 }
 
+func (m *MultiRaftPebbleWalManager) RemoveData(groupID ibabuza.RaftGroupID) error {
+	groupPrefix := m.prefixCache.get(groupID)
+
+	batch := m.db.NewBatch()
+	defer batch.Close()
+
+	// Delete all keys associated with this group using DeleteRange for better performance
+	keyTypes := [][]byte{
+		groupPrefix.hardState,
+		groupPrefix.snapshot,
+		groupPrefix.metadata,
+		groupPrefix.entry,
+	}
+
+	for _, keyType := range keyTypes {
+		upperBound := append(keyType, 0xff)
+		if err := batch.DeleteRange(keyType, upperBound, pebble.Sync); err != nil {
+			return fmt.Errorf("failed to delete range for group %d: %v", groupID, err)
+		}
+	}
+
+	if err := batch.Commit(pebble.Sync); err != nil {
+		return fmt.Errorf("failed to commit deletion batch for group %d: %v", groupID, err)
+	}
+
+	m.logger.Infof("Successfully removed WAL data for group %d", groupID)
+	return nil
+}
+
 type multiRaftPebblePurger struct {
 	*MultiRaftPebbleWalManager
 }
@@ -334,22 +363,7 @@ func (p *multiRaftPebblePurger) purgeSnapshot(groupID ibabuza.RaftGroupID, snaps
 	copy(snapshotIndexPlusOne[:16], groupPrefix.entry)
 	binary.BigEndian.PutUint64(snapshotIndexPlusOne[16:], snapshot.Metadata.Index+1)
 
-	iter, err := p.db.NewIter(&pebble.IterOptions{
-		LowerBound: groupPrefix.entry,
-		UpperBound: snapshotIndexPlusOne[:24],
-	})
-	if err != nil {
-		return err
-	}
-	defer iter.Close()
-
-	for iter.First(); iter.Valid(); iter.Next() {
-		if err = batch.Delete(iter.Key(), pebble.Sync); err != nil {
-			return err
-		}
-	}
-
-	if err = iter.Error(); err != nil {
+	if err := batch.DeleteRange(groupPrefix.entry, snapshotIndexPlusOne[:24], pebble.Sync); err != nil {
 		return err
 	}
 

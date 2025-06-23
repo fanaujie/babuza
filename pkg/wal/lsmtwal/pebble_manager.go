@@ -258,7 +258,7 @@ func (p *pebblePurger) purgeSnapshot(snapshot raftpb.Snapshot) error {
 		return nil
 	}
 
-	// Delete entries that are included in the snapshot
+	// Delete entries that are included in the snapshot using DeleteRange for better performance
 	batch := p.db.NewBatch()
 	defer batch.Close()
 
@@ -267,22 +267,7 @@ func (p *pebblePurger) purgeSnapshot(snapshot raftpb.Snapshot) error {
 	copy(snapshotIndexPlusOne[:16], p.keyPrefix.entry)
 	binary.BigEndian.PutUint64(snapshotIndexPlusOne[16:], snapshot.Metadata.Index+1)
 
-	iter, err := p.db.NewIter(&pebble.IterOptions{
-		LowerBound: p.keyPrefix.entry,
-		UpperBound: snapshotIndexPlusOne[:24],
-	})
-	if err != nil {
-		return err
-	}
-	defer iter.Close()
-
-	for iter.First(); iter.Valid(); iter.Next() {
-		if err = batch.Delete(iter.Key(), pebble.Sync); err != nil {
-			return err
-		}
-	}
-
-	if err = iter.Error(); err != nil {
+	if err := batch.DeleteRange(p.keyPrefix.entry, snapshotIndexPlusOne[:24], pebble.Sync); err != nil {
 		return err
 	}
 

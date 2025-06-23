@@ -73,6 +73,7 @@ type MultiRaftWalManager interface {
 	ReplayWal(groupID RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (EntryStorage,
 		Wal, ReplayWalResult, error)
 	HasExistingWals() ([]RaftGroupID, error)
+	RemoveData(groupID RaftGroupID) error
 	Purger() WalPurger
 	Close() error
 }
@@ -83,6 +84,7 @@ type MultiRaftSnapshotManager interface {
 	CreateAtomicSnapshotWriter(groupID RaftGroupID, snapshotTerm, snapshotIndex uint64) (AtomicSnapshotWriter, error)
 	CreateInstalledSnapshotReader(groupID RaftGroupID, snapshotIndex uint64, validateFsmFiles bool) (SnapshotReader, error)
 	CreateAtomicSnapshotReceiver(groupID RaftGroupID, metadata babuzapb.SnapshotMetadata) (AtomicSnapshotReceiver, error)
+	RemoveData(groupID RaftGroupID) error
 	Purge(groupID RaftGroupID, snapshot raftpb.Snapshot) error
 	GetGroupSnapshot(groupID RaftGroupID) SnapshotManager
 	Close() error

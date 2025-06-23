@@ -215,6 +215,33 @@ func (s *bootstrapStorage) StartPurgingProcess() {
 	s.walManager.Purger().Start()
 }
 
+func (s *bootstrapStorage) RemoveData(groupID ibabuza.RaftGroupID) error {
+	s.mapMu.Lock()
+	defer s.mapMu.Unlock()
+
+	if _, ok := s.mapMu.entryStorage[groupID]; !ok {
+		return errors.Errorf("entry storage not found for groupID %v", groupID)
+	}
+	if w, ok := s.mapMu.wal[groupID]; !ok {
+		return errors.Errorf("wal not found for groupID %v", groupID)
+	} else {
+		if err := w.Close(); err != nil {
+			return errors.Wrapf(err, "failed to close wal for groupID %v", groupID)
+		}
+		if err := s.walManager.RemoveData(groupID); err != nil {
+			return errors.Wrapf(err, "failed to remove wal data for groupID %v", groupID)
+		}
+		if err := s.snapshotManager.RemoveData(groupID); err != nil {
+			return errors.Wrapf(err, "failed to remove snapshot data for groupID %v", groupID)
+		}
+	}
+
+	delete(s.mapMu.entryStorage, groupID)
+	delete(s.mapMu.wal, groupID)
+
+	return nil
+}
+
 func (s *bootstrapStorage) Close() error {
 	m := multierror.New()
 	m.Append(s.walManager.Close())

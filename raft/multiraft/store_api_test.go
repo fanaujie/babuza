@@ -1456,3 +1456,145 @@ func TestCreateRawReplica(t *testing.T) {
 	time.Sleep(time.Second)
 	assert.NoError(t, verifyCounterValue(manager, raftGroup1, 15))
 }
+
+func TestRemoveData(t *testing.T) {
+	storeConfigs := []storeConfig{
+		{storeID: 1, raftListenAddr: "localhost:14201"},
+		{storeID: 2, raftListenAddr: "localhost:14202"},
+		{storeID: 3, raftListenAddr: "localhost:14203"},
+	}
+	peersConfig := NewPeersConfiguration()
+	assert.NoError(t, peersConfig.AddPeer(1, 1, "localhost:14201", false))
+	assert.NoError(t, peersConfig.AddPeer(2, 2, "localhost:14202", false))
+	assert.NoError(t, peersConfig.AddPeer(3, 3, "localhost:14203", false))
+	rootDir := t.TempDir()
+	manager, err := createStoreManager(storeConfigs, defaultCustomConfig(), rootDir, newComponentFactory(NoOPSessionType))
+	assert.NoError(t, err)
+	assert.NotNil(t, manager)
+	store1, err := manager.GetStore(1)
+	assert.NoError(t, err)
+	store2, err := manager.GetStore(2)
+	assert.NoError(t, err)
+	store3, err := manager.GetStore(3)
+	assert.NoError(t, err)
+	assert.NoError(t, store1.Start())
+	assert.NoError(t, store2.Start())
+	assert.NoError(t, store3.Start())
+	defer func() {
+		store1.Stop()
+		store2.Stop()
+		store3.Stop()
+	}()
+
+	// Test 1: RemoveData for non-existent group should fail
+	raftGroup1 := ibabuza.RaftGroupID(10)
+	err = store1.RemoveData(raftGroup1)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "entry storage not found")
+
+	// Test 2: Create a raft group and verify RemoveData fails while running
+	group1PeersConfig := peersConfig.Clone()
+	group1PeersConfig.SetGroupID(raftGroup1)
+	assert.NoError(t, store1.CreateRaftGroup(group1PeersConfig, false))
+	assert.NoError(t, store2.CreateRaftGroup(group1PeersConfig, false))
+	assert.NoError(t, store3.CreateRaftGroup(group1PeersConfig, false))
+
+	// Wait for leader election
+	time.Sleep(time.Second * 3)
+	group1LeaderID, err := manager.CheckSameLeader(raftGroup1)
+	assert.NoError(t, err)
+	t.Logf("group1 leader: %d", group1LeaderID)
+
+	// Propose some commands to create data
+	group1LeaderStore, err := manager.GetStore(group1LeaderID)
+	assert.NoError(t, err)
+	result, err := proposeCommand(group1LeaderStore, raftGroup1, CounterCommand{Operation: Reset, Value: 100})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(100), result.Value)
+
+	for i := 0; i < 10; i++ {
+		result, err = proposeCommand(group1LeaderStore, raftGroup1, CounterCommand{Operation: Increment, Value: 1})
+		assert.NoError(t, err)
+		assert.Equal(t, int64(101+i), result.Value)
+	}
+	time.Sleep(time.Second)
+	assert.NoError(t, verifyCounterValue(manager, raftGroup1, 110))
+
+	// Test 3: RemoveData should fail while raft group is still running
+	err = store1.RemoveData(raftGroup1)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "is still running")
+
+	err = store2.RemoveData(raftGroup1)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "is still running")
+
+	err = store3.RemoveData(raftGroup1)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "is still running")
+
+	// Test 4: Remove a peer from the group and then remove data from that store
+	nonLeaderID := uint64(1)
+	if nonLeaderID == group1LeaderID {
+		nonLeaderID = 2
+	}
+
+	// Remove the non-leader peer
+	res := group1LeaderStore.RemovePeer(context.Background(), raftGroup1, babuza.ClientSession{}, nonLeaderID)
+	ar := res.WaitForApplyResult()
+	res.Release()
+	assert.NoError(t, ar.Error)
+
+	// Wait for the peer to be removed
+	time.Sleep(time.Second * 2)
+
+	// Verify the removed peer no longer has the group
+	removedStore, err := manager.GetStore(nonLeaderID)
+	assert.NoError(t, err)
+	groupIDs := removedStore.GetGroupIDs()
+	assert.Equal(t, 0, len(groupIDs))
+
+	// Test 5: RemoveData should succeed after peer is removed from group
+	err = removedStore.RemoveData(raftGroup1)
+	assert.NoError(t, err)
+
+	// Test 6: Create a second raft group to test selective data removal
+	raftGroup2 := ibabuza.RaftGroupID(20)
+	group2PeersConfig := peersConfig.Clone()
+	group2PeersConfig.SetGroupID(raftGroup2)
+
+	// Only create group2 on remaining stores (exclude the removed store)
+	remainingStores := make([]*Store, 0)
+	for _, storeID := range manager.GetStoreIDsByGroupID(raftGroup1) {
+		store, err := manager.GetStore(storeID)
+		assert.NoError(t, err)
+		assert.NoError(t, store.CreateRaftGroup(group2PeersConfig, false))
+		remainingStores = append(remainingStores, store)
+	}
+
+	time.Sleep(time.Second * 3)
+	group2LeaderID, err := manager.CheckSameLeader(raftGroup2)
+	assert.NoError(t, err)
+
+	group2LeaderStore, err := manager.GetStore(group2LeaderID)
+	assert.NoError(t, err)
+	result, err = proposeCommand(group2LeaderStore, raftGroup2, CounterCommand{Operation: Reset, Value: 200})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(200), result.Value)
+
+	// Test 7: RemoveData for group2 should fail while it's running
+	for _, store := range remainingStores {
+		err = store.RemoveData(raftGroup2)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "is still running")
+	}
+
+	// Test 8: RemoveData for group1 should fail on stores where it's still running
+	for _, storeID := range manager.GetStoreIDsByGroupID(raftGroup1) {
+		store, err := manager.GetStore(storeID)
+		assert.NoError(t, err)
+		err = store.RemoveData(raftGroup1)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "is still running")
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"sort"
+	"sync/atomic"
 )
 
 type RaftGroupPeersInfo struct {
@@ -41,9 +42,13 @@ type Store struct {
 	shardedJobQueue         JobQueue
 	idGenerator             babuza.InternalIdGenerator
 	leaderTransferChecker   *leaderTransferChecker
+	closed                  int32
 }
 
 func (s *Store) Start() error {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.ErrStopped
+	}
 	var err error
 	s.storage.StartPurgingProcess()
 	tp := &transportProcessor{
@@ -95,6 +100,7 @@ func (s *Store) Start() error {
 }
 
 func (s *Store) Stop() {
+	atomic.StoreInt32(&s.closed, 1)
 	s.trans.Stop()
 	s.closer.Close()
 	s.scheduler.Stop()
@@ -113,6 +119,9 @@ func (s *Store) Stop() {
 }
 
 func (s *Store) CreateRaftGroup(peersConfig *PeersConfiguration, join bool) error {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.ErrStopped
+	}
 	if _, ok := s.replicaSet.Load(peersConfig.GroupID()); ok {
 		return errors.Errorf("Store[%d] raft group %d already exists", s.config.StoreID, peersConfig.GroupID())
 	}
@@ -126,6 +135,9 @@ func (s *Store) CreateRaftGroup(peersConfig *PeersConfiguration, join bool) erro
 }
 
 func (s *Store) CreateBasicRaftGroup(groupID ibabuza.RaftGroupID, localPeerID, leaderID uint64, leaderRaftAddr string) error {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.ErrStopped
+	}
 	if _, ok := s.replicaSet.Load(groupID); ok {
 		return errors.Errorf("Store[%d] raft group %d already exists", s.config.StoreID, groupID)
 	}
@@ -165,6 +177,9 @@ func (s *Store) StateMachine(groupID ibabuza.RaftGroupID) (ibabuza.BaseStateMach
 }
 
 func (s *Store) RegisterSession(ctx context.Context, groupID ibabuza.RaftGroupID) babuza.ProposedResult {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.NewErrorResult(babuza.ErrStopped)
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
@@ -197,6 +212,9 @@ func (s *Store) RegisterSession(ctx context.Context, groupID ibabuza.RaftGroupID
 
 func (s *Store) UnregisterSession(ctx context.Context, groupID ibabuza.RaftGroupID,
 	sessionID uint64) babuza.ProposedResult {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.NewErrorResult(babuza.ErrStopped)
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
@@ -228,6 +246,9 @@ func (s *Store) UnregisterSession(ctx context.Context, groupID ibabuza.RaftGroup
 }
 
 func (s *Store) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession, log []byte) babuza.ProposedResult {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.NewErrorResult(babuza.ErrStopped)
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
@@ -260,6 +281,9 @@ func (s *Store) Propose(ctx context.Context, groupID ibabuza.RaftGroupID, sessio
 
 func (s *Store) AddVotingPeer(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
 	raftPeerAttr babuzapb.RaftPeerAttribute) babuza.ProposedResult {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.NewErrorResult(babuza.ErrStopped)
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
@@ -275,6 +299,9 @@ func (s *Store) AddVotingPeer(ctx context.Context, groupID ibabuza.RaftGroupID, 
 
 func (s *Store) RemovePeer(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
 	peerID uint64) babuza.ProposedResult {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.NewErrorResult(babuza.ErrStopped)
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
@@ -287,6 +314,9 @@ func (s *Store) RemovePeer(ctx context.Context, groupID ibabuza.RaftGroupID, ses
 
 func (s *Store) AddLearner(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
 	raftPeerAttr babuzapb.RaftPeerAttribute) babuza.ProposedResult {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.NewErrorResult(babuza.ErrStopped)
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
@@ -302,6 +332,9 @@ func (s *Store) AddLearner(ctx context.Context, groupID ibabuza.RaftGroupID, ses
 
 func (s *Store) PromoteLearner(ctx context.Context, groupID ibabuza.RaftGroupID, session babuza.ClientSession,
 	peerID uint64) babuza.ProposedResult {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.NewErrorResult(babuza.ErrStopped)
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
@@ -327,6 +360,9 @@ func (s *Store) PromoteLearner(ctx context.Context, groupID ibabuza.RaftGroupID,
 }
 
 func (s *Store) TransferLeader(ctx context.Context, groupID ibabuza.RaftGroupID, transferee uint64) babuza.TransferLeaderResult {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.NewErrorResult(babuza.ErrStopped)
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return babuza.NewErrorResult(err)
@@ -358,6 +394,9 @@ func (s *Store) TransferLeader(ctx context.Context, groupID ibabuza.RaftGroupID,
 }
 
 func (s *Store) LinearizableRead(ctx context.Context, groupID ibabuza.RaftGroupID) error {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.ErrStopped
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return err
@@ -382,6 +421,9 @@ func (s *Store) LinearizableRead(ctx context.Context, groupID ibabuza.RaftGroupI
 }
 
 func (s *Store) RaftGroupPeersInfo(groupID ibabuza.RaftGroupID) (RaftGroupPeersInfo, error) {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return RaftGroupPeersInfo{}, babuza.ErrStopped
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return RaftGroupPeersInfo{}, err
@@ -390,6 +432,9 @@ func (s *Store) RaftGroupPeersInfo(groupID ibabuza.RaftGroupID) (RaftGroupPeersI
 }
 
 func (s *Store) Query(groupID ibabuza.RaftGroupID, key any) (any, error) {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return nil, babuza.ErrStopped
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return nil, err
@@ -398,6 +443,9 @@ func (s *Store) Query(groupID ibabuza.RaftGroupID, key any) (any, error) {
 }
 
 func (s *Store) RaftGroupStatus(groupID ibabuza.RaftGroupID) (babuza.Status, error) {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.Status{}, babuza.ErrStopped
+	}
 	r, err := s.getReplica(groupID)
 	if err != nil {
 		return babuza.Status{}, err
@@ -430,6 +478,17 @@ func (s *Store) RaftGroupStatus(groupID ibabuza.RaftGroupID) (babuza.Status, err
 		LastSnapshotTerm:   snapshot.Metadata.Term,
 		LastSnapshotIndex:  snapshot.Metadata.Index,
 	}, nil
+}
+
+func (s *Store) RemoveData(groupID ibabuza.RaftGroupID) error {
+	if atomic.LoadInt32(&s.closed) != 0 {
+		return babuza.ErrStopped
+	}
+	_, ok := s.replicaSet.Load(groupID)
+	if ok {
+		return errors.Errorf("Store[%d] raft group %d is still running, can not remove data", s.config.StoreID, groupID)
+	}
+	return s.storage.RemoveData(groupID)
 }
 
 func (s *Store) getReplica(groupID ibabuza.RaftGroupID) (*replica, error) {

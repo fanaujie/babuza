@@ -80,6 +80,27 @@ func (m *MultiRaftSnapshotManager) CreateAtomicSnapshotReceiver(groupID ibabuza.
 	return m.getOrCreateSnapshotor(groupID).CreateAtomicSnapshotReceiver(metadata)
 }
 
+func (m *MultiRaftSnapshotManager) RemoveData(groupID ibabuza.RaftGroupID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	snapshotor, exists := m.snapshotorMap[groupID]
+	if exists {
+		if err := snapshotor.Close(); err != nil {
+			m.logger.Errorf("failed to close snapshotor for group %d: %v", groupID, err)
+		}
+		delete(m.snapshotorMap, groupID)
+	}
+
+	groupSnapshotDir := m.getGroupSnapshotDir(groupID)
+	if m.fs.ExistDir(groupSnapshotDir) {
+		if err := m.fs.RemoveDir(groupSnapshotDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *MultiRaftSnapshotManager) Purge(groupID ibabuza.RaftGroupID, snapshot raftpb.Snapshot) error {
 	return m.getOrCreateSnapshotor(groupID).Purge(snapshot)
 }

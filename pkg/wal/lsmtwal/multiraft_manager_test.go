@@ -605,3 +605,149 @@ func TestMultiRaftWalManager_PurgerIntegration(t *testing.T) {
 		})
 	}
 }
+
+func TestMultiRaftWalManager_RemoveData(t *testing.T) {
+	testCases := []struct {
+		name        string
+		managerType WalManagerType
+	}{
+		{"BadgerDB", WalManagerTypeBadger},
+		{"PebbleDB", WalManagerTypePebble},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := setupTestMultiRaftManagerWithType(MultiRaftConfig{
+				InMemory:           true,
+				WalDir:             "",
+				KeyPrefixCacheSize: 10,
+			}, tc.managerType)
+			defer manager.Close()
+
+			groupID1 := ibabuza.RaftGroupID(1)
+			groupID2 := ibabuza.RaftGroupID(2)
+
+			// Create test metadata
+			metadata := babuzapb.WalMetadata{
+				ClusterID:   123,
+				LocalPeerID: 456,
+			}
+
+			// Create WALs for both groups
+			es1, wal1, err := manager.CreateWal(groupID1, metadata)
+			assert.NoError(t, err)
+			assert.NotNil(t, es1)
+			assert.NotNil(t, wal1)
+
+			es2, wal2, err := manager.CreateWal(groupID2, metadata)
+			assert.NoError(t, err)
+			assert.NotNil(t, es2)
+			assert.NotNil(t, wal2)
+
+			// Add some data to both WALs
+			hardState := raftpb.HardState{
+				Term:   1,
+				Vote:   1,
+				Commit: 2,
+			}
+			entries := []raftpb.Entry{
+				{Term: 1, Index: 1, Type: raftpb.EntryNormal, Data: []byte("test data 1")},
+				{Term: 1, Index: 2, Type: raftpb.EntryNormal, Data: []byte("test data 2")},
+			}
+
+			err = wal1.Save(hardState, entries)
+			assert.NoError(t, err)
+			err = wal2.Save(hardState, entries)
+			assert.NoError(t, err)
+
+			// Save snapshots
+			snapshot := raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 1,
+					Term:  1,
+				},
+			}
+			err = wal1.SaveSnapshot(snapshot)
+			assert.NoError(t, err)
+			err = wal2.SaveSnapshot(snapshot)
+			assert.NoError(t, err)
+
+			// Close WALs before removing data
+			err = wal1.Close()
+			assert.NoError(t, err)
+			err = wal2.Close()
+			assert.NoError(t, err)
+
+			// Verify both groups exist
+			existingGroups, err := manager.HasExistingWals()
+			assert.NoError(t, err)
+			assert.Len(t, existingGroups, 2)
+
+			// Verify we can find snapshots for both groups
+			snapshots1, err := manager.FindSnapshot(groupID1)
+			assert.NoError(t, err)
+			assert.NotEmpty(t, snapshots1)
+
+			snapshots2, err := manager.FindSnapshot(groupID2)
+			assert.NoError(t, err)
+			assert.NotEmpty(t, snapshots2)
+
+			// Remove data for group 1
+			err = manager.RemoveData(groupID1)
+			assert.NoError(t, err)
+
+			// Verify group 1 data is removed
+			existingGroups, err = manager.HasExistingWals()
+			assert.NoError(t, err)
+			assert.Len(t, existingGroups, 1)
+			assert.Equal(t, groupID2, existingGroups[0])
+
+			// Verify snapshots for group 1 are removed
+			snapshots1, err = manager.FindSnapshot(groupID1)
+			assert.NoError(t, err)
+			assert.Empty(t, snapshots1)
+
+			// Verify group 2 data still exists
+			snapshots2, err = manager.FindSnapshot(groupID2)
+			assert.NoError(t, err)
+			assert.NotEmpty(t, snapshots2)
+
+			// Verify we can still replay group 2 WAL
+			replaySnapshot := &raftpb.Snapshot{
+				Metadata: raftpb.SnapshotMetadata{
+					Index: 0,
+				},
+			}
+			replayEs, replayWal, result, err := manager.ReplayWal(groupID2, replaySnapshot, false)
+			assert.NoError(t, err)
+			assert.NotNil(t, replayEs)
+			assert.NotNil(t, replayWal)
+			assert.NotNil(t, result)
+			assert.Equal(t, hardState, result.HardState())
+			err = replayWal.Close()
+			assert.NoError(t, err)
+
+			// Verify we cannot replay group 1 WAL (should fail)
+			_, _, _, err = manager.ReplayWal(groupID1, replaySnapshot, false)
+			assert.Error(t, err)
+
+			// Remove data for group 2
+			err = manager.RemoveData(groupID2)
+			assert.NoError(t, err)
+
+			// Verify no groups exist
+			existingGroups, err = manager.HasExistingWals()
+			assert.NoError(t, err)
+			assert.Empty(t, existingGroups)
+
+			// Verify snapshots for group 2 are also removed
+			snapshots2, err = manager.FindSnapshot(groupID2)
+			assert.NoError(t, err)
+			assert.Empty(t, snapshots2)
+
+			// Test removing data for non-existent group (should not error)
+			err = manager.RemoveData(ibabuza.RaftGroupID(999))
+			assert.NoError(t, err)
+		})
+	}
+}

@@ -257,24 +257,19 @@ func (p *badgerPurger) purgeSnapshot(snapshot raftpb.Snapshot) error {
 	return p.db.Update(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = false
-		opts.Reverse = true
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		// Collect keys to delete
-		var keysToDelete [][]byte
+		// Iterate from the beginning of entries up to (but not including) snapshot.Index + 1
+		for it.Seek(p.keyPrefix.entry); it.ValidForPrefix(p.keyPrefix.entry); it.Next() {
+			entryIndex := binary.BigEndian.Uint64(it.Item().Key()[16:])
+			// Check if we've reached the upper bound (snapshot.Index + 1)
+			if entryIndex >= snapshot.Metadata.Index+1 {
+				break
+			}
 
-		// Prepare seek key with the snapshot index
-		var snapshotIndex [24]byte
-		copy(snapshotIndex[:16], p.keyPrefix.entry)
-		binary.BigEndian.PutUint64(snapshotIndex[16:], snapshot.Metadata.Index)
-		for it.Seek(snapshotIndex[:24]); it.ValidForPrefix(p.keyPrefix.entry); it.Next() {
-			item := it.Item()
-			key := item.Key()
-			keysToDelete = append(keysToDelete, append([]byte{}, key...))
-		}
-
-		for _, key := range keysToDelete {
+			// Make a copy of the key for deletion
+			key := it.Item().KeyCopy(nil)
 			if err := txn.Delete(key); err != nil {
 				return err
 			}
@@ -299,7 +294,8 @@ func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[s
 		startIndex := 0
 		binary.BigEndian.PutUint64(startKey[16:], readEntryIndex[startIndex].Index)
 		for it.Seek(startKey[:24]); startIndex < len(readEntryIndex) && it.ValidForPrefix(startKey[:16]); it.Next() {
-			if binary.BigEndian.Uint64(it.Item().Key()[16:]) != readEntryIndex[startIndex].Index {
+			foundIndex := binary.BigEndian.Uint64(it.Item().Key()[16:])
+			if foundIndex != readEntryIndex[startIndex].Index {
 				return fmt.Errorf("invalid entry index %d expected %d",
 					binary.BigEndian.Uint64(it.Item().Key()), readEntryIndex[startIndex].Index)
 			}
@@ -315,8 +311,8 @@ func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[s
 			}
 			startIndex++
 		}
-		if startIndex == 0 {
-			return fmt.Errorf("no entries found for readEntryIndex %v", readEntryIndex)
+		if startIndex != len(readEntryIndex) {
+			return fmt.Errorf("only found %d of %d requested entries for readEntryIndex %v", startIndex, len(readEntryIndex), readEntryIndex)
 		}
 		return nil
 	})
