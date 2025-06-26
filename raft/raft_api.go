@@ -144,6 +144,7 @@ func NewRaft(cfg BabuzaConfig, bootstrap *BootstrapRaftCluster, raftListener iba
 		return nil, err
 	}
 	r.walManager.Purger().Start()
+	r.snapshotManager.Purger().Start()
 	r.closer.Run(func() {
 		r.processRaftReady()
 	})

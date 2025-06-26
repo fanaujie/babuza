@@ -214,7 +214,7 @@ func TestWalManager_ReplayWal(t *testing.T) {
 		if _, ok := walManager.(*lsmtwal.BadgerWalManager); !ok {
 			assert.Nil(t, w.Close())
 		}
-		m, _, _, err := walManager.ReplayWal(nil, false)
+		_, m, _, err := walManager.ReplayWal(nil, false)
 		assert.Nil(t, err)
 		resultEntry, err := m.Entries(1, 4096+1, math.MaxUint64)
 		assert.Equal(t, expectedEntry, resultEntry)
@@ -367,7 +367,7 @@ func TestWalManager_StartWalPurgingProcess(t *testing.T) {
 				Term:  1,
 			},
 		}
-		m2, _, _, err := b.ReplayWal(&snapshot, false)
+		_, m2, _, err := b.ReplayWal(&snapshot, false)
 		if err != nil {
 			// If ReplayWal fails, it might be because the purged data is no longer available
 			// This indicates purge worked, but we can't verify the exact state
@@ -421,7 +421,7 @@ func TestWalManager_StartWalPurgingProcess(t *testing.T) {
 				Term:  1,
 			},
 		}
-		m2, _, _, err := b.ReplayWal(&snapshot, false)
+		_, m2, _, err := b.ReplayWal(&snapshot, false)
 		if err != nil {
 			// If ReplayWal fails, it might be because the purged data is no longer available
 			// This indicates purge worked, but we can't verify the exact state

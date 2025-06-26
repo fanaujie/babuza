@@ -29,8 +29,7 @@ type WalPurger interface {
 type WalManager interface {
 	FindSnapshot() ([]walpb.Snapshot, error)
 	CreateWal(metadata babuzapb.WalMetadata) (EntryStorage, Wal, error)
-	ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (EntryStorage,
-		Wal, ReplayWalResult, error)
+	ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (ReplayWalResult, EntryStorage, Wal, error)
 	HasExistingWals() (bool, error)
 	Purger() WalPurger
 	Close() error

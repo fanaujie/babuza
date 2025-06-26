@@ -1486,11 +1486,10 @@ func TestRemoveData(t *testing.T) {
 		store3.Stop()
 	}()
 
-	// Test 1: RemoveData for non-existent group should fail
+	// Test 1: RemoveData for non-existent group should succeed (no error if group doesn't exist)
 	raftGroup1 := ibabuza.RaftGroupID(10)
 	err = store1.RemoveData(raftGroup1)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "entry storage not found")
+	assert.NoError(t, err)
 
 	// Test 2: Create a raft group and verify RemoveData fails while running
 	group1PeersConfig := peersConfig.Clone()

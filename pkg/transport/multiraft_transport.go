@@ -32,7 +32,7 @@ type MultiRaftTransport struct {
 	clusterID        uint64
 	localNodeID      uint64
 	options          Options
-	raftProcessor    ibabuza.MultiRaftNodeHandler
+	raftProcessor    ibabuza.MultiRaftStoreHandler
 	protocol         ibabuza.MultiRaftTransportProtocol
 	server           ibabuza.TransportServer
 	peerMgr          PeerManager[peer.MultiRaftPeer, ibabuza.MultiRaftStatusReporter]
@@ -148,7 +148,7 @@ func (t *MultiRaftTransport) SetupTransportConfig(cfg ibabuza.TransportConfig) e
 	return t.protocol.Setup(cfg)
 }
 
-func (t *MultiRaftTransport) SetupTransportRaft(processor ibabuza.MultiRaftNodeHandler) error {
+func (t *MultiRaftTransport) SetupTransportRaft(processor ibabuza.MultiRaftStoreHandler) error {
 	t.raftProcessor = processor
 	t.peerMgr.UpdatePeerRaftReport(processor)
 	s, err := t.protocol.CreateServer(processor)

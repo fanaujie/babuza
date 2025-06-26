@@ -29,7 +29,7 @@ type MultiRaftTransportClient interface {
 
 type MultiRaftTransport interface {
 	SetupTransportConfig(cfg TransportConfig) error
-	SetupTransportRaft(MultiRaftNodeHandler) error
+	SetupTransportRaft(MultiRaftStoreHandler) error
 	Start() error
 	Stop() error
 	Send(RaftGroupID, raftpb.Message)
@@ -45,7 +45,7 @@ type MultiRaftTransport interface {
 
 type MultiRaftTransportProtocol interface {
 	Setup(TransportConfig) error
-	CreateServer(MultiRaftNodeHandler) (TransportServer, error)
+	CreateServer(MultiRaftStoreHandler) (TransportServer, error)
 	CreateClient(MultiRaftTransportResolver) (MultiRaftTransportClient, error)
 	Close() error
 }
@@ -59,7 +59,7 @@ type MultiRaftStatusReporter interface {
 	ReportSnapshot(groupID RaftGroupID, peerID uint64, status raft.SnapshotStatus)
 }
 
-type MultiRaftNodeHandler interface {
+type MultiRaftStoreHandler interface {
 	ProcessMultiRaftMessage(babuzapb.MultiRaftBatchMessage)
 	ProcessSnapshotMessage(babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse
 	GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse
@@ -70,8 +70,7 @@ type MultiRaftNodeHandler interface {
 type MultiRaftWalManager interface {
 	FindSnapshot(groupID RaftGroupID) ([]walpb.Snapshot, error)
 	CreateWal(groupID RaftGroupID, metadata babuzapb.WalMetadata) (EntryStorage, Wal, error)
-	ReplayWal(groupID RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (EntryStorage,
-		Wal, ReplayWalResult, error)
+	ReplayWal(groupID RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (ReplayWalResult, EntryStorage, Wal, error)
 	HasExistingWals() ([]RaftGroupID, error)
 	RemoveData(groupID RaftGroupID) error
 	Purger() WalPurger
@@ -79,13 +78,9 @@ type MultiRaftWalManager interface {
 }
 
 type MultiRaftSnapshotManager interface {
-	ScanInstalledSnapshots(groupIDs []RaftGroupID, removeUnfinishedSnapshotDir bool) error
-	LoadLastValidSnapshot(groupID RaftGroupID, walSnaps []walpb.Snapshot) (*raftpb.Snapshot, error)
-	CreateAtomicSnapshotWriter(groupID RaftGroupID, snapshotTerm, snapshotIndex uint64) (AtomicSnapshotWriter, error)
-	CreateInstalledSnapshotReader(groupID RaftGroupID, snapshotIndex uint64, validateFsmFiles bool) (SnapshotReader, error)
-	CreateAtomicSnapshotReceiver(groupID RaftGroupID, metadata babuzapb.SnapshotMetadata) (AtomicSnapshotReceiver, error)
+	ScanInstalledSnapshots(groupIDs []RaftGroupID, removeUnfinishedSnapshotDir bool) (map[RaftGroupID]SnapshotManager, error)
 	RemoveData(groupID RaftGroupID) error
-	Purge(groupID RaftGroupID, snapshot raftpb.Snapshot) error
-	GetGroupSnapshot(groupID RaftGroupID) SnapshotManager
+	Purger() SnapshotPurger
+	CreateSnapshotManager(groupID RaftGroupID) SnapshotManager
 	Close() error
 }

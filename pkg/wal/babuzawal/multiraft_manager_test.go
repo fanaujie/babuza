@@ -67,7 +67,7 @@ func TestMultiRaftWalManager_RemoveData(t *testing.T) {
 	// Verify both groups exist by checking directories
 	groupDir1 := manager.getGroupWalDir(groupID1)
 	groupDir2 := manager.getGroupWalDir(groupID2)
-	
+
 	assert.DirExists(t, groupDir1)
 	assert.DirExists(t, groupDir2)
 
@@ -97,7 +97,7 @@ func TestMultiRaftWalManager_RemoveData(t *testing.T) {
 			Index: 0,
 		},
 	}
-	replayEs, replayWal, result, err := manager.ReplayWal(groupID2, replaySnapshot, false)
+	result, replayEs, replayWal, err := manager.ReplayWal(groupID2, replaySnapshot, false)
 	assert.NoError(t, err)
 	assert.NotNil(t, replayEs)
 	assert.NotNil(t, replayWal)
@@ -253,7 +253,6 @@ func TestNewMultiRaftWalManager(t *testing.T) {
 	assert.NotNil(t, manager.logger)
 	assert.NotNil(t, manager.purgerSnapCh)
 	assert.NotNil(t, manager.purgerStopCh)
-	assert.NotNil(t, manager.logMgrMu.mgr)
 	defer manager.Close()
 
 	// Test with custom options
@@ -296,13 +295,6 @@ func TestMultiRaftWalManager_CreateWal(t *testing.T) {
 	assert.NotNil(t, es2)
 	assert.NotNil(t, wal2)
 	defer wal2.Close()
-
-	// Verify both groups are tracked in logMgrMu.mgr
-	manager.logMgrMu.mu.Lock()
-	assert.Contains(t, manager.logMgrMu.mgr, groupID1)
-	assert.Contains(t, manager.logMgrMu.mgr, groupID2)
-	assert.Len(t, manager.logMgrMu.mgr, 2)
-	manager.logMgrMu.mu.Unlock()
 
 	// Verify separate group directories are created
 	groupDir1 := manager.getGroupWalDir(groupID1)
@@ -348,13 +340,8 @@ func TestMultiRaftWalManager_ReplayWal(t *testing.T) {
 	err = wal.Close()
 	assert.NoError(t, err)
 
-	// Clear the log manager mapping to simulate restart
-	manager.logMgrMu.mu.Lock()
-	delete(manager.logMgrMu.mgr, groupID)
-	manager.logMgrMu.mu.Unlock()
-
 	// Test replay without snapshot
-	replayEs, replayWal, result, err := manager.ReplayWal(groupID, nil, false)
+	result, replayEs, replayWal, err := manager.ReplayWal(groupID, nil, false)
 	assert.NoError(t, err)
 	assert.NotNil(t, replayEs)
 	assert.NotNil(t, replayWal)
@@ -364,10 +351,6 @@ func TestMultiRaftWalManager_ReplayWal(t *testing.T) {
 	assert.Equal(t, hardState, result.HardState())
 	defer replayWal.Close()
 
-	// Verify group is tracked again after replay
-	manager.logMgrMu.mu.Lock()
-	assert.Contains(t, manager.logMgrMu.mgr, groupID)
-	manager.logMgrMu.mu.Unlock()
 }
 
 func TestMultiRaftWalManager_HasExistingWals(t *testing.T) {
@@ -474,7 +457,7 @@ func TestMultiRaftWalManager_FindSnapshot(t *testing.T) {
 		{Term: 1, Index: 1, Type: raftpb.EntryNormal, Data: []byte("entry 1")},
 		{Term: 1, Index: 2, Type: raftpb.EntryNormal, Data: []byte("entry 2")},
 	}
-	
+
 	err = wal.Save(hardState, entries)
 	assert.NoError(t, err)
 
@@ -519,7 +502,7 @@ func TestMultiRaftWalManager_Purger(t *testing.T) {
 		{Term: 1, Index: 4, Type: raftpb.EntryNormal, Data: []byte("entry 4")},
 		{Term: 1, Index: 5, Type: raftpb.EntryNormal, Data: []byte("entry 5")},
 	}
-	
+
 	err = wal.Save(hardState, entries)
 	assert.NoError(t, err)
 
@@ -527,27 +510,6 @@ func TestMultiRaftWalManager_Purger(t *testing.T) {
 	assert.NotNil(t, manager.purgerSnapCh)
 	assert.NotNil(t, manager.purgerStopCh)
 
-	// Test createGroupPurgerChannel
-	groupCh := manager.createGroupPurgerChannel(groupID)
-	assert.NotNil(t, groupCh)
-
-	// Send a snapshot through the group channel (non-blocking test)
-	testSnapshot := raftpb.Snapshot{
-		Metadata: raftpb.SnapshotMetadata{
-			Index: 3,
-			Term:  1,
-		},
-	}
-
-	// This should not block since the goroutine should forward it to purgerSnapCh
-	select {
-	case groupCh <- testSnapshot:
-		// Successfully sent
-	default:
-		t.Fatal("Group purger channel should not block")
-	}
-
-	close(groupCh)
 }
 
 func TestMultiRaftWalManager_Close(t *testing.T) {
@@ -607,11 +569,6 @@ func TestMultiRaftWalManager_ConcurrentAccess(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	// Verify all groups were created
-	manager.logMgrMu.mu.Lock()
-	assert.Len(t, manager.logMgrMu.mgr, numGroups)
-	manager.logMgrMu.mu.Unlock()
-
 	// Test concurrent HasExistingWals calls
 	const numReaders = 5
 	readerResults := make(chan error, numReaders)
@@ -647,11 +604,6 @@ func TestMultiRaftWalManager_ConcurrentAccess(t *testing.T) {
 		err := <-removeResults
 		assert.NoError(t, err)
 	}
-
-	// Verify all groups were removed
-	manager.logMgrMu.mu.Lock()
-	assert.Empty(t, manager.logMgrMu.mgr)
-	manager.logMgrMu.mu.Unlock()
 
 	groups, err := manager.HasExistingWals()
 	assert.NoError(t, err)

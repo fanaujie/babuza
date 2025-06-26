@@ -12,6 +12,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"sync"
 )
 
 type MultiRaftPebbleWalManager struct {
@@ -20,6 +21,7 @@ type MultiRaftPebbleWalManager struct {
 	prefixCache  *keyPrefixCache
 	purgerSnapCh chan purgeRequest
 	purgerStopCh chan struct{}
+	once         sync.Once
 }
 
 type PebbleGroupEntryDataReader struct {
@@ -126,8 +128,7 @@ func (m *MultiRaftPebbleWalManager) CreateWal(groupID ibabuza.RaftGroupID, metad
 	return es, w, nil
 }
 
-func (m *MultiRaftPebbleWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (
-	ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
+func (m *MultiRaftPebbleWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (ibabuza.ReplayWalResult, ibabuza.EntryStorage, ibabuza.Wal, error) {
 
 	groupPrefix := m.prefixCache.get(groupID)
 
@@ -222,7 +223,7 @@ func (m *MultiRaftPebbleWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snaps
 
 	w := NewPebbleWal(m.db, es, m.prefixCache.get(groupID), m.purgerSnapCh)
 	w.SetMultiRaftPurger(groupID)
-	return es, w, result, nil
+	return result, es, w, nil
 }
 
 func (m *MultiRaftPebbleWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {
@@ -274,7 +275,7 @@ func (m *MultiRaftPebbleWalManager) ReadEntriesData(groupID ibabuza.RaftGroupID,
 		}
 
 		var ent raftpb.Entry
-		if err := ent.Unmarshal(value); err != nil {
+		if err = ent.Unmarshal(value); err != nil {
 			closer.Close()
 			return err
 		}
@@ -293,6 +294,18 @@ func (m *MultiRaftPebbleWalManager) Purger() ibabuza.WalPurger {
 
 func (m *MultiRaftPebbleWalManager) RemoveData(groupID ibabuza.RaftGroupID) error {
 	groupPrefix := m.prefixCache.get(groupID)
+
+	// Check if the group exists by looking for metadata
+	_, closer, err := m.db.Get(groupPrefix.metadata)
+	if err != nil && err != pebble.ErrNotFound {
+		return fmt.Errorf("failed to check if group %d exists: %v", groupID, err)
+	}
+	if err == pebble.ErrNotFound {
+		// Group doesn't exist, return success (idempotent operation)
+		m.logger.Infof("Group %d does not exist, RemoveData is a no-op", groupID)
+		return nil
+	}
+	closer.Close()
 
 	batch := m.db.NewBatch()
 	defer batch.Close()
@@ -325,18 +338,20 @@ type multiRaftPebblePurger struct {
 }
 
 func (p *multiRaftPebblePurger) Start() {
-	go func() {
-		for {
-			select {
-			case req := <-p.purgerSnapCh:
-				if err := p.purgeSnapshot(req.groupID, req.snapshot); err != nil {
-					p.logger.Errorf("failed to purge snapshot groupID=%d index=%d: %v", req.groupID, req.snapshot.Metadata.Index, err)
+	p.once.Do(func() {
+		go func() {
+			for {
+				select {
+				case req := <-p.purgerSnapCh:
+					if err := p.purgeSnapshot(req.groupID, req.snapshot); err != nil {
+						p.logger.Errorf("failed to purge snapshot groupID=%d index=%d: %v", req.groupID, req.snapshot.Metadata.Index, err)
+					}
+				case <-p.purgerStopCh:
+					return
 				}
-			case <-p.purgerStopCh:
-				return
 			}
-		}
-	}()
+		}()
+	})
 }
 
 func (p *multiRaftPebblePurger) Stop() {

@@ -162,7 +162,7 @@ func TestMultiRaftWalManager_CreateWal(t *testing.T) {
 					Index: 0,
 				},
 			}
-			replayEs, replayWal, result, err := manager.ReplayWal(groupID, snapshot, false)
+			result, replayEs, replayWal, err := manager.ReplayWal(groupID, snapshot, false)
 			assert.NoError(t, err)
 			assert.NotNil(t, replayEs)
 			assert.NotNil(t, replayWal)
@@ -256,7 +256,7 @@ func TestMultiRaftWalManager_ReplayWal(t *testing.T) {
 			}
 
 			// Replay the WAL
-			replayEs, replayWal, result, err := manager.ReplayWal(groupID, snapshot, false)
+			result, replayEs, replayWal, err := manager.ReplayWal(groupID, snapshot, false)
 			assert.NoError(t, err)
 			assert.NotNil(t, replayEs)
 			assert.NotNil(t, replayWal)
@@ -718,7 +718,7 @@ func TestMultiRaftWalManager_RemoveData(t *testing.T) {
 					Index: 0,
 				},
 			}
-			replayEs, replayWal, result, err := manager.ReplayWal(groupID2, replaySnapshot, false)
+			result, replayEs, replayWal, err := manager.ReplayWal(groupID2, replaySnapshot, false)
 			assert.NoError(t, err)
 			assert.NotNil(t, replayEs)
 			assert.NotNil(t, replayWal)

@@ -12,6 +12,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"sync"
 	"time"
 )
 
@@ -21,7 +22,7 @@ type BadgerWalManager struct {
 	keyPrefix    *keyPrefix
 	stopCh       chan struct{}
 	purgerSnapCh chan purgeRequest
-	purgerStopCh chan struct{}
+	once         sync.Once
 }
 
 var _ ibabuza.WalManager = (*BadgerWalManager)(nil)
@@ -60,7 +61,6 @@ func NewBadgerWalManager(config Config, logger ibabuza.Logger) *BadgerWalManager
 		keyPrefix:    newKeyPrefix(0),
 		stopCh:       stopCh,
 		purgerSnapCh: make(chan purgeRequest, 1),
-		purgerStopCh: make(chan struct{}),
 	}
 }
 
@@ -119,8 +119,7 @@ func (m *BadgerWalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.Ent
 	return es, w, nil
 }
 
-func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (
-	ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
+func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (ibabuza.ReplayWalResult, ibabuza.EntryStorage, ibabuza.Wal, error) {
 
 	var hardState raftpb.HardState
 	var metadata []byte
@@ -201,7 +200,7 @@ func (m *BadgerWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 		return nil, nil, nil, err
 	}
 	w := NewBadgerWal(m.db, es, m.keyPrefix, m.purgerSnapCh)
-	return es, w, result, nil
+	return result, es, w, nil
 }
 
 func (m *BadgerWalManager) HasExistingWals() (bool, error) {
@@ -234,18 +233,20 @@ type badgerPurger struct {
 }
 
 func (p *badgerPurger) Start() {
-	go func() {
-		for {
-			select {
-			case req := <-p.purgerSnapCh:
-				if err := p.purgeSnapshot(req.snapshot); err != nil {
-					p.logger.Errorf("failed to purge snapshot index=%d: %v", req.snapshot.Metadata.Index, err)
+	p.once.Do(func() {
+		go func() {
+			for {
+				select {
+				case req := <-p.purgerSnapCh:
+					if err := p.purgeSnapshot(req.snapshot); err != nil {
+						p.logger.Errorf("failed to purge snapshot index=%d: %v", req.snapshot.Metadata.Index, err)
+					}
+				case <-p.stopCh:
+					return
 				}
-			case <-p.purgerStopCh:
-				return
 			}
-		}
-	}()
+		}()
+	})
 }
 
 func (p *badgerPurger) purgeSnapshot(snapshot raftpb.Snapshot) error {
@@ -320,10 +321,9 @@ func (m *BadgerWalManager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[s
 
 func (m *BadgerWalManager) Close() error {
 	select {
-	case <-m.purgerStopCh:
+	case <-m.stopCh:
 	default:
-		close(m.purgerStopCh)
+		close(m.stopCh)
 	}
-	close(m.stopCh)
 	return m.db.Close()
 }

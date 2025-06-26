@@ -36,12 +36,17 @@ type AtomicSnapshotReceiver interface {
 	Commit(snapshotIndex uint64) error
 }
 
+type SnapshotPurger interface {
+	Start()
+}
+
 type SnapshotManager interface {
 	ScanInstalledSnapshots(removeUnfinishedSnapshotDir bool) error
 	LoadLastValidSnapshot(walSnaps []walpb.Snapshot) (*raftpb.Snapshot, error)
 	CreateAtomicSnapshotWriter(snapshotTerm, snapshotIndex uint64) (AtomicSnapshotWriter, error)
 	CreateInstalledSnapshotReader(snapshotIndex uint64, validateFsmFiles bool) (SnapshotReader, error)
 	CreateAtomicSnapshotReceiver(metadata babuzapb.SnapshotMetadata) (AtomicSnapshotReceiver, error)
+	Purger() SnapshotPurger
 	Purge(snapshot raftpb.Snapshot) error
 	Close() error
 }

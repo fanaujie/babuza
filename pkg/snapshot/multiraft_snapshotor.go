@@ -1,32 +1,30 @@
 package snapshot
 
 import (
+	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/durable"
 	"github.com/fanaujie/babuza/pkg/utility/fileutil"
-	"go.etcd.io/etcd/raft/v3/raftpb"
-	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"path/filepath"
 	"strconv"
-	"sync"
 )
 
 type MultiRaftSnapshotManager struct {
-	config        Config
-	fs            api.SnapshotFileSystem
-	logger        ibabuza.Logger
-	mu            sync.Mutex
-	snapshotorMap map[ibabuza.RaftGroupID]*Snapshotor
+	config         Config
+	fs             api.SnapshotFileSystem
+	logger         ibabuza.Logger
+	purgeRequestCh chan purgeRequest
+	stopCh         chan struct{}
 }
 
 func NewMultiRaftSnapshotManager(config Config, fs api.SnapshotFileSystem, logger ibabuza.Logger) *MultiRaftSnapshotManager {
 	return &MultiRaftSnapshotManager{
-		config:        config,
-		fs:            fs,
-		logger:        logger,
-		snapshotorMap: make(map[ibabuza.RaftGroupID]*Snapshotor),
+		config:         config,
+		fs:             fs,
+		logger:         logger,
+		purgeRequestCh: make(chan purgeRequest, 8),
+		stopCh:         make(chan struct{}),
 	}
 }
 
@@ -34,64 +32,32 @@ func (m *MultiRaftSnapshotManager) getGroupSnapshotDir(groupID ibabuza.RaftGroup
 	return filepath.Join(m.config.SnapshotDir, strconv.FormatUint(uint64(groupID), 10))
 }
 
-func (m *MultiRaftSnapshotManager) getOrCreateSnapshotor(groupID ibabuza.RaftGroupID) *Snapshotor {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	snapshotor, ok := m.snapshotorMap[groupID]
-
-	if ok {
-		return snapshotor
-	}
-
+func (m *MultiRaftSnapshotManager) createSnapshotor(groupID ibabuza.RaftGroupID) *Snapshotor {
 	groupSnapshotDir := m.getGroupSnapshotDir(groupID)
 	groupConfig := Config{
 		SnapshotVersion: m.config.SnapshotVersion,
 		MaxSnapFiles:    m.config.MaxSnapFiles,
 		SnapshotDir:     groupSnapshotDir,
 	}
-
-	snapshotor = New(groupConfig, m.fs, m.logger)
-	m.snapshotorMap[groupID] = snapshotor
-	return snapshotor
+	return New(groupConfig, m.fs, m.logger, m.purgeRequestCh)
 }
 
-func (m *MultiRaftSnapshotManager) ScanInstalledSnapshots(groupIDs []ibabuza.RaftGroupID, removeUnfinishedSnapshotDir bool) error {
-	for _, id := range groupIDs {
-		if err := m.getOrCreateSnapshotor(id).ScanInstalledSnapshots(removeUnfinishedSnapshotDir); err != nil {
-			return err
-		}
+func (m *MultiRaftSnapshotManager) ScanInstalledSnapshots(groupIDs []ibabuza.RaftGroupID, removeUnfinishedSnapshotDir bool) (map[ibabuza.RaftGroupID]ibabuza.SnapshotManager, error) {
+	if len(groupIDs) == 0 {
+		return nil, errors.New("empty groupIDs")
 	}
-	return nil
-}
-
-func (m *MultiRaftSnapshotManager) LoadLastValidSnapshot(groupID ibabuza.RaftGroupID, walSnaps []walpb.Snapshot) (*raftpb.Snapshot, error) {
-	return m.getOrCreateSnapshotor(groupID).LoadLastValidSnapshot(walSnaps)
-}
-
-func (m *MultiRaftSnapshotManager) CreateAtomicSnapshotWriter(groupID ibabuza.RaftGroupID, snapshotTerm, snapshotIndex uint64) (ibabuza.AtomicSnapshotWriter, error) {
-	return m.getOrCreateSnapshotor(groupID).CreateAtomicSnapshotWriter(snapshotTerm, snapshotIndex)
-}
-
-func (m *MultiRaftSnapshotManager) CreateInstalledSnapshotReader(groupID ibabuza.RaftGroupID, snapshotIndex uint64, validateFsmFiles bool) (ibabuza.SnapshotReader, error) {
-	return m.getOrCreateSnapshotor(groupID).CreateInstalledSnapshotReader(snapshotIndex, validateFsmFiles)
-}
-
-func (m *MultiRaftSnapshotManager) CreateAtomicSnapshotReceiver(groupID ibabuza.RaftGroupID, metadata babuzapb.SnapshotMetadata) (ibabuza.AtomicSnapshotReceiver, error) {
-	return m.getOrCreateSnapshotor(groupID).CreateAtomicSnapshotReceiver(metadata)
+	snapshotManagers := make(map[ibabuza.RaftGroupID]ibabuza.SnapshotManager)
+	for _, id := range groupIDs {
+		s := m.createSnapshotor(id)
+		if err := s.ScanInstalledSnapshots(removeUnfinishedSnapshotDir); err != nil {
+			return nil, err
+		}
+		snapshotManagers[id] = s
+	}
+	return snapshotManagers, nil
 }
 
 func (m *MultiRaftSnapshotManager) RemoveData(groupID ibabuza.RaftGroupID) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	snapshotor, exists := m.snapshotorMap[groupID]
-	if exists {
-		if err := snapshotor.Close(); err != nil {
-			m.logger.Errorf("failed to close snapshotor for group %d: %v", groupID, err)
-		}
-		delete(m.snapshotorMap, groupID)
-	}
-
 	groupSnapshotDir := m.getGroupSnapshotDir(groupID)
 	if m.fs.ExistDir(groupSnapshotDir) {
 		if err := m.fs.RemoveDir(groupSnapshotDir); err != nil {
@@ -101,11 +67,32 @@ func (m *MultiRaftSnapshotManager) RemoveData(groupID ibabuza.RaftGroupID) error
 	return nil
 }
 
-func (m *MultiRaftSnapshotManager) Purge(groupID ibabuza.RaftGroupID, snapshot raftpb.Snapshot) error {
-	return m.getOrCreateSnapshotor(groupID).Purge(snapshot)
+func (m *MultiRaftSnapshotManager) Purger() ibabuza.SnapshotPurger {
+	return &multiRaftPurger{
+		MultiRaftSnapshotManager: m,
+	}
 }
 
-func (m *MultiRaftSnapshotManager) GetGroupSnapshot(groupID ibabuza.RaftGroupID) ibabuza.SnapshotManager {
+type multiRaftPurger struct {
+	*MultiRaftSnapshotManager
+}
+
+func (m *multiRaftPurger) Start() {
+	go func() {
+		for {
+			select {
+			case req := <-m.purgeRequestCh:
+				if err := m.createSnapshotor(req.groupID).purgeSnapshot(req.snapshot); err != nil {
+					m.logger.Errorf("failed to purge snapshot for group %d: %v", req.groupID, err)
+				}
+			case <-m.stopCh:
+				return
+			}
+		}
+	}()
+}
+
+func (m *MultiRaftSnapshotManager) CreateSnapshotManager(groupID ibabuza.RaftGroupID) ibabuza.SnapshotManager {
 
 	snapshotDir := m.getGroupSnapshotDir(groupID)
 	_, ok := m.fs.(*durable.SnapshotFS)
@@ -117,20 +104,15 @@ func (m *MultiRaftSnapshotManager) GetGroupSnapshot(groupID ibabuza.RaftGroupID)
 		}
 
 	}
-	return m.getOrCreateSnapshotor(groupID)
+	return m.createSnapshotor(groupID)
 }
 
 func (m *MultiRaftSnapshotManager) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var lastErr error
-	for groupID, snapshotor := range m.snapshotorMap {
-		if err := snapshotor.Close(); err != nil {
-			m.logger.Errorf("failed to close snapshotor for group %d: %v", groupID, err)
-			lastErr = err
-		}
+	select {
+	case <-m.stopCh:
+		return nil
+	default:
+		close(m.stopCh)
 	}
-	m.snapshotorMap = make(map[ibabuza.RaftGroupID]*Snapshotor)
-	return lastErr
+	return nil
 }

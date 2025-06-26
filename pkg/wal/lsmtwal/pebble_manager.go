@@ -13,6 +13,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"sync"
 )
 
 type PebbleWalManager struct {
@@ -21,6 +22,7 @@ type PebbleWalManager struct {
 	keyPrefix    *keyPrefix
 	purgerSnapCh chan purgeRequest
 	purgerStopCh chan struct{}
+	once         sync.Once
 }
 
 var _ ibabuza.WalManager = (*PebbleWalManager)(nil)
@@ -118,8 +120,7 @@ func (m *PebbleWalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.Ent
 	return es, w, nil
 }
 
-func (m *PebbleWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (
-	ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
+func (m *PebbleWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (ibabuza.ReplayWalResult, ibabuza.EntryStorage, ibabuza.Wal, error) {
 
 	var hardState raftpb.HardState
 	var metadata []byte
@@ -204,7 +205,7 @@ func (m *PebbleWalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitte
 		return nil, nil, nil, err
 	}
 	w := NewPebbleWal(m.db, es, m.keyPrefix, m.purgerSnapCh)
-	return es, w, result, nil
+	return result, es, w, nil
 }
 
 func (m *PebbleWalManager) HasExistingWals() (bool, error) {
@@ -239,18 +240,20 @@ type pebblePurger struct {
 }
 
 func (p *pebblePurger) Start() {
-	go func() {
-		for {
-			select {
-			case req := <-p.purgerSnapCh:
-				if err := p.purgeSnapshot(req.snapshot); err != nil {
-					p.logger.Errorf("failed to purge snapshot index=%d: %v", req.snapshot.Metadata.Index, err)
+	p.once.Do(func() {
+		go func() {
+			for {
+				select {
+				case req := <-p.purgerSnapCh:
+					if err := p.purgeSnapshot(req.snapshot); err != nil {
+						p.logger.Errorf("failed to purge snapshot index=%d: %v", req.snapshot.Metadata.Index, err)
+					}
+				case <-p.purgerStopCh:
+					return
 				}
-			case <-p.purgerStopCh:
-				return
 			}
-		}
-	}()
+		}()
+	})
 }
 
 func (p *pebblePurger) purgeSnapshot(snapshot raftpb.Snapshot) error {

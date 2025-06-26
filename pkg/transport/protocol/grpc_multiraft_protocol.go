@@ -92,7 +92,7 @@ func (g *GrpcMultiRaft) Setup(cfg ibabuza.TransportConfig) error {
 	return nil
 }
 
-func (g *GrpcMultiRaft) CreateServer(handler ibabuza.MultiRaftNodeHandler) (ibabuza.TransportServer, error) {
+func (g *GrpcMultiRaft) CreateServer(handler ibabuza.MultiRaftStoreHandler) (ibabuza.TransportServer, error) {
 	return transGrpc.NewMultiRaftMsgServer(g.config, g.network, handler, g.logger), nil
 }
 

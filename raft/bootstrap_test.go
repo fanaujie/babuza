@@ -368,7 +368,7 @@ func TestBootstrap_ListRaftConfChangeAddNodeIds(t *testing.T) {
 		return UInt64Slice{2, 3}
 	}()
 
-	_, w, result, err := ws.ReplayWal(nil, false)
+	result, _, w, err := ws.ReplayWal(nil, false)
 	assert.Nil(t, err)
 	assert.Nil(t, w.Close())
 
@@ -424,7 +424,7 @@ func TestBootstrap_CreateRaftConfigChangeEntries(t *testing.T) {
 			assert.Nil(t, w.Close())
 		}()
 
-		_, w, result, err := ws.ReplayWal(nil, true)
+		result, _, w, err := ws.ReplayWal(nil, true)
 		assert.Nil(t, err)
 		assert.Nil(t, w.Close())
 		st := result.HardState()
@@ -463,7 +463,7 @@ func TestBootstrap_CreateRaftConfigChangeEntries(t *testing.T) {
 			assert.Nil(t, w.Close())
 		}()
 
-		_, w, result, err := ws.ReplayWal(nil, true)
+		result, _, w, err := ws.ReplayWal(nil, true)
 		assert.Nil(t, err)
 		assert.Nil(t, w.Close())
 		st := result.HardState()

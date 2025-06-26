@@ -30,13 +30,17 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig PeersConfigurat
 	cluster ibabuza.Cluster, raftNode ibabuza.RaftNode, sessions ibabuza.SessionManager, snapshotManager ibabuza.SnapshotManager,
 	walManager ibabuza.WalManager, trans ibabuza.Transport, logger ibabuza.Logger, metricsController ibabuza.MetricsCollector) (*BootstrapRaftCluster, error) {
 
-	bootStorage, err := newBootstrapStorage(stateMachine, snapshotManager, walManager)
+	bsmInfo, err := NewBasedStateMachineInfo(stateMachine)
 	if err != nil {
 		return nil, err
 	}
-	if err = sessions.SetResponseSerializer(bootStorage.GetApplyResultSerializer()); err != nil {
-		return nil, err
+	if bsmInfo.supportSession {
+		responseSerializer := stateMachine.(ibabuza.SessionEnabledStateMachine).GetResponseSerializer()
+		if err = sessions.SetResponseSerializer(responseSerializer); err != nil {
+			return nil, err
+		}
 	}
+
 	if err = trans.SetupTransportConfig(ibabuza.TransportConfig{
 		LocalNodeID: cfg.LocalPeerID,
 		PeerAddress: cfg.RaftListenAddress,
@@ -48,25 +52,22 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig PeersConfigurat
 	cluster.SetLocalPeerID(cfg.LocalPeerID)
 	raftStatus := status.New()
 	var node raft.Node
-	if exist, err := bootStorage.HasExistingWalFiles(); err != nil {
+	var storage RaftStorage
+	if exist, err := walManager.HasExistingWals(); err != nil {
 		return nil, err
 	} else if exist {
-		if err = bootStorage.ScanInstalledSnapshot(); err != nil {
+		if err = snapshotManager.ScanInstalledSnapshots(true); err != nil {
 			return nil, err
 		}
-		node, err = restartNode(cfg, raftNode, cluster, sessions, bootStorage, trans, raftStatus, logger)
+		node, storage, err = restartNode(cfg, raftNode, cluster, sessions, stateMachine, bsmInfo, walManager, snapshotManager, trans, raftStatus, logger)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		node, err = startNode(cfg, votingPeersConfig, raftNode, bootStorage, trans, logger)
+		node, storage, err = startNode(cfg, votingPeersConfig, raftNode, stateMachine, bsmInfo, walManager, snapshotManager, trans, logger)
 		if err != nil {
 			return nil, err
 		}
-	}
-	storage, err := bootStorage.GetRaftStorage()
-	if err != nil {
-		return nil, err
 	}
 	return &BootstrapRaftCluster{
 		cluster:          cluster,
@@ -184,12 +185,12 @@ func NewBootstrapRaftCluster(cfg BabuzaConfig, votingPeersConfig PeersConfigurat
 //}
 
 func startNode(cfg BabuzaConfig, configuration PeersConfiguration, raftNode ibabuza.RaftNode,
-	bootstrapStorage BootstrapStorage, trans ibabuza.Transport, logger ibabuza.Logger) (raft.Node, error) {
+	stateMachine ibabuza.BaseStateMachine, bsmInfo *BasedStateMachineInfo, walManager ibabuza.WalManager, snapshotManager ibabuza.SnapshotManager, trans ibabuza.Transport, logger ibabuza.Logger) (raft.Node, RaftStorage, error) {
 	var peers []raft.Peer
 	var err error
 
 	if err = configuration.Validate(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, raftPeerAttr := range configuration.RaftPeersAttribute() {
 		if raftPeerAttr.PeerID != cfg.LocalPeerID {
@@ -207,24 +208,18 @@ func startNode(cfg BabuzaConfig, configuration PeersConfiguration, raftNode ibab
 			defer cancel()
 			return configuration.MatchRemoteCluster(ctx, cfg.ClusterID, cfg.LocalPeerID, 0, client)
 		}(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	if err = bootstrapStorage.CreateWal(babuzapb.WalMetadata{
+	entryStorage, wal, err := walManager.CreateWal(babuzapb.WalMetadata{
 		ClusterID:   cfg.ClusterID,
 		LocalPeerID: cfg.LocalPeerID,
-	}); err != nil {
-		return nil, err
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 	if cfg.EnableWalNoSync {
-		err = bootstrapStorage.SetWalNoFSync()
-		if err != nil {
-			return nil, err
-		}
-	}
-	entryStorage, err := bootstrapStorage.GetEntryStorage()
-	if err != nil {
-		return nil, err
+		wal.SetUnsafeNoFsync()
 	}
 	raftCfg := cfg.convertToRaftConfig(logger, entryStorage)
 	// Join logic:
@@ -233,64 +228,116 @@ func startNode(cfg BabuzaConfig, configuration PeersConfiguration, raftNode ibab
 	// When false: It indicates starting a new raft group from scratch.
 	if cfg.Join {
 		// as a learner node will not start raft node
-		return raftNode.Restart(raftCfg)
+		node, err := raftNode.Restart(raftCfg)
+		if err != nil {
+			return nil, nil, err
+		}
+		storage := &raftStorage{
+			snapshotor:   snapshotManager,
+			wal:          wal,
+			entryStorage: entryStorage,
+			stateMachine: stateMachine,
+			bsmInfo:      bsmInfo,
+		}
+		return node, storage, nil
 	}
 	peers, err = configuration.ToRaftPeers()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return raftNode.Start(raftCfg, peers)
+	node, err := raftNode.Start(raftCfg, peers)
+	if err != nil {
+		return nil, nil, err
+	}
+	storage := &raftStorage{
+		snapshotor:   snapshotManager,
+		wal:          wal,
+		entryStorage: entryStorage,
+		stateMachine: stateMachine,
+		bsmInfo:      bsmInfo,
+	}
+	return node, storage, nil
 }
 
 func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cluster, sessions ibabuza.SessionManager,
-	bootstrapStorage BootstrapStorage, trans ibabuza.Transport, status ibabuza.Status, logger ibabuza.Logger) (raft.Node, error) {
+	stateMachine ibabuza.BaseStateMachine, bsmInfo *BasedStateMachineInfo, walManager ibabuza.WalManager,
+	snapshotManager ibabuza.SnapshotManager, trans ibabuza.Transport, status ibabuza.Status, logger ibabuza.Logger) (raft.Node, RaftStorage, error) {
 
 	//TODO: verify snap and wal match
-	walSnapshots, err := bootstrapStorage.FindSnapshotFromWal()
+	walSnapshots, err := walManager.FindSnapshot()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	snap, err := bootstrapStorage.LoadLastValidFromSnapshot(walSnapshots)
+	snap, err := snapshotManager.LoadLastValidSnapshot(walSnapshots)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	walReplayResult, err := bootstrapStorage.OpenWalAndReplay(snap, false)
+	walReplayResult, entryStorage, wal, err := walManager.ReplayWal(snap, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var metadata babuzapb.WalMetadata
 	if err = metadata.Unmarshal(walReplayResult.Metadata()); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	cluster.SetClusterID(metadata.ClusterID)
 	cluster.SetLocalPeerID(metadata.LocalPeerID)
-	entryStorage, err := bootstrapStorage.GetEntryStorage()
-	if err != nil {
-		return nil, err
-	}
 	hs, _, err := entryStorage.InitialState()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	status.SetHardStateTerm(hs.Term)
 	status.SetCommittedIndex(hs.Commit)
 	if cfg.EnableWalNoSync {
-		bootstrapStorage.SetWalNoFSync()
+		wal.SetUnsafeNoFsync()
 	}
-	if err = bootstrapStorage.OpenStateMachine(snap); err != nil {
-		return nil, err
+	restoreStateMachine := func() error {
+		reader, err := snapshotManager.CreateInstalledSnapshotReader(snap.Metadata.Index, false)
+		if err != nil {
+			return err
+		}
+		if err = stateMachine.RestoreFromSnapshot(reader); err != nil {
+			return err
+		}
+		bsmInfo.SetOpenAppliedIndex(snap.Metadata.Index)
+		return nil
 	}
-	storage, err := bootstrapStorage.GetRaftStorage()
-	if err != nil {
-		return nil, err
+	if bsmInfo.diskType {
+		diskAppliedIndex, rebuildStateMachine := stateMachine.(ibabuza.DiskStateMachine).Open()
+		if rebuildStateMachine {
+			if snap != nil {
+				if err = restoreStateMachine(); err != nil {
+					return nil, nil, err
+				}
+			}
+		} else {
+			if snap != nil && diskAppliedIndex < snap.Metadata.Index {
+				return nil, nil, fmt.Errorf("storage: on disk applied index (%d) is less than snapshot index (%d)",
+					diskAppliedIndex, snap.Metadata.Index)
+			}
+			bsmInfo.SetOpenAppliedIndex(diskAppliedIndex)
+		}
+	} else {
+		if snap != nil {
+			if err = restoreStateMachine(); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	storage := &raftStorage{
+		snapshotor:   snapshotManager,
+		wal:          wal,
+		entryStorage: entryStorage,
+		stateMachine: stateMachine,
+		bsmInfo:      bsmInfo,
 	}
 	if snap != nil {
 		if err = storage.RestoreFromSnapshot(snap.Metadata.Index, false, cluster, sessions); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if cluster.ClusterID() != cfg.ClusterID || cluster.LocalPeerID() != cfg.LocalPeerID {
-			return nil, fmt.Errorf("bootstrap: mistach configuration (clusterID=%d, restore clusterID=%d, localPeerID=%d, restore localPeerID=%d) ",
+			return nil, nil, fmt.Errorf("bootstrap: mistach configuration (clusterID=%d, restore clusterID=%d, localPeerID=%d, restore localPeerID=%d) ",
 				cfg.ClusterID, cluster.ClusterID(), cfg.LocalPeerID, cluster.LocalPeerID())
 		}
 		for _, p := range cluster.Peers() {
@@ -300,12 +347,16 @@ func restartNode(cfg BabuzaConfig, raftNode ibabuza.RaftNode, cluster ibabuza.Cl
 		status.SetAppliedTerm(snap.Metadata.Term)
 		status.SetSnapshotIndex(snap.Metadata.Index)
 		status.SetConfState(snap.Metadata.ConfState)
-		// For disk-type state machines, if not rebuilt, set the status appliedIndex to openAppliedIndex
-		if storage.GetBasedStateMachineInfo().OpenAppliedIndex() > snap.Metadata.Index {
-			status.SetAppliedIndex(snap.Metadata.Index)
+		// For disk-type state machines, if not rebuilt, set the status appliedIndex to OpenAppliedIndex
+		if bsmInfo.OpenAppliedIndex() > snap.Metadata.Index {
+			status.SetAppliedIndex(bsmInfo.OpenAppliedIndex())
 		}
 	}
-	return raftNode.Restart(cfg.convertToRaftConfig(logger, entryStorage))
+	node, err := raftNode.Restart(cfg.convertToRaftConfig(logger, entryStorage))
+	if err != nil {
+		return nil, nil, err
+	}
+	return node, storage, nil
 }
 
 func listRaftConfChangeAddNodeIds(snap *raftpb.Snapshot, result ibabuza.ReplayWalResult) (UInt64Slice, error) {

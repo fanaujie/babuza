@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-// mockMultiRaftProcessor implements the ibabuza.MultiRaftNodeHandler interface for testing
+// mockMultiRaftProcessor implements the ibabuza.MultiRaftStoreHandler interface for testing
 type mockMultiRaftProcessor struct {
 	receivedMsg      map[uint64][]raftpb.Message
 	receivedSnapMsg  map[uint64]babuzapb.SnapshotMessage

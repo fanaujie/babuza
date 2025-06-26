@@ -1,7 +1,7 @@
 package babuzawal
 
 import (
-	"errors"
+	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
@@ -38,11 +38,11 @@ type Wal struct {
 	currentLogFile    iwal.LogFile
 	entryIndexStorage EntryIndexStorage
 	enableNoSync      bool
-	purgerCh          chan raftpb.Snapshot
+	purgerCh          chan walCleanupContext
 	mu                sync.Mutex
 }
 
-func CreateWal(metadata []byte, logMgr iwal.LogFileManager, purgerCh chan raftpb.Snapshot) (*Wal, error) {
+func CreateWal(metadata []byte, logMgr iwal.LogFileManager, purgerCh chan walCleanupContext) (*Wal, error) {
 	startLogId := uint64(0)
 	startLogIndex := uint64(0)
 
@@ -95,7 +95,7 @@ func CreateWal(metadata []byte, logMgr iwal.LogFileManager, purgerCh chan raftpb
 	}, nil
 }
 
-func OpenWal(logMgr iwal.LogFileManager, lastLogMeta iwal.ReplayLastLogFileResult, purgerCh chan raftpb.Snapshot) (*Wal, error) {
+func OpenWal(logMgr iwal.LogFileManager, lastLogMeta iwal.ReplayLastLogFileResult, purgerCh chan walCleanupContext) (*Wal, error) {
 	logWriter, err := logMgr.OpenLogFile(lastLogMeta.LastLogFileDesc().Id, lastLogMeta.LastValidLogOffset(),
 		lastLogMeta.LastValidLogCrc())
 	if err != nil {
@@ -169,7 +169,10 @@ func (w *Wal) SaveSnapshot(snapshot raftpb.Snapshot) error {
 
 func (w *Wal) Purge(snap raftpb.Snapshot) error {
 	if w.purgerCh != nil {
-		w.purgerCh <- snap
+		w.purgerCh <- walCleanupContext{
+			snapshot: snap,
+			logMgr:   w.logMgr,
+		}
 	}
 	return nil
 }
@@ -181,20 +184,17 @@ func (w *Wal) Sync() error {
 func (w *Wal) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	var errs []error
+	errs := multierror.New()
 	if err := w.currentLogFile.Sync(!w.enableNoSync); err != nil {
 		return err
 	}
 	if err := w.currentLogFile.Close(); err != nil {
-		errs = append(errs, err)
+		errs.Append(err)
 	}
 	if err := w.logMgr.Close(); err != nil {
-		errs = append(errs, err)
+		errs.Append(err)
 	}
-	if len(errs) == 0 {
-		return nil
-	}
-	return errors.New("")
+	return errs.Get()
 }
 
 func (w *Wal) SetEntryIndexStorage(es EntryIndexStorage) {

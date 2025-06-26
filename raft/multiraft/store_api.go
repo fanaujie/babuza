@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/pkg/errors"
@@ -29,7 +30,8 @@ func (info *RaftGroupPeersInfo) IsLeader() bool {
 type Store struct {
 	config                  StoreConfig
 	trans                   ibabuza.MultiRaftTransport
-	storage                 BootstrapStorage
+	walManager              ibabuza.MultiRaftWalManager
+	snapshotManager         ibabuza.MultiRaftSnapshotManager
 	factory                 ComponentsFactory
 	logger                  ibabuza.Logger
 	scheduler               Scheduler
@@ -50,7 +52,8 @@ func (s *Store) Start() error {
 		return babuza.ErrStopped
 	}
 	var err error
-	s.storage.StartPurgingProcess()
+	s.walManager.Purger().Start()
+	s.snapshotManager.Purger().Start()
 	tp := &transportProcessor{
 		Store: s,
 	}
@@ -113,7 +116,8 @@ func (s *Store) Stop() {
 		value.Dispose()
 		return true
 	})
-	s.storage.Close()
+	_ = s.walManager.Close()
+	_ = s.snapshotManager.Close()
 	s.replicaSet = nil
 	s.requestQueues = nil
 }
@@ -488,7 +492,11 @@ func (s *Store) RemoveData(groupID ibabuza.RaftGroupID) error {
 	if ok {
 		return errors.Errorf("Store[%d] raft group %d is still running, can not remove data", s.config.StoreID, groupID)
 	}
-	return s.storage.RemoveData(groupID)
+	// remove data is idempotence，if the group data is not found, it will not return an error.
+	mErr := multierror.New()
+	mErr.Append(s.walManager.RemoveData(groupID))
+	mErr.Append(s.snapshotManager.RemoveData(groupID))
+	return mErr.Get()
 }
 
 func (s *Store) getReplica(groupID ibabuza.RaftGroupID) (*replica, error) {

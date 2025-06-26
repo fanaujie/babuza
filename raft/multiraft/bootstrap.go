@@ -30,14 +30,32 @@ type ComponentsFactory interface {
 	GetLogger() ibabuza.Logger
 }
 
+func setupStateMachineAndSession(factory ComponentsFactory, stateMachineRootDir string, groupID ibabuza.RaftGroupID, replicaSession ibabuza.SessionManager) (ibabuza.BaseStateMachine, *babuza.BasedStateMachineInfo, error) {
+	basedStateMachine, err := factory.CreateStateMachine(stateMachineRootDir, groupID)
+	if err != nil {
+		return nil, nil, err
+	}
+	bsmInfo, err := babuza.NewBasedStateMachineInfo(basedStateMachine)
+	if err != nil {
+		return nil, nil, err
+	}
+	var responseSerializer ibabuza.ResponseSerializer
+	if bsmInfo.SupportSession() {
+		responseSerializer = basedStateMachine.(ibabuza.SessionEnabledStateMachine).GetResponseSerializer()
+	}
+	if err = replicaSession.SetResponseSerializer(responseSerializer); err != nil {
+		return nil, nil, err
+	}
+	return basedStateMachine, bsmInfo, nil
+}
+
 func BootstrapOrRecoverStore(cfg StoreConfig, factory ComponentsFactory, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
 	snapshotManager ibabuza.MultiRaftSnapshotManager, raftListener ibabuza.MultiRaftListener) (*Store, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	stateMachineRootDir := filepath.Join(cfg.StoreHostDir, stateMachineDir)
+
 	logger := factory.GetLogger()
-	storage := newBootstrapStorage(stateMachineRootDir, factory, walManager, snapshotManager, logger)
 	if err := trans.SetupTransportConfig(ibabuza.TransportConfig{
 		LocalNodeID: cfg.StoreID,
 		PeerAddress: cfg.RaftListenAddress,
@@ -45,40 +63,47 @@ func BootstrapOrRecoverStore(cfg StoreConfig, factory ComponentsFactory, trans i
 	}); err != nil {
 		return nil, err
 	}
-	if groupIDs, err := storage.HasExistingWalFiles(); err != nil {
+	if groupIDs, err := walManager.HasExistingWals(); err != nil {
 		return nil, err
 	} else if len(groupIDs) > 0 {
-		if err = storage.ScanInstalledSnapshot(groupIDs); err != nil {
+		installSnapshots, err := snapshotManager.ScanInstalledSnapshots(groupIDs, true)
+		if err != nil {
 			return nil, err
 		}
-		return restartStore(cfg, groupIDs, trans, storage, factory, logger, raftListener)
+		return restartStore(cfg, groupIDs, trans, walManager, snapshotManager, installSnapshots, factory, logger, raftListener)
 
 	}
-	return startStore(cfg, trans, storage, factory, logger, raftListener)
+	return startStore(cfg, trans, walManager, snapshotManager, factory, logger, raftListener)
 }
 
-func startStore(config StoreConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory,
-	logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) (*Store, error) {
-	return newStore(config, trans, storage, factory, logger, raftListener), nil
+func startStore(config StoreConfig, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
+	snapManager ibabuza.MultiRaftSnapshotManager, factory ComponentsFactory, logger ibabuza.Logger,
+	raftListener ibabuza.MultiRaftListener) (*Store, error) {
+	return newStore(config, trans, walManager, snapManager, factory, logger, raftListener), nil
 }
 
 func restartStore(config StoreConfig, restartGroupIDs []ibabuza.RaftGroupID, trans ibabuza.MultiRaftTransport,
-	storage BootstrapStorage, factory ComponentsFactory, logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) (*Store, error) {
+	walManager ibabuza.MultiRaftWalManager, snapManager ibabuza.MultiRaftSnapshotManager, installSnapshots map[ibabuza.RaftGroupID]ibabuza.SnapshotManager,
+	factory ComponentsFactory, logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) (*Store, error) {
 
-	n := newStore(config, trans, storage, factory, logger, raftListener)
+	n := newStore(config, trans, walManager, snapManager, factory, logger, raftListener)
 
 	for _, groupID := range restartGroupIDs {
 		replicaCluster := factory.CreateCluster()
 		replicaStatus := status.New()
-		walSnapshots, err := storage.FindSnapshotFromWal(groupID)
+		walSnapshots, err := walManager.FindSnapshot(groupID)
 		if err != nil {
 			return nil, err
 		}
-		snap, err := storage.LoadLastValidFromSnapshot(groupID, walSnapshots)
+		installSnap, ok := installSnapshots[groupID]
+		if !ok {
+			return nil, fmt.Errorf("no installed snapshot found for groupID %d", groupID)
+		}
+		snapshot, err := installSnap.LoadLastValidSnapshot(walSnapshots)
 		if err != nil {
 			return nil, err
 		}
-		walReplayResult, err := storage.OpenWalAndReplay(groupID, snap, false)
+		walReplayResult, entryStorage, wal, err := walManager.ReplayWal(groupID, snapshot, false)
 		if err != nil {
 			return nil, err
 		}
@@ -93,10 +118,6 @@ func restartStore(config StoreConfig, restartGroupIDs []ibabuza.RaftGroupID, tra
 		replicaCluster.SetClusterID(metadata.ClusterID)
 		replicaCluster.SetLocalPeerID(metadata.LocalPeerID)
 		replicaCluster.SetGroupID(groupID)
-		entryStorage, err := storage.GetEntryStorage(groupID)
-		if err != nil {
-			return nil, err
-		}
 		hs, _, err := entryStorage.InitialState()
 		if err != nil {
 			return nil, err
@@ -104,21 +125,54 @@ func restartStore(config StoreConfig, restartGroupIDs []ibabuza.RaftGroupID, tra
 		replicaStatus.SetHardStateTerm(hs.Term)
 		replicaStatus.SetCommittedIndex(hs.Commit)
 
-		applyResultSerializer, err := storage.OpenStateMachine(groupID, snap)
+		//create session
+		replicaSession := factory.CreateSessionManager()
+		stateMachineRootDir := filepath.Join(config.StoreHostDir, stateMachineDir)
+		basedStateMachine, bsmInfo, err := setupStateMachineAndSession(factory, stateMachineRootDir, groupID, replicaSession)
 		if err != nil {
 			return nil, err
 		}
-		//create session
-		replicaSession := factory.CreateSessionManager()
-		if err = replicaSession.SetResponseSerializer(applyResultSerializer); err != nil {
-			return nil, err
-		}
-		if snap != nil {
-			replicaStorage, err := storage.GetReplicaStorage(groupID)
+		restoreStateMachine := func() error {
+			reader, err := installSnap.CreateInstalledSnapshotReader(snapshot.Metadata.Index, false)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			if err = replicaStorage.RestoreFromSnapshot(snap.Metadata.Index, false, replicaCluster,
+			if err = basedStateMachine.RestoreFromSnapshot(reader); err != nil {
+				return err
+			}
+			bsmInfo.SetOpenAppliedIndex(snapshot.Metadata.Index)
+			return nil
+		}
+
+		if bsmInfo.IsDiskType() {
+			diskAppliedIndex, rebuildStateMachine := basedStateMachine.(ibabuza.DiskStateMachine).Open()
+			if rebuildStateMachine {
+				if snapshot != nil {
+					if err = restoreStateMachine(); err != nil {
+						return nil, err
+					}
+				}
+				bsmInfo.SetOpenAppliedIndex(diskAppliedIndex)
+			} else {
+				if snapshot != nil && diskAppliedIndex < snapshot.Metadata.Index {
+					return nil, fmt.Errorf("storage: on disk applied index (%d) is less than snapshot index (%d)",
+						diskAppliedIndex, snapshot.Metadata.Index)
+
+				}
+				// open state machine is successful
+				bsmInfo.SetOpenAppliedIndex(diskAppliedIndex)
+			}
+		} else {
+			if snapshot != nil {
+				if err = restoreStateMachine(); err != nil {
+					return nil, err
+				}
+			}
+		}
+
+		replicaStorage := babuza.NewRaftStorage(installSnap, wal, entryStorage, basedStateMachine, bsmInfo)
+		if snapshot != nil {
+			if err = replicaStorage.RestoreFromSnapshot(snapshot.Metadata.Index, false, replicaCluster,
 				replicaSession); err != nil {
 				return nil, err
 			}
@@ -130,22 +184,17 @@ func restartStore(config StoreConfig, restartGroupIDs []ibabuza.RaftGroupID, tra
 			for _, p := range replicaCluster.Peers() {
 				trans.AddPeer(groupID, p.RaftPeerAttr.PeerID, p.RaftPeerAttr.RaftListenAddr)
 			}
-			replicaStatus.SetAppliedIndex(snap.Metadata.Index)
-			replicaStatus.SetAppliedTerm(snap.Metadata.Term)
-			replicaStatus.SetSnapshotIndex(snap.Metadata.Index)
-			replicaStatus.SetConfState(snap.Metadata.ConfState)
+			replicaStatus.SetAppliedIndex(snapshot.Metadata.Index)
+			replicaStatus.SetAppliedTerm(snapshot.Metadata.Term)
+			replicaStatus.SetSnapshotIndex(snapshot.Metadata.Index)
+			replicaStatus.SetConfState(snapshot.Metadata.ConfState)
 			// For disk-type state machines, if not rebuilt, set the status appliedIndex to openAppliedIndex
-			if replicaStorage.GetBasedStateMachineInfo().OpenAppliedIndex() > snap.Metadata.Index {
-				replicaStatus.SetAppliedIndex(snap.Metadata.Index)
+			if bsmInfo.OpenAppliedIndex() > snapshot.Metadata.Index {
+				replicaStatus.SetAppliedIndex(snapshot.Metadata.Index)
 			}
 		}
 		if config.EnableWalNoSync {
-			_ = storage.SetWalNoFSync(groupID)
-		}
-
-		replicaStorage, err := storage.GetReplicaStorage(groupID)
-		if err != nil {
-			return nil, err
+			wal.SetUnsafeNoFsync()
 		}
 		replicaRaftConfig := ReplicaRaftConfig{
 			EnableWalNoSync:              config.EnableWalNoSync,
@@ -208,19 +257,21 @@ func restartStore(config StoreConfig, restartGroupIDs []ibabuza.RaftGroupID, tra
 	return n, nil
 }
 
-func newStore(config StoreConfig, trans ibabuza.MultiRaftTransport, storage BootstrapStorage, factory ComponentsFactory,
+func newStore(config StoreConfig, trans ibabuza.MultiRaftTransport, walManager ibabuza.MultiRaftWalManager,
+	snapManager ibabuza.MultiRaftSnapshotManager, factory ComponentsFactory,
 	logger ibabuza.Logger, raftListener ibabuza.MultiRaftListener) *Store {
 	closer := syncutil.NewCloser()
 	s := &Store{
-		config:        config,
-		trans:         trans,
-		storage:       storage,
-		factory:       factory,
-		logger:        logger,
-		raftListener:  raftListener,
-		closer:        closer,
-		replicaSet:    xsync.NewMap[ibabuza.RaftGroupID, *replica](),
-		requestQueues: xsync.NewMap[ibabuza.RaftGroupID, *replicaRequestQueue](),
+		config:          config,
+		trans:           trans,
+		walManager:      walManager,
+		snapshotManager: snapManager,
+		factory:         factory,
+		logger:          logger,
+		raftListener:    raftListener,
+		closer:          closer,
+		replicaSet:      xsync.NewMap[ibabuza.RaftGroupID, *replica](),
+		requestQueues:   xsync.NewMap[ibabuza.RaftGroupID, *replicaRequestQueue](),
 		coalescedHeartbeatQueue: &coalescedHeartbeatQueue{
 			heartbeatMsg:               xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
 			heartbeatRespMsg:           xsync.NewMap[string, *queue.SwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage]](),
@@ -266,12 +317,9 @@ func bootstrapReplicaWithConfiguration(store *Store, configuration *PeersConfigu
 	replicaStatus := status.New()
 
 	replicaSession := store.factory.CreateSessionManager()
-
-	responseSerializer, err := store.storage.CreateStateMachine(groupID)
+	stateMachineRootDir := filepath.Join(store.config.StoreHostDir, stateMachineDir)
+	basedStateMachine, bsmInfo, err := setupStateMachineAndSession(store.factory, stateMachineRootDir, groupID, replicaSession)
 	if err != nil {
-		return nil, err
-	}
-	if err = replicaSession.SetResponseSerializer(responseSerializer); err != nil {
 		return nil, err
 	}
 	for _, raftPeerAttr := range configuration.RaftPeersAttribute() {
@@ -294,22 +342,16 @@ func bootstrapReplicaWithConfiguration(store *Store, configuration *PeersConfigu
 			return nil, err
 		}
 	}
-	if err = store.storage.CreateWal(groupID, babuzapb.WalMetadata{
+	entryStorage, wal, err := store.walManager.CreateWal(groupID, babuzapb.WalMetadata{
 		ClusterID:   store.config.ClusterID,
 		LocalPeerID: localPeerID,
 		GroupID:     uint64(groupID),
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
 	if store.config.EnableWalNoSync {
-		err = store.storage.SetWalNoFSync(groupID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	entryStorage, err := store.storage.GetEntryStorage(groupID)
-	if err != nil {
-		return nil, err
+		wal.SetUnsafeNoFsync()
 	}
 	replicaRaftConfig := ReplicaRaftConfig{
 		EnableWalNoSync:              store.config.EnableWalNoSync,
@@ -342,10 +384,7 @@ func bootstrapReplicaWithConfiguration(store *Store, configuration *PeersConfigu
 	}
 	firstCommitInTermNotifier := syncutil.NewEventSignal()
 	resultReplier := replier.NewResult[ibabuza.ApplyResult]()
-	replicaStorage, err := store.storage.GetReplicaStorage(groupID)
-	if err != nil {
-		return nil, err
-	}
+	replicaStorage := babuza.NewRaftStorage(store.snapshotManager.CreateSnapshotManager(groupID), wal, entryStorage, basedStateMachine, bsmInfo)
 	appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
 		resultReplier, replicaCluster, &callbackProcessor{store}, store.trans, nil,
 		store.logger, metrics.NewMockMetricsCollector())
@@ -400,31 +439,22 @@ func newReplicaWithoutConfiguration(store *Store, groupID ibabuza.RaftGroupID, l
 	replicaStatus := status.New()
 
 	replicaSession := store.factory.CreateSessionManager()
-
-	responseSerializer, err := store.storage.CreateStateMachine(groupID)
+	stateMachineRootDir := filepath.Join(store.config.StoreHostDir, stateMachineDir)
+	basedStateMachine, bsmInfo, err := setupStateMachineAndSession(store.factory, stateMachineRootDir, groupID, replicaSession)
 	if err != nil {
 		return nil, err
 	}
-	if err = replicaSession.SetResponseSerializer(responseSerializer); err != nil {
-		return nil, err
-	}
 
-	if err = store.storage.CreateWal(groupID, babuzapb.WalMetadata{
+	entryStorage, wal, err := store.walManager.CreateWal(groupID, babuzapb.WalMetadata{
 		ClusterID:   store.config.ClusterID,
 		LocalPeerID: localPeerID,
 		GroupID:     uint64(groupID),
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
 	if store.config.EnableWalNoSync {
-		err = store.storage.SetWalNoFSync(groupID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	entryStorage, err := store.storage.GetEntryStorage(groupID)
-	if err != nil {
-		return nil, err
+		wal.SetUnsafeNoFsync()
 	}
 	replicaRaftConfig := ReplicaRaftConfig{
 		EnableWalNoSync:              store.config.EnableWalNoSync,
@@ -444,10 +474,7 @@ func newReplicaWithoutConfiguration(store *Store, groupID ibabuza.RaftGroupID, l
 
 	firstCommitInTermNotifier := syncutil.NewEventSignal()
 	resultReplier := replier.NewResult[ibabuza.ApplyResult]()
-	replicaStorage, err := store.storage.GetReplicaStorage(groupID)
-	if err != nil {
-		return nil, err
-	}
+	replicaStorage := babuza.NewRaftStorage(store.snapshotManager.CreateSnapshotManager(groupID), wal, entryStorage, basedStateMachine, bsmInfo)
 	appliedFacade := babuza.NewAppliedFacade(firstCommitInTermNotifier, replicaSession,
 		resultReplier, replicaCluster, &callbackProcessor{store}, store.trans, nil,
 		store.logger, metrics.NewMockMetricsCollector())

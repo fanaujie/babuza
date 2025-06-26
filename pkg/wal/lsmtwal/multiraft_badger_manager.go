@@ -11,8 +11,28 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"sync"
 	"time"
 )
+
+type MultiRaftBadgerWalManager struct {
+	logger       ibabuza.Logger
+	db           *badger.DB
+	prefixCache  *keyPrefixCache
+	stopCh       chan struct{}
+	purgerSnapCh chan purgeRequest
+	purgerStopCh chan struct{}
+	once         sync.Once
+}
+
+type GroupEntryDataReader struct {
+	manager *MultiRaftBadgerWalManager
+	groupID ibabuza.RaftGroupID
+}
+
+func (r *GroupEntryDataReader) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryMetadata], destEnts []raftpb.Entry) error {
+	return r.manager.ReadEntriesData(r.groupID, readEntryIndex, destEnts)
+}
 
 func NewMultiRaftBadgerWalManager(config MultiRaftConfig, logger ibabuza.Logger) ibabuza.MultiRaftWalManager {
 	db, err := badger.Open(badger.DefaultOptions(config.WalDir).WithInMemory(config.InMemory))
@@ -115,12 +135,10 @@ func (m *MultiRaftBadgerWalManager) CreateWal(groupID ibabuza.RaftGroupID, metad
 	}); err != nil {
 		return nil, nil, err
 	}
-
 	return es, w, nil
 }
 
-func (m *MultiRaftBadgerWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (
-	ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
+func (m *MultiRaftBadgerWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snapshot *raftpb.Snapshot, deleteUncommitted bool) (ibabuza.ReplayWalResult, ibabuza.EntryStorage, ibabuza.Wal, error) {
 
 	groupPrefix := m.prefixCache.get(groupID)
 
@@ -214,7 +232,7 @@ func (m *MultiRaftBadgerWalManager) ReplayWal(groupID ibabuza.RaftGroupID, snaps
 
 	w := NewBadgerWal(m.db, es, m.prefixCache.get(groupID), m.purgerSnapCh)
 	w.SetMultiRaftPurger(groupID)
-	return es, w, result, nil
+	return result, es, w, nil
 }
 
 func (m *MultiRaftBadgerWalManager) HasExistingWals() ([]ibabuza.RaftGroupID, error) {
@@ -297,6 +315,26 @@ func (m *MultiRaftBadgerWalManager) Purger() ibabuza.WalPurger {
 func (m *MultiRaftBadgerWalManager) RemoveData(groupID ibabuza.RaftGroupID) error {
 	groupPrefix := m.prefixCache.get(groupID)
 
+	// Check if the group exists by looking for metadata
+	exists := false
+	if err := m.db.View(func(txn *badger.Txn) error {
+		_, err := txn.Get(groupPrefix.metadata)
+		if err == nil {
+			exists = true
+		} else if err != badger.ErrKeyNotFound {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// If group doesn't exist, return success (idempotent operation)
+	if !exists {
+		m.logger.Infof("Group %d does not exist, RemoveData is a no-op", groupID)
+		return nil
+	}
+
 	// Use DropPrefix for more efficient batch deletion
 	prefixes := [][]byte{
 		groupPrefix.hardState,
@@ -308,7 +346,6 @@ func (m *MultiRaftBadgerWalManager) RemoveData(groupID ibabuza.RaftGroupID) erro
 	if err := m.db.DropPrefix(prefixes...); err != nil {
 		return fmt.Errorf("failed to drop prefixes for group %d: %v", groupID, err)
 	}
-
 	m.logger.Infof("Successfully removed WAL data for group %d", groupID)
 	return nil
 }
@@ -318,18 +355,20 @@ type multiRaftBadgerPurger struct {
 }
 
 func (p *multiRaftBadgerPurger) Start() {
-	go func() {
-		for {
-			select {
-			case req := <-p.purgerSnapCh:
-				if err := p.purgeSnapshot(req.groupID, req.snapshot); err != nil {
-					p.logger.Errorf("failed to purge snapshot groupID=%d index=%d: %v", req.groupID, req.snapshot.Metadata.Index, err)
+	p.once.Do(func() {
+		go func() {
+			for {
+				select {
+				case req := <-p.purgerSnapCh:
+					if err := p.purgeSnapshot(req.groupID, req.snapshot); err != nil {
+						p.logger.Errorf("failed to purge snapshot groupID=%d index=%d: %v", req.groupID, req.snapshot.Metadata.Index, err)
+					}
+				case <-p.purgerStopCh:
+					return
 				}
-			case <-p.purgerStopCh:
-				return
 			}
-		}
-	}()
+		}()
+	})
 }
 
 func (p *multiRaftBadgerPurger) Stop() {

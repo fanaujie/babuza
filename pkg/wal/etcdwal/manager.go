@@ -84,8 +84,7 @@ func (e *WalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.EntryStor
 	return raft.NewMemoryStorage(), &wrapper, nil
 }
 
-func (e *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (
-	ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
+func (e *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (ibabuza.ReplayWalResult, ibabuza.EntryStorage, ibabuza.Wal, error) {
 
 	repaired := false
 	var walSnap walpb.Snapshot
@@ -130,7 +129,7 @@ func (e *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool
 		return nil, nil, nil, err
 	}
 	e.wal = w
-	return m, NewWalWrapper(w), result, nil
+	return result, m, NewWalWrapper(w), nil
 }
 
 func (e *WalManager) HasExistingWals() (bool, error) {

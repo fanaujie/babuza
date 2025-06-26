@@ -4,9 +4,9 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"sync"
 )
 
 type WalManager struct {
@@ -14,9 +14,9 @@ type WalManager struct {
 	options      Options
 	memPool      *allocator.ByteSlicePool
 	logger       ibabuza.Logger
-	logMgr       *logfile.Manager
-	purgerSnapCh chan raftpb.Snapshot
+	purgerSnapCh chan walCleanupContext
 	purgerStopCh chan struct{}
+	once         sync.Once
 }
 
 type Options struct {
@@ -98,7 +98,7 @@ func NewWalManager(walDir string, logger ibabuza.Logger, setOptions ...SetOption
 		options:      opts,
 		memPool:      allocator.NewByteSlicePool(opts.WalMinEntryBufferSize, opts.WalMaxEntryBufferSize, 2),
 		logger:       logger,
-		purgerSnapCh: make(chan raftpb.Snapshot, 1),
+		purgerSnapCh: make(chan walCleanupContext, 1),
 		purgerStopCh: make(chan struct{}),
 	}
 }
@@ -108,22 +108,15 @@ func (w *WalManager) FindSnapshot() ([]walpb.Snapshot, error) {
 }
 
 func (w *WalManager) CreateWal(metadata babuzapb.WalMetadata) (ibabuza.EntryStorage, ibabuza.Wal, error) {
-	es, wal, logMgr, err := createWalInternal(w.walDir, metadata, w.options, w.memPool, w.purgerSnapCh)
+	es, wal, err := createWalInternal(w.walDir, metadata, w.options, w.memPool, w.purgerSnapCh)
 	if err != nil {
 		return nil, nil, err
 	}
-	w.logMgr = logMgr
 	return es, wal, nil
 }
 
-func (w *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (
-	ibabuza.EntryStorage, ibabuza.Wal, ibabuza.ReplayWalResult, error) {
-	es, wal, logMgr, result, err := replayWalInternal(w.walDir, snapshot, deleteUncommitted, w.options, w.memPool, w.purgerSnapCh)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	w.logMgr = logMgr
-	return es, wal, result, nil
+func (w *WalManager) ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (ibabuza.ReplayWalResult, ibabuza.EntryStorage, ibabuza.Wal, error) {
+	return replayWalInternal(w.walDir, snapshot, deleteUncommitted, w.options, w.memPool, w.purgerSnapCh)
 }
 
 func (w *WalManager) HasExistingWals() (bool, error) {
@@ -150,16 +143,18 @@ type purger struct {
 }
 
 func (p *purger) Start() {
-	go func() {
-		for {
-			select {
-			case snap := <-p.purgerSnapCh:
-				if err := p.logMgr.Purge(snap.Metadata.Index); err != nil {
-					p.logger.Errorf("failed to purge snapshot index=%d: %v", snap.Metadata.Index, err)
+	p.once.Do(func() {
+		go func() {
+			for {
+				select {
+				case purgerInfo := <-p.purgerSnapCh:
+					if err := purgerInfo.logMgr.Purge(purgerInfo.snapshot.Metadata.Index); err != nil {
+						p.logger.Errorf("wal purger failed to purge snapshot index=%d: %v", purgerInfo.snapshot.Metadata.Index, err)
+					}
+				case <-p.purgerStopCh:
+					return
 				}
-			case <-p.purgerStopCh:
-				return
 			}
-		}
-	}()
+		}()
+	})
 }

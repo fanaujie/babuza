@@ -39,7 +39,7 @@ func genEntries(t *testing.T, dir string, desc iwal.LogFileDesc, count, minEntry
 		Index: 1,
 		Type:  raftpb.EntryNormal,
 	}
-	cp := allocator.NewByteSlicePool(minEntryDataSize, maxEntryDataSize, 1.5)
+	cp := allocator.NewByteSlicePool(64, 1024, 2)
 
 	for i := 0; i < count; i++ {
 		func() {

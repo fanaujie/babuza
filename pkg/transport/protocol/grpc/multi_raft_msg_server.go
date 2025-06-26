@@ -16,7 +16,7 @@ type MultiRaftMsgServer struct {
 	pb.MultiRaftTransportServer
 	cfg         ibabuza.TransportConfig
 	grpcNetwork NetworkIO
-	raft        ibabuza.MultiRaftNodeHandler
+	raft        ibabuza.MultiRaftStoreHandler
 	logger      ibabuza.Logger
 	server      *grpc.Server
 	listener    net.Listener
@@ -25,7 +25,7 @@ type MultiRaftMsgServer struct {
 func NewMultiRaftMsgServer(
 	cfg ibabuza.TransportConfig,
 	grpcNetwork NetworkIO,
-	raft ibabuza.MultiRaftNodeHandler,
+	raft ibabuza.MultiRaftStoreHandler,
 	logger ibabuza.Logger,
 ) *MultiRaftMsgServer {
 	return &MultiRaftMsgServer{

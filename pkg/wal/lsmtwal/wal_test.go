@@ -633,7 +633,6 @@ func TestPurgerLogic(t *testing.T) {
 					db:           db,
 					keyPrefix:    newKeyPrefix(0),
 					purgerSnapCh: make(chan purgeRequest, 1),
-					purgerStopCh: make(chan struct{}),
 				}
 				purger := manager.Purger().(*badgerPurger)
 

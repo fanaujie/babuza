@@ -154,7 +154,7 @@ func TestWalManager_CreateWal(t *testing.T) {
 					Index: 0,
 				},
 			}
-			replayEs, replayWal, result, err := manager.ReplayWal(snapshot, false)
+			result, replayEs, replayWal, err := manager.ReplayWal(snapshot, false)
 			assert.NoError(t, err)
 			assert.NotNil(t, replayEs)
 			assert.NotNil(t, replayWal)
@@ -384,7 +384,7 @@ func TestWalManager_FullWorkflow(t *testing.T) {
 					Index: 0,
 				},
 			}
-			replayEs, replayWal, result, err := manager.ReplayWal(replaySnapshot, false)
+			result, replayEs, replayWal, err := manager.ReplayWal(replaySnapshot, false)
 			assert.NoError(t, err)
 			assert.NotNil(t, replayEs)
 			assert.NotNil(t, replayWal)
