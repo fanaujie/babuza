@@ -1,4 +1,4 @@
-package multiraft
+package experimental
 
 import (
 	babuza "github.com/fanaujie/babuza/raft"

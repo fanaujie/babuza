@@ -1,4 +1,4 @@
-package multiraft
+package experimental
 
 import (
 	"go.etcd.io/etcd/raft/v3/raftpb"

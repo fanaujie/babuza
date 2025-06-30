@@ -23,14 +23,14 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
 	"github.com/fanaujie/babuza/pkg/wal/lsmtwal"
-	"github.com/fanaujie/babuza/raft/multiraft"
+	"github.com/fanaujie/babuza/raft/experimental"
 	"github.com/tidwall/redcon"
 	"go.uber.org/zap"
 )
 
 type Server struct {
 	config      Config
-	store       *multiraft.Store
+	store       *experimental.Store
 	redisServer *redcon.Server
 	pdClient    *pdclient.PDClient
 	router      *command.Router
@@ -92,7 +92,7 @@ func NewServer(config Config) (*Server, error) {
 }
 
 func (s *Server) setupNode() error {
-	nodeConfig := multiraft.DefaultStoreConfig(
+	nodeConfig := experimental.DefaultStoreConfig(
 		s.config.ClusterID,
 		s.config.StoreID,
 		s.config.DataDir,
@@ -129,7 +129,7 @@ func (s *Server) setupNode() error {
 	}
 
 	var err error
-	s.store, err = multiraft.BootstrapOrRecoverStore(nodeConfig, factory, trans, walMgr, snapshotMgr, s)
+	s.store, err = experimental.BootstrapOrRecoverStore(nodeConfig, factory, trans, walMgr, snapshotMgr, s)
 	if err != nil {
 		return fmt.Errorf("failed to bootstrap node: %w", err)
 	}
@@ -261,7 +261,7 @@ func (s *Server) heartbeat() {
 	}
 }
 
-func (s *Server) replicaLeaderHeartbeat(info multiraft.RaftGroupPeersInfo) error {
+func (s *Server) replicaLeaderHeartbeat(info experimental.RaftGroupPeersInfo) error {
 	resp, err := s.pdClient.RaftGroupLeaderHeartbeat(context.TODO(),
 		&pb.RaftGroupLeaderHeartbeatReq{
 			StoreID:  s.config.StoreID,

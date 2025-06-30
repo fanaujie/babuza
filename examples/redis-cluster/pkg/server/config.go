@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/raft/multiraft"
+	"github.com/fanaujie/babuza/raft/experimental"
 )
 
 type Config struct {
@@ -42,8 +42,8 @@ func (c *Config) ParsedStores() (map[uint64]string, error) {
 	return stores, nil
 }
 
-func (c *Config) CreatePeersConfig(groupID ibabuza.RaftGroupID) (*multiraft.PeersConfiguration, error) {
-	peersConfig := multiraft.NewPeersConfiguration()
+func (c *Config) CreatePeersConfig(groupID ibabuza.RaftGroupID) (*experimental.PeersConfiguration, error) {
+	peersConfig := experimental.NewPeersConfiguration()
 	peersConfig.SetGroupID(groupID)
 
 	stores, err := c.ParsedStores()

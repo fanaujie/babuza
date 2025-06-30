@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/fanaujie/babuza/ibabuza"
 	babuza "github.com/fanaujie/babuza/raft"
-	"github.com/fanaujie/babuza/raft/multiraft"
+	"github.com/fanaujie/babuza/raft/experimental"
 	"github.com/fanaujie/babuza/test/kvbench/kvbenchpb"
 	"github.com/fanaujie/babuza/test/kvbench/statemachine"
 	"google.golang.org/grpc"
@@ -16,14 +16,14 @@ import (
 // GrpcServer implements the KVService gRPC service
 type GrpcServer struct {
 	serverCfg     Config
-	store         *multiraft.Store
+	store         *experimental.Store
 	stateMachines map[ibabuza.RaftGroupID]*statemachine.MemoryStore
 	grpcServer    *grpc.Server
 	logger        ibabuza.Logger
 }
 
 // NewGrpcServer creates a new gRPC server for the KV service
-func NewGrpcServer(serverCfg Config, store *multiraft.Store, stores map[ibabuza.RaftGroupID]*statemachine.MemoryStore,
+func NewGrpcServer(serverCfg Config, store *experimental.Store, stores map[ibabuza.RaftGroupID]*statemachine.MemoryStore,
 	logger ibabuza.Logger) *GrpcServer {
 	grpcServer := grpc.NewServer()
 	server := &GrpcServer{

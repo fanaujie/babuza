@@ -16,7 +16,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"github.com/fanaujie/babuza/pkg/wal/lsmtwal"
-	"github.com/fanaujie/babuza/raft/multiraft"
+	"github.com/fanaujie/babuza/raft/experimental"
 	"github.com/fanaujie/babuza/test/kvbench/statemachine"
 	"go.uber.org/zap"
 	"net"
@@ -55,7 +55,7 @@ type Config struct {
 // Server represents a multi-raft KV server
 type Server struct {
 	cfg           Config
-	store         *multiraft.Store
+	store         *experimental.Store
 	stateMachines map[ibabuza.RaftGroupID]*statemachine.MemoryStore
 	logger        ibabuza.Logger
 	closer        *syncutil.Closer
@@ -63,7 +63,7 @@ type Server struct {
 	mu            sync.Mutex
 }
 
-// KVComponentFactory implements multiraft.ComponentsFactory
+// KVComponentFactory implements experimental.ComponentsFactory
 type KVComponentFactory struct {
 	stateMachines map[ibabuza.RaftGroupID]*statemachine.MemoryStore
 	logger        ibabuza.Logger
@@ -121,7 +121,7 @@ func (s *Server) Start() error {
 	s.logger = logger.NewRaftLogger(zapLogger.Sugar())
 
 	// Create store configuration
-	storeConfig := multiraft.DefaultStoreConfig(s.cfg.ClusterID, s.cfg.StoreID, s.cfg.DataDir, s.cfg.RaftAddress)
+	storeConfig := experimental.DefaultStoreConfig(s.cfg.ClusterID, s.cfg.StoreID, s.cfg.DataDir, s.cfg.RaftAddress)
 	storeConfig.SnapshotCount = 100000000
 	storeConfig.DisableProposalForwarding = false
 	storeConfig.LearnerReadyPercent = 0.95
@@ -168,7 +168,7 @@ func (s *Server) Start() error {
 	)
 
 	// Create MultiRaft node
-	node, err := multiraft.BootstrapOrRecoverStore(storeConfig, factory, trans, walMgr, snapshotMgr, nil)
+	node, err := experimental.BootstrapOrRecoverStore(storeConfig, factory, trans, walMgr, snapshotMgr, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create MultiRaft node: %w", err)
 	}
@@ -185,7 +185,7 @@ func (s *Server) Start() error {
 		groupID := ibabuza.RaftGroupID(i + 1) // Group IDs start from 1
 
 		// Create peer configuration for this group
-		peersConfig := multiraft.NewPeersConfiguration()
+		peersConfig := experimental.NewPeersConfiguration()
 		peersConfig.SetGroupID(groupID)
 		for storeID, addr := range s.cfg.InitialRaftStores {
 			peerID := storeID

@@ -1,4 +1,4 @@
-package multiraft
+package experimental
 
 import (
 	"github.com/fanaujie/babuza/ibabuza"
