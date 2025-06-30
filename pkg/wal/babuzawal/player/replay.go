@@ -18,10 +18,10 @@ type Player struct {
 	walDir        string
 	logFiles      utility.LogFileDescSlice
 	startSnapshot walpb.Snapshot
-	cascade       *allocator.TwoLevelPool
+	memPool       *allocator.ByteSlicePool
 }
 
-func Create(walDir string, startSnapshot walpb.Snapshot, cascade *allocator.TwoLevelPool) (*Player, error) {
+func Create(walDir string, startSnapshot walpb.Snapshot, memPool *allocator.ByteSlicePool) (*Player, error) {
 	logFiles, err := utility.ReadValidLogFiles(walDir, startSnapshot)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func Create(walDir string, startSnapshot walpb.Snapshot, cascade *allocator.TwoL
 		walDir:        walDir,
 		logFiles:      logFiles,
 		startSnapshot: startSnapshot,
-		cascade:       cascade,
+		memPool:       memPool,
 	}, nil
 }
 
@@ -67,7 +67,7 @@ func (p *Player) Replay(result iwal.ReplayWalResult, repair bool) error {
 }
 
 func (p *Player) replay(result iwal.ReplayWalResult) (iwal.LogFileDesc, error) {
-	parser := NewParser(result, p.startSnapshot, p.cascade)
+	parser := NewParser(result, p.startSnapshot, p.memPool)
 	lastLogFileDesc := iwal.LogFileDesc{}
 	for _, desc := range p.logFiles {
 		reader, err := utility.GetLogFileReader(p.walDir, desc)

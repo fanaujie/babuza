@@ -11,13 +11,13 @@ import (
 
 var (
 	ErrLeaderChange            = errors.New("ErrLeaderChange")
-	errReadIndexRequestTimeout = errors.New("errReadIndexRequestTimeout")
+	ErrReadIndexRequestTimeout = errors.New("errReadIndexRequestTimeout")
 )
 
 func (r *Raft) processRaftLinearizedRead() {
 	readCtx := make([]byte, 8)
 	for {
-		leaderChangedCh := r.leaderChangeNotifier.Get()
+		leaderChangedCh := r.leaderChangeNotifier.Channel()
 		nextID := r.idGenerator.Next()
 		select {
 		case <-r.closer.CloseCh():
@@ -27,14 +27,14 @@ func (r *Raft) processRaftLinearizedRead() {
 		case <-r.readIndexCh:
 			break
 		}
-		oldNotifier := r.linearizeReqNotifier.Renew()
+		oldNotifier := r.linearizeReqNotifier.Swap()
 		binary.BigEndian.PutUint64(readCtx, nextID)
 		if err := r.raftReadIndexRequest(readCtx); err != nil {
 			if errors.Is(err, raft.ErrStopped) {
 				return
 			}
 			r.metricsCollector.IncrementReadIndexFailed()
-			oldNotifier.Close(err)
+			oldNotifier.CompleteWith(err)
 			continue
 		}
 		rs, err := r.readIndexResponse(readCtx, leaderChangedCh)
@@ -43,7 +43,7 @@ func (r *Raft) processRaftLinearizedRead() {
 				return
 			} else {
 				r.metricsCollector.IncrementReadIndexFailed()
-				oldNotifier.Close(err)
+				oldNotifier.CompleteWith(err)
 				continue
 			}
 		}
@@ -55,7 +55,7 @@ func (r *Raft) processRaftLinearizedRead() {
 				return
 			}
 		}
-		oldNotifier.Close(nil)
+		oldNotifier.CompleteWith(nil)
 	}
 }
 
@@ -65,7 +65,7 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 	defer retryTimer.Stop()
 	requestTimer := time.NewTimer(r.config.LinearizedReadRequestTimeout)
 	defer requestTimer.Stop()
-	firstCommitNotifier := r.firstCommitInTermNotifier.Get()
+	firstCommitNotifier := r.firstCommitInTermNotifier.Channel()
 	for {
 		select {
 		case rs = <-r.readStateCh:
@@ -82,7 +82,7 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 				if len(rs.RequestCtx) == 8 {
 					id2 = binary.BigEndian.Uint64(rs.RequestCtx)
 				}
-				r.logger.Warningf("raft[%d] ignored out-of-date read index response; local node read indexes queueing up and waiting to be in sync with leader, id1: %d, id2: %d", r.cluster.ClusterId(), id1, id2)
+				r.logger.Warningf("raft[%d] ignored out-of-date read index response; local node read indexes queueing up and waiting to be in sync with leader, id1: %d, id2: %d", r.cluster.ClusterID(), id1, id2)
 				r.metricsCollector.IncrementSlowReadIndex()
 				continue
 			}
@@ -91,7 +91,7 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 			err = ErrLeaderChange
 			return
 		case <-firstCommitNotifier:
-			firstCommitNotifier = r.firstCommitInTermNotifier.Get()
+			firstCommitNotifier = r.firstCommitInTermNotifier.Channel()
 			if err = r.raftReadIndexRequest(readCtx); err != nil {
 				return
 			}
@@ -102,7 +102,7 @@ func (r *Raft) readIndexResponse(readCtx []byte, leaderChangedCh <-chan struct{}
 			}
 			retryTimer.Reset(r.config.LinearizedReadRetryTimeout)
 		case <-requestTimer.C:
-			err = errReadIndexRequestTimeout
+			err = ErrReadIndexRequestTimeout
 			r.metricsCollector.IncrementSlowReadIndex()
 			return
 		case <-r.closer.CloseCh():

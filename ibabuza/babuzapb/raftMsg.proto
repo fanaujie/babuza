@@ -15,10 +15,37 @@ option (gogoproto.goproto_unkeyed_all) = false;
 option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
+enum RpcStatus {
+  SUCCESS = 0;
+  REJECTED = 1;
+  FAILED = 2;
+}
+
 
 message BatchMessage {
-  uint64  clusterId = 1;
+  uint64  clusterID = 1;
   repeated raftpb.Message  messages = 2 [(gogoproto.nullable) = false];
+}
+
+message MultiRaftHeartbeatMessage {
+  uint64   groupID     = 1;
+  uint64   fromPeerID  = 2;
+  uint64   toPeerID    = 3;
+  uint64   term        = 4;
+  uint64   commit      = 5;
+  bytes    context     = 6;
+}
+
+message MultiRaftMessage {
+  uint64  groupID = 1;
+  raftpb.Message  message = 2 [(gogoproto.nullable) = false];
+  repeated MultiRaftHeartbeatMessage heartbeatMessages = 3 [(gogoproto.nullable) = false];
+  repeated MultiRaftHeartbeatMessage heartbeatResponseMessages = 4 [(gogoproto.nullable) = false];
+}
+
+message MultiRaftBatchMessage {
+  uint64  clusterID = 1;
+  repeated MultiRaftMessage  messages = 2;
 }
 
 message SnapshotChunkMessage {
@@ -30,27 +57,36 @@ message SnapshotChunkMessage {
   bool                    lastChunk  = 6;
 }
 
+enum SnapshotMessageType {
+  SnapshotMessageType_None      = 0;
+  SnapshotMessageType_Metadata  = 1;
+  SnapshotMessageType_Chunk     = 2;
+  SnapshotMessageType_Finish    = 3;
+}
+
 message SnapshotMessage {
-  uint64    clusterId     = 1;
-  uint64    from          = 2;
-  uint64    to            = 3;
-  uint64    term          = 4;
-  uint64    index         = 5;
-  babuza.SnapshotMetadata metadata      = 6;
-  SnapshotChunkMessage    chunkMessage  = 7;
-  raftpb.Message          finishMessage = 8;
+  uint64    clusterID       = 1;
+  uint64    groupID         = 2;
+  uint64    from            = 4;
+  uint64    to              = 5;
+  uint64    term            = 6;
+  uint64    index           = 7;
+  SnapshotMessageType type  = 8;
+  babuza.SnapshotMetadata metadata      = 9 [(gogoproto.nullable) = false];
+  SnapshotChunkMessage    chunkMessage  = 10 [(gogoproto.nullable) = false];
+  raftpb.Message          finishMessage = 11 [(gogoproto.nullable) = false];
 }
 
-enum RpcStatus {
-  SUCCESS = 0;
-  FAILED = 1;
+message SnapshotMessageResponse {
+  RpcStatus status = 1;
+  string   message = 2;
 }
-
 
 message GetClusterPeersRequest {
-  uint64  clusterId = 1;
-  uint64  fromId      = 2;
-  uint64  toId        = 3;
+  uint64  clusterID = 1;
+  uint64  groupID   = 2;
+  uint64  from      = 3;
+  uint64  to        = 4;
 }
 
 message GetClusterPeersResponse {
@@ -60,14 +96,17 @@ message GetClusterPeersResponse {
 }
 
 message PublishApplicationServiceRequest {
-  uint64  clusterId        = 1;
-  uint64  fromId           = 2;
-  uint64  toId             = 3;
-  uint64  proposalReplyId  = 4;
-  repeated string appServiceAddresses  = 5;
+  uint64  clusterID        = 1;
+  uint64  groupID          = 2;
+  uint64  from             = 3;
+  uint64  to               = 4;
+  uint64  proposalReplyID  = 5;
+  repeated string appServiceAddresses  = 6;
 }
 
 message PublishApplicationServiceResponse {
   RpcStatus status = 1;
   string   message = 2;
 }
+
+

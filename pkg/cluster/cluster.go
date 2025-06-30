@@ -16,41 +16,44 @@ const (
 )
 
 type Cluster struct {
-	clusterId   uint64
-	localPeerId uint64
+	clusterID   uint64
+	groupID     ibabuza.RaftGroupID
+	localPeerID uint64
 	store       pb.Store
-	logger      ibabuza.Logger
-	mu          *sync.RWMutex
+	mu          sync.RWMutex
 }
 
-func NewCluster(logger ibabuza.Logger) *Cluster {
-	logger.Info("Cluster: creating cluster")
+func NewCluster() *Cluster {
 	return &Cluster{
 		store: pb.Store{
 			Peers:      make(map[uint64]babuzapb.Peer),
 			RemovedIds: make(map[uint64]bool),
 		},
-		logger: logger,
-		mu:     &sync.RWMutex{},
 	}
 }
 
-func (c *Cluster) SetClusterId(clusterId uint64) {
+func (c *Cluster) SetClusterID(clusterID uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.clusterId = clusterId
+	c.clusterID = clusterID
 }
 
-func (c *Cluster) SetLocalPeerId(localPeerId uint64) {
+func (c *Cluster) SetGroupID(groupID ibabuza.RaftGroupID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.localPeerId = localPeerId
+	c.groupID = groupID
 }
 
-func (c *Cluster) Peer(peerId uint64) (babuzapb.Peer, error) {
+func (c *Cluster) SetLocalPeerID(localPeerID uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.localPeerID = localPeerID
+}
+
+func (c *Cluster) Peer(peerID uint64) (babuzapb.Peer, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	p, ok := c.store.Peers[peerId]
+	p, ok := c.store.Peers[peerID]
 	if !ok {
 		return babuzapb.Peer{}, ErrPeerIDNotFound
 	}
@@ -68,10 +71,13 @@ func (c *Cluster) Snapshot(w io.Writer) error {
 	if err = fileutil.FileWriteUint64(w, buf, storeVersion); err != nil {
 		return err
 	}
-	if err = fileutil.FileWriteUint64(w, buf, c.clusterId); err != nil {
+	if err = fileutil.FileWriteUint64(w, buf, c.clusterID); err != nil {
 		return err
 	}
-	// skip localPeerId
+	if err = fileutil.FileWriteUint64(w, buf, uint64(c.groupID)); err != nil {
+		return err
+	}
+	// skip localPeerID
 	if err = fileutil.FileWriteUint64(w, buf, uint64(len(storeData))); err != nil {
 		return err
 	}
@@ -89,13 +95,19 @@ func (c *Cluster) Restore(r io.Reader) error {
 		return err
 	}
 	if ver != storeVersion {
-		return fmt.Errorf("Cluster: mismatch store version. expected (version=%d) real(version=%d)", storeVersion, ver)
+		return fmt.Errorf("cluster: mismatch store version. expected (version=%d) real(version=%d)", storeVersion, ver)
 	}
-	c.clusterId, err = fileutil.FileReadUint64(r, buf)
+	c.clusterID, err = fileutil.FileReadUint64(r, buf)
 	if err != nil {
 		return err
 	}
-	// skip localPeerId
+	groupID, err := fileutil.FileReadUint64(r, buf)
+	if err != nil {
+		return err
+	}
+	c.groupID = ibabuza.RaftGroupID(groupID)
+
+	// skip localPeerID
 	dataSize, err := fileutil.FileReadUint64(r, buf)
 	if err != nil {
 		return err
@@ -125,82 +137,86 @@ func (c *Cluster) Peers() []babuzapb.Peer {
 	return peers
 }
 
-func (c *Cluster) ClusterId() uint64 {
+func (c *Cluster) ClusterID() uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.clusterId
+	return c.clusterID
+}
+
+func (c *Cluster) GroupID() ibabuza.RaftGroupID {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.groupID
 }
 
 func (c *Cluster) LocalPeerID() uint64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.localPeerId
+	return c.localPeerID
 }
 
 func (c *Cluster) Add(peer babuzapb.RaftPeerAttribute) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.store.Peers[peer.Id]; ok {
+	if _, ok := c.store.Peers[peer.PeerID]; ok {
 		return ErrPeerIDExists
 	}
-	if _, ok := c.store.RemovedIds[peer.Id]; ok {
+	if _, ok := c.store.RemovedIds[peer.PeerID]; ok {
 		return ErrPeerIDRemoved
 	}
-	for _, m := range c.store.Peers {
-		if m.RaftPeerAttr.RaftListenAddr == peer.RaftListenAddr {
+	// Check if the RaftListenAddr already exists
+	for _, p := range c.store.Peers {
+		if p.RaftPeerAttr.RaftListenAddr == peer.RaftListenAddr {
 			return ErrPeerRaftListenAddrExists
 		}
 	}
-	c.store.Peers[peer.Id] = babuzapb.Peer{
+	c.store.Peers[peer.PeerID] = babuzapb.Peer{
 		RaftPeerAttr: peer,
 	}
 	return nil
 }
 
-func (c *Cluster) Update(peer babuzapb.RaftPeerAttribute) error {
+func (c *Cluster) Update(peerID uint64, peer babuzapb.RaftPeerAttribute) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	p, ok := c.store.Peers[peer.Id]
+	p, ok := c.store.Peers[peerID]
 	if !ok {
 		return ErrPeerIDNotFound
 	}
-	for _, m := range c.store.Peers {
-		if m.RaftPeerAttr.RaftListenAddr == peer.RaftListenAddr {
-			return ErrPeerRaftListenAddrExists
-		}
-	}
 	p.RaftPeerAttr.RaftListenAddr = peer.RaftListenAddr
-	c.store.Peers[peer.Id] = p
+	p.RaftPeerAttr.IsLearner = peer.IsLearner
+	p.RaftPeerAttr.StoreID = peer.StoreID
+	c.store.Peers[peer.PeerID] = p
 	return nil
 }
 
-func (c *Cluster) UpdateAppServiceAddresses(peerId uint64, addresses []string) error {
+func (c *Cluster) UpdateAppServiceAddresses(peerID uint64, addresses []string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	p, ok := c.store.Peers[peerId]
+	p, ok := c.store.Peers[peerID]
 	if !ok {
 		return ErrPeerIDNotFound
 	}
 	p.AppServiceAddresses = addresses
-	c.store.Peers[peerId] = p
+	c.store.Peers[peerID] = p
 	return nil
 }
 
-func (c *Cluster) Remove(peerId uint64) error {
+func (c *Cluster) Remove(peerID uint64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.store.Peers[peerId]; !ok {
+	if _, ok := c.store.Peers[peerID]; !ok {
 		return ErrPeerIDNotFound
 	}
-	delete(c.store.Peers, peerId)
-	c.store.RemovedIds[peerId] = true
+	delete(c.store.Peers, peerID)
+	c.store.RemovedIds[peerID] = true
 	return nil
 }
 
-func (c *Cluster) Promote(peerId uint64) error {
+func (c *Cluster) Promote(peerID uint64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	p, ok := c.store.Peers[peerId]
+	p, ok := c.store.Peers[peerID]
 	if !ok {
 		return ErrPeerIDNotFound
 	}
@@ -208,7 +224,7 @@ func (c *Cluster) Promote(peerId uint64) error {
 		return ErrPeerNotLearner
 	}
 	p.RaftPeerAttr.IsLearner = false
-	c.store.Peers[peerId] = p
+	c.store.Peers[peerID] = p
 	return nil
 }
 
@@ -216,4 +232,4 @@ type clusterPeers []babuzapb.Peer
 
 func (a clusterPeers) Len() int           { return len(a) }
 func (a clusterPeers) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a clusterPeers) Less(i, j int) bool { return a[i].RaftPeerAttr.Id < a[j].RaftPeerAttr.Id }
+func (a clusterPeers) Less(i, j int) bool { return a[i].RaftPeerAttr.PeerID < a[j].RaftPeerAttr.PeerID }

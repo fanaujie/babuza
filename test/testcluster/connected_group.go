@@ -31,7 +31,7 @@ func (g *ConnectedGroup) Remove(id uint64) {
 	delete(g.ids, id)
 }
 
-func (g *ConnectedGroup) GetIds() []uint64 {
+func (g *ConnectedGroup) GetIDs() []uint64 {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 

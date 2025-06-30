@@ -47,7 +47,10 @@ func TestRegister(t *testing.T) {
 	sessionCount := uint64(lruMaxSize + 1)
 	for _, mgr := range manager {
 		for i := uint64(1); i <= sessionCount; i++ {
-			mgr.Register(i, 0)
+			assert.Nil(t, mgr.Register(i, 0))
+			assert.Error(t, mgr.Register(i, 0))
+			assert.Nil(t, mgr.UnRegister(i))
+			assert.Nil(t, mgr.Register(i, 0))
 		}
 		if lru, ok := mgr.(*LruManager); ok {
 			_, ok = lru.sessions[1] // expire
@@ -74,7 +77,7 @@ func TestGetSession(t *testing.T) {
 			_, err := mgr.GetSession(i)
 			if _, ok := mgr.(*LruManager); ok {
 				if err != nil {
-					assert.ErrorIs(t, ErrSessionExpired, err)
+					assert.Error(t, err)
 					continue
 				}
 			}

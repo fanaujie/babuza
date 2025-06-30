@@ -3,7 +3,6 @@ package page
 import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"testing"
@@ -14,7 +13,7 @@ func TestPageWriter_Copy(t *testing.T) {
 	bufferSize := 32 * 1024
 	pageSize := 256
 
-	f, _ := ioutil.TempFile(os.TempDir(), "page-writer")
+	f, _ := os.CreateTemp("", "page-writer")
 	defer os.RemoveAll(f.Name())
 	pw, err := CreateWriter(segmentSize, pageSize, bufferSize, f)
 	assert.Nil(t, err)
@@ -67,7 +66,7 @@ func TestPageWriter_Write(t *testing.T) {
 	} {
 		identity := fmt.Sprintf("test case(#%d): %v", index, tc)
 		func() {
-			f, _ := ioutil.TempFile(os.TempDir(), "page-writer")
+			f, _ := os.CreateTemp("", "page-writer")
 			defer os.RemoveAll(f.Name())
 			var expect []byte
 			func() {
@@ -91,7 +90,7 @@ func TestPageWriter_Write(t *testing.T) {
 				}
 				assert.Nil(t, pw.flush(), identity)
 			}()
-			data, err := ioutil.ReadFile(f.Name())
+			data, err := os.ReadFile(f.Name())
 			assert.Nil(t, err, identity)
 			assert.Equal(t, expect, data, identity)
 		}()

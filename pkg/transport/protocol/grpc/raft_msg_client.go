@@ -29,16 +29,21 @@ func NewRaftMsgClient(pool connpool.Pool[*grpc.ClientConn], resolver ibabuza.Tra
 	}
 }
 
-func (r *RaftMsgClient) getConnection(peerId uint64) (*grpc.ClientConn, error) {
-	addr, err := r.resolver.ResolvePeerAddress(peerId)
+func (r *RaftMsgClient) getConnection(peerID uint64) (*grpc.ClientConn, error) {
+	addr, err := r.resolver.ResolvePeerAddress(peerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve peer address: %w", err)
+		return nil, err
 	}
 	conn, err := r.pool.Get(addr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get connection from pool: %w", err)
+		return nil, err
 	}
 	return conn, nil
+}
+
+func (r *RaftMsgClient) SendMultiRaftMessage(babuzapb.MultiRaftBatchMessage) error {
+	// not supported
+	return nil
 }
 
 func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
@@ -59,15 +64,15 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	defer cancel()
 	_, err = client.SendBatchMessage(ctx, &batchMsg)
 	if err != nil {
-		return fmt.Errorf("failed to send batch message: %w", err)
+		return err
 	}
 	return nil
 }
 
-func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) error {
+func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
 	conn, err := r.getConnection(snapMsg.To)
 	if err != nil {
-		return err
+		return babuzapb.SnapshotMessageResponse{}, err
 	}
 	defer func() {
 		r.returnPool(conn, err)
@@ -77,22 +82,19 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.GrpcDeadline)
 	defer cancel()
 
-	_, err = client.SendSnapshotMessage(ctx, &snapMsg)
+	res, err := client.SendSnapshotMessage(ctx, &snapMsg)
 	if err != nil {
-		return fmt.Errorf("failed to send snapshot message: %w", err)
+		return babuzapb.SnapshotMessageResponse{}, err
 	}
-
-	return nil
+	return *res, nil
 }
 
-func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
 	var res babuzapb.GetClusterPeersResponse
 
-	conn, err := r.getConnection(request.ToId)
+	conn, err := r.getConnection(request.To)
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
 	defer func() {
 		r.returnPool(conn, err)
@@ -104,22 +106,17 @@ func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest)
 
 	response, err := client.GetClusterPeers(ctx, &request)
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
-
-	return *response
+	return *response, nil
 }
 
-func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
 	var res babuzapb.PublishApplicationServiceResponse
 
-	conn, err := r.getConnection(request.ToId)
+	conn, err := r.getConnection(request.To)
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
 	defer func() {
 		r.returnPool(conn, err)
@@ -131,12 +128,10 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 
 	response, err := client.PublishApplicationService(ctx, &request)
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
 
-	return *response
+	return *response, nil
 }
 
 func (r *RaftMsgClient) Close() error {

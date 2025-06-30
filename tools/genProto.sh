@@ -27,15 +27,17 @@ export GOBIN=${BUILD_PATH}/bin
 export PATH="${GOBIN}:${PATH}"
 
 GEN_IBABUZA_RPOTO_PATH="${PWD}/ibabuza/babuzapb"
+
 GEN_PKG_PROTO_PATH="${PWD}/pkg/wal/babuzawal/pb ${PWD}/pkg/cluster/pb"
-GEN_GRPC_PROTO_PATH="${PWD}/pkg/transport/protocol/grpc/pb"
+GEN_GRPC_PROTO_PATH="${PWD}/pkg/transport/protocol/grpc/pb ${PWD}/test/kvbench/kvbenchpb"
+GEN_EXAMPLE_PROTO_PATH="${PWD}/examples/redis-cluster/pkg/pb"
 
 mkdir -p "${BUILD_PATH}/bin"
 
 GOGO_PROTO_SHA=ba06b47c162d49f2af050fb4c75bcbc86a159d5c #v1.2.1
 GOGOPROTO_ROOT="${GOPATH}/src/mod/github.com/gogo/protobuf"
 
-ETCD_SHA=d42e8589e1305d893eeec9e7db746f6f4a76c250 #v3.5.1
+ETCD_SHA=a17edfd59754d1aed29c2db33520ab9d401326a5 #v3.5.21
 ETCD_ROOT="${GOPATH}/src/go.etcd.io/etcd"
 
 if [ "$1" == "install" ]; then
@@ -63,6 +65,13 @@ for dir in ${GEN_PKG_PROTO_PATH}; do
 done
 
 for dir in ${GEN_GRPC_PROTO_PATH}; do
+  pushd "${dir}"
+    protoc --gogofast_out=plugins=grpc:. --gogofast_opt=paths=source_relative -I=".:${GOGOPROTO_ROOT}:${GOPATH}/src:${GEN_IBABUZA_RPOTO_PATH}" ./*.proto
+  popd
+done
+
+
+for dir in ${GEN_EXAMPLE_PROTO_PATH}; do
   pushd "${dir}"
     protoc --gogofast_out=plugins=grpc:. --gogofast_opt=paths=source_relative -I=".:${GOGOPROTO_ROOT}:${GOPATH}/src:${GEN_IBABUZA_RPOTO_PATH}" ./*.proto
   popd

@@ -19,13 +19,12 @@ type Proxy struct {
 	enable      bool
 	disableCh   chan struct{}
 	wg          sync.WaitGroup
-	mu          *sync.Mutex
+	mu          sync.Mutex
 }
 
 func NewProxy(config ibabuza.ProxyConfig) *Proxy {
 	return &Proxy{
 		config: config,
-		mu:     &sync.Mutex{},
 	}
 }
 
@@ -35,7 +34,7 @@ func (p *Proxy) Enable() error {
 	if p.enable == false {
 		p.disableCh = make(chan struct{})
 		var err error
-		p.listener, err = netutil.TcpListen(p.config.TLSConfig, p.config.InAddr)
+		p.listener, err = netutil.TcpListen(p.config.InListenTLSConfig, p.config.InAddr)
 		if err != nil {
 			return err
 		}
@@ -53,7 +52,7 @@ func (p *Proxy) Enable() error {
 						return
 					}
 				} else {
-					remoteConn, cErr := netutil.TcpDial(p.config.TLSConfig, p.config.OutAddr)
+					remoteConn, cErr := netutil.TcpDial(p.config.OutDialTLSConfig, p.config.OutAddr)
 					if cErr != nil {
 						conn.Close()
 						continue

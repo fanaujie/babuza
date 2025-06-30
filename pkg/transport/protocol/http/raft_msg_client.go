@@ -32,8 +32,8 @@ func NewRaftMsgClient(client *http.Client, resolver ibabuza.TransportResolver, e
 	}
 }
 
-func (r *RaftMsgClient) getUrl(peerId uint64, path string) (*url.URL, error) {
-	addr, err := r.resolver.ResolvePeerAddress(peerId)
+func (r *RaftMsgClient) getUrl(peerID uint64, path string) (*url.URL, error) {
+	addr, err := r.resolver.ResolvePeerAddress(peerID)
 	if err != nil {
 		return nil, err
 	}
@@ -43,6 +43,10 @@ func (r *RaftMsgClient) getUrl(peerId uint64, path string) (*url.URL, error) {
 	return u, nil
 }
 
+func (r *RaftMsgClient) SendMultiRaftMessage(babuzapb.MultiRaftBatchMessage) error {
+	// not supported
+	return nil
+}
 func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	//TODO: retry if failed?
 	if batchMsg.Messages == nil || len(batchMsg.Messages) == 0 {
@@ -79,11 +83,12 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	return nil
 }
 
-func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) error {
+func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
 	//TODO: retry if failed?
+	var resp babuzapb.SnapshotMessageResponse
 	u, err := r.getUrl(snapMsg.To, raftSnapshotMsgPrefix)
 	if err != nil {
-		return err
+		return resp, err
 	}
 	defer r.urlPool.Release(u)
 	msgSize := snapMsg.Size()
@@ -95,72 +100,57 @@ func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) er
 	n, err := snapMsg.MarshalTo(buf)
 	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(buf[:n]))
 	if err != nil {
-		return err
+		return resp, err
 	}
 	req.ContentLength = int64(n)
 	res, err := r.client.Do(req)
 	if err != nil {
-		return err
+		return resp, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return errors.New("unexpected status code")
+		return resp, errors.New("unexpected status code")
 	}
-	return nil
+	if err = decodeExpectedMessage(res.Body, res.ContentLength, &resp); err != nil {
+		return resp, err
+	}
+	return resp, nil
 }
-func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	u, err := r.getUrl(request.ToId, raftClusterPeersPrefix)
+func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
+	var resp babuzapb.GetClusterPeersResponse
+	u, err := r.getUrl(request.To, raftClusterPeersPrefix)
 	if err != nil {
-		return babuzapb.GetClusterPeersResponse{
-			Status:  babuzapb.FAILED,
-			Message: err.Error(),
-		}
+		return resp, err
 	}
 	defer r.urlPool.Release(u)
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return babuzapb.GetClusterPeersResponse{
-			Status:  babuzapb.FAILED,
-			Message: err.Error(),
-		}
+		return resp, err
 	}
 	q := req.URL.Query()
-	q.Add("clusterId", fmt.Sprintf("%d", request.ClusterId))
-	q.Add("from", fmt.Sprintf("%d", request.FromId))
-	q.Add("to", fmt.Sprintf("%d", request.ToId))
+	q.Add("clusterID", fmt.Sprintf("%d", request.ClusterID))
+	q.Add("from", fmt.Sprintf("%d", request.From))
+	q.Add("to", fmt.Sprintf("%d", request.To))
 	req.URL.RawQuery = q.Encode()
 	res, err := r.client.Do(req)
 	if err != nil {
-		return babuzapb.GetClusterPeersResponse{
-			Status:  babuzapb.FAILED,
-			Message: err.Error(),
-		}
+		return resp, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return babuzapb.GetClusterPeersResponse{
-			Status:  babuzapb.FAILED,
-			Message: fmt.Sprintf("unexpected status code: %d", res.StatusCode),
-		}
+		return resp, fmt.Errorf("unexpected status code: %d", res.StatusCode)
 	}
-	clusterPeersRes := babuzapb.GetClusterPeersResponse{}
-	if err = decodeExpectedMessage(res.Body, res.ContentLength, &clusterPeersRes); err != nil {
-		return babuzapb.GetClusterPeersResponse{
-			Status:  babuzapb.FAILED,
-			Message: err.Error(),
-		}
+	if err = decodeExpectedMessage(res.Body, res.ContentLength, &resp); err != nil {
+		return resp, err
 	}
-	return clusterPeersRes
+	return resp, nil
 }
 
-func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
-
-	u, err := r.getUrl(request.ToId, raftAppServiceUrlsPrefix)
+func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
+	var resp babuzapb.PublishApplicationServiceResponse
+	u, err := r.getUrl(request.To, raftAppServiceUrlsPrefix)
 	if err != nil {
-		return babuzapb.PublishApplicationServiceResponse{
-			Status:  babuzapb.FAILED,
-			Message: err.Error(),
-		}
+		return resp, nil
 	}
 	defer r.urlPool.Release(u)
 	msgSize := request.Size()
@@ -172,34 +162,21 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 	req, err := http.NewRequest(http.MethodPost, u.String(),
 		bytes.NewReader(buf[:n]))
 	if err != nil {
-		return babuzapb.PublishApplicationServiceResponse{
-			Status:  babuzapb.FAILED,
-			Message: err.Error(),
-		}
+		return resp, nil
 	}
 	req.ContentLength = int64(n)
 	res, err := r.client.Do(req)
 	if err != nil {
-		return babuzapb.PublishApplicationServiceResponse{
-			Status:  babuzapb.FAILED,
-			Message: err.Error(),
-		}
+		return resp, nil
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return babuzapb.PublishApplicationServiceResponse{
-			Status:  babuzapb.FAILED,
-			Message: fmt.Sprintf("unexpected status code: %d", res.StatusCode),
-		}
+		return resp, fmt.Errorf("unexpected status code: %d", res.StatusCode)
 	}
-	var pubAppServiceUrlsRes babuzapb.PublishApplicationServiceResponse
-	if err = decodeExpectedMessage(res.Body, res.ContentLength, &pubAppServiceUrlsRes); err != nil {
-		return babuzapb.PublishApplicationServiceResponse{
-			Status:  babuzapb.FAILED,
-			Message: err.Error(),
-		}
+	if err = decodeExpectedMessage(res.Body, res.ContentLength, &resp); err != nil {
+		return resp, nil
 	}
-	return pubAppServiceUrlsRes
+	return resp, nil
 }
 
 func (r *RaftMsgClient) Close() error {

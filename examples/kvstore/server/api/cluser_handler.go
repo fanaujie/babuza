@@ -62,7 +62,7 @@ func (h *ClusterPeerResourceHandler) joinPeerFunc(w http.ResponseWriter, r *http
 		LowestSequenceNumberNotYetReplied: req.LowestSequenceNumberNotYetReplied,
 	}
 	peerAttr := babuzapb.RaftPeerAttribute{
-		Id:             req.RaftPeerId,
+		PeerID:         req.RaftPeerId,
 		RaftListenAddr: req.RaftListenAddr,
 		IsLearner:      req.IsLearner,
 	}
@@ -72,8 +72,8 @@ func (h *ClusterPeerResourceHandler) joinPeerFunc(w http.ResponseWriter, r *http
 		joinRes = h.r.AddVotingPeer(r.Context(), session, peerAttr)
 	}
 	defer joinRes.Release()
-	if err = joinRes.Wait(); err != nil {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
+	if ar := joinRes.WaitForApplyResult(); ar.Error != nil {
+		processRaftProposeError(ar.Error, w)
 		return
 	}
 	res := convertRaftClusterPeersToResponse(h.r, session.SessionID, session.SequenceNumber)
@@ -125,13 +125,13 @@ func (h *ClusterPeerResourceHandler) updatePeerFunc(w http.ResponseWriter, r *ht
 		LowestSequenceNumberNotYetReplied: req.LowestSequenceNumberNotYetReplied,
 	}
 	peerAttr := babuzapb.RaftPeerAttribute{
-		Id:             req.RaftPeerId,
+		PeerID:         req.RaftPeerId,
 		RaftListenAddr: req.RaftListenAddr,
 	}
 	updateRes := h.r.UpdatePeer(r.Context(), session, peerAttr)
 	defer updateRes.Release()
-	if err = updateRes.Wait(); err != nil {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
+	if ar := updateRes.WaitForApplyResult(); ar.Error != nil {
+		processRaftProposeError(ar.Error, w)
 		return
 	}
 	res := convertRaftClusterPeersToResponse(h.r, session.SessionID, session.SequenceNumber)
@@ -170,13 +170,9 @@ func (h *ClusterPeerResourceHandler) removePeerFunc(w http.ResponseWriter, r *ht
 	}
 	removeRes := h.r.RemovePeer(r.Context(), session, req.RaftPeerId)
 	defer removeRes.Release()
-	if err = removeRes.Wait(); err != nil {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
-		return
-	}
-	_ = removeRes.Response()
-	if err != nil {
-		processRaftProposeError(err, w, r, h.r.LeaderAppServiceAddresses())
+	ar := removeRes.WaitForApplyResult()
+	if ar.Error != nil {
+		processRaftProposeError(ar.Error, w)
 		return
 	}
 	res := convertRaftClusterPeersToResponse(h.r, session.SessionID, session.SequenceNumber)

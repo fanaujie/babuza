@@ -29,8 +29,8 @@ func (mockConn) SetDeadline(t time.Time) error      { return nil }
 func (mockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (mockConn) SetWriteDeadline(t time.Time) error { return nil }
 
-func getProxyInEndpoint(peerId uint64) string {
-	return fmt.Sprintf("127.0.0.1:%d", 14200+peerId)
+func getProxyInEndpoint(peerID uint64) string {
+	return fmt.Sprintf("127.0.0.1:%d", 14200+peerID)
 }
 
 func TestRaftNetwork_AddProxy(t *testing.T) {
@@ -93,9 +93,10 @@ func TestRaftNetwork_EnableDisableProxy(t *testing.T) {
 		for _, tc := range testTLSConfig {
 			p := New()
 			assert.Nil(t, p.AddProxy(ibabuza.ProxyConfig{
-				Id:        1,
-				InAddr:    "127.0.0.1:14200",
-				TLSConfig: tc,
+				Id:                1,
+				InAddr:            "127.0.0.1:14200",
+				InListenTLSConfig: tc.serverTLS,
+				OutDialTLSConfig:  tc.clientTls,
 			}))
 			assert.Nil(t, p.ConnectProxy(1))
 			assert.Nil(t, p.DisconnectProxy(1))

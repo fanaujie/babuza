@@ -13,11 +13,26 @@ service RaftTransport {
   rpc SendBatchMessage(raft.BatchMessage) returns (google.protobuf.Empty);
   
   // SendSnapshotMessage sends a snapshot message
-  rpc SendSnapshotMessage(raft.SnapshotMessage) returns (google.protobuf.Empty);
+  rpc SendSnapshotMessage(raft.SnapshotMessage) returns (raft.SnapshotMessageResponse);
   
   // GetClusterPeers gets information about peers in the cluster
   rpc GetClusterPeers(raft.GetClusterPeersRequest) returns (raft.GetClusterPeersResponse);
   
+  // PublishApplicationService publishes application service addresses
+  rpc PublishApplicationService(raft.PublishApplicationServiceRequest) returns (raft.PublishApplicationServiceResponse);
+}
+
+
+service MultiRaftTransport {
+  // SendBatchMessage sends stream of batch messages
+  rpc SendMultiRaftMessage(stream raft.MultiRaftBatchMessage) returns (stream google.protobuf.Empty);
+
+  // SendSnapshotMessage sends a snapshot message
+  rpc SendSnapshotMessage(raft.SnapshotMessage) returns (raft.SnapshotMessageResponse);
+
+  // GetClusterPeers gets information about peers in the cluster
+  rpc GetClusterPeers(raft.GetClusterPeersRequest) returns (raft.GetClusterPeersResponse);
+
   // PublishApplicationService publishes application service addresses
   rpc PublishApplicationService(raft.PublishApplicationServiceRequest) returns (raft.PublishApplicationServiceResponse);
 }

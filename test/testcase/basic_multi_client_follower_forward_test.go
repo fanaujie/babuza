@@ -30,7 +30,7 @@ func (c *BasicMultiClientFollowerForwardProposal) Run(tc *testcluster.BabuzaClus
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
 	// Identify the current leader
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Launch multiple clients concurrently
@@ -51,26 +51,26 @@ func (c *BasicMultiClientFollowerForwardProposal) Run(tc *testcluster.BabuzaClus
 			}()
 
 			// Cycle through followers for sending proposals
-			peerId := leaderId
+			peerID := leaderID
 			for index := 0; index < 256; index++ {
 				// Make sure we're sending to follower nodes, not leader
-				if peerId == leaderId {
-					peerId = (leaderId % uint64(totalPeers)) + 1
+				if peerID == leaderID {
+					peerID = (leaderID % uint64(totalPeers)) + 1
 				}
-				assert.NotEqual(c.t, leaderId, peerId)
+				assert.NotEqual(c.t, leaderID, peerID)
 
 				// Send a proposal to a follower node
 				assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-					_, err = kvClient.DirectKvStore(ctx, peerId, client.Set,
+					_, err = kvClient.DirectKvStore(ctx, peerID, client.Set,
 						fmt.Sprintf("%d-%d", clientId, index), fmt.Sprintf("%d", index))
 					return err
 				}))
 
 				// Move to next node for the next operation
-				if peerId == uint64(totalPeers) {
-					peerId = 1
+				if peerID == uint64(totalPeers) {
+					peerID = 1
 				} else {
-					peerId++
+					peerID++
 				}
 			}
 		}(i)
@@ -80,7 +80,7 @@ func (c *BasicMultiClientFollowerForwardProposal) Run(tc *testcluster.BabuzaClus
 	wg.Wait()
 
 	// Verify that all nodes have consistent state
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestMultiClientFollowerForwardProposal(t *testing.T) {

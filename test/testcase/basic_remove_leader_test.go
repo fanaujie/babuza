@@ -27,7 +27,7 @@ func (c *BasicRemoveLeader) Run(tc *testcluster.BabuzaCluster, a any) {
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
@@ -36,18 +36,18 @@ func (c *BasicRemoveLeader) Run(tc *testcluster.BabuzaCluster, a any) {
 		_ = kvClient.Close()
 	}()
 
-	assert.Nil(c.t, tc.RemovePeerFromCluster(wait, kvClient, leaderId))
-	connectGroup.Remove(leaderId)
+	assert.Nil(c.t, tc.RemovePeerFromCluster(wait, kvClient, leaderID))
+	connectGroup.Remove(leaderID)
 
 	assert.Error(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId, makeSingleStandardPeer(leaderId, false))
+		return tc.CheckPeerExists(ctx, leaderID, makeSingleStandardPeer(leaderID, false))
 	}))
 
 	time.Sleep(tc.RaftElectionTimeout())
 
-	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID2, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	assert.NotEqual(c.t, leaderId, leaderId2)
+	assert.NotEqual(c.t, leaderID, leaderID2)
 }
 
 func TestRemoveLeader(t *testing.T) {

@@ -28,7 +28,7 @@ func (c *BasicJoinLearner) Run(tc *testcluster.BabuzaCluster, a any) {
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	learner := makeSingleStandardPeer(4, true)
@@ -45,16 +45,16 @@ func (c *BasicJoinLearner) Run(tc *testcluster.BabuzaCluster, a any) {
 		}))
 	}
 	connectGroup.Add(learner.ID())
-	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, learner, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, learner, connectGroup.GetIDs()))
 
 	assert.Nil(c.t, runWithCtxTimeout(time.Second*3, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId, learner)
+		return tc.CheckPeerExists(ctx, leaderID, learner)
 	}))
 
-	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID2, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	assert.Equal(c.t, leaderId, leaderId2)
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Equal(c.t, leaderID, leaderID2)
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestJoinLearner(t *testing.T) {

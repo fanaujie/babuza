@@ -75,17 +75,17 @@ func NewFileValidator(fs api.SnapshotFileSystem, metadataDecode MetadataDecoder)
 }
 
 func (f *FileValidator) GetMetadataFile(dir string) (babuzapb.SnapshotMetadata, error) {
-	snapshotIndexs, err := f.fs.FindMetadataFile(dir)
+	snapshotIndexes, err := f.fs.FindMetadataFile(dir)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
-	if len(snapshotIndexs) == 0 {
+	if len(snapshotIndexes) == 0 {
 		return babuzapb.SnapshotMetadata{}, fmt.Errorf("snapshotor: not found metadata file in dir %s", dir)
-	} else if len(snapshotIndexs) > 1 {
-		return babuzapb.SnapshotMetadata{}, fmt.Errorf("snapshotor: found more than one metadata file in dir %s (files=%d)", dir, len(snapshotIndexs))
+	} else if len(snapshotIndexes) > 1 {
+		return babuzapb.SnapshotMetadata{}, fmt.Errorf("snapshotor: found more than one metadata file in dir %s (files=%d)", dir, len(snapshotIndexes))
 	}
 
-	filename, err := f.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndexs[0], "")
+	filename, err := f.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_Metadata, snapshotIndexes[0], "")
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}

@@ -4,12 +4,6 @@ import (
 	"io"
 )
 
-type ApplyResult struct {
-	LogIndex uint64
-	Response any
-	Error    error
-}
-
 type ApplyResultSerializer interface {
 	Marshal(io.Writer, ApplyResult) error
 	Unmarshal(io.Reader) (ApplyResult, error)
@@ -29,7 +23,8 @@ type Session interface {
 type SessionManager interface {
 	SetResponseSerializer(ResponseSerializer) error
 	GetSession(uint64) (Session, error)
-	Register(uint64, int64)
+	Register(uint64, int64) error
+	UnRegister(uint64) error
 	ExpireSession(int64)
 	Snapshot(io.Writer) error
 	Restore(io.Reader) error

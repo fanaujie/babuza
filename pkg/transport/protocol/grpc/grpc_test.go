@@ -18,7 +18,7 @@ import (
 
 var (
 	defaultPoolCfg = connpool.Config{
-		MaxConnectionsPerHost: 1,
+		MaxConnectionsPerHost: 1024,
 		DialTimeout:           2 * time.Second,
 		IdleTimeout:           5 * time.Minute,
 	}
@@ -40,16 +40,6 @@ type nodeMsg struct {
 	totalMsgCount   int
 }
 
-func (m *nodeMsg) matchBatchMessage(matchMsgs []raftpb.Message) bool {
-	for _, msg := range matchMsgs {
-		_, ok := m.batchMsg[msg.Index]
-		if !ok {
-			return false
-		}
-	}
-	return true
-}
-
 func (m *nodeMsg) check(t *testing.T, identify string, tms []*testMsg) {
 	for _, tm := range tms {
 		if tm.batchMsg != nil {
@@ -66,10 +56,9 @@ func (m *nodeMsg) check(t *testing.T, identify string, tms []*testMsg) {
 	}
 }
 
-// 實現 ibabuza.TransportResolver 接口的類型
 type peerAddressResolver string
 
-func (r peerAddressResolver) ResolvePeerAddress(peerId uint64) (string, error) {
+func (r peerAddressResolver) ResolvePeerAddress(peerID uint64) (string, error) {
 	return string(r), nil
 }
 
@@ -99,6 +88,10 @@ func (m *mockTransportRaft) setupMsgCount(node uint64, msgCount int) {
 	}
 }
 
+func (m *mockTransportRaft) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
+	// not supported
+}
+
 func (m *mockTransportRaft) ProcessBatchMessage(message babuzapb.BatchMessage) {
 	m.mu.Lock()
 	nodeId := message.Messages[0].From
@@ -114,7 +107,7 @@ func (m *mockTransportRaft) ProcessBatchMessage(message babuzapb.BatchMessage) {
 	m.mu.Unlock()
 }
 
-func (m *mockTransportRaft) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) {
+func (m *mockTransportRaft) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
 	m.mu.Lock()
 	n := m.nodesMsg[message.From]
 	n.snapshotMsg[message.Index] = message
@@ -124,13 +117,17 @@ func (m *mockTransportRaft) ProcessSnapshotMessage(message babuzapb.SnapshotMess
 		m.notifyNodeDoneCh <- n
 	}
 	m.mu.Unlock()
+	return babuzapb.SnapshotMessageResponse{
+		Status:  babuzapb.SUCCESS,
+		Message: "success",
+	}
 }
 
-func (m *mockTransportRaft) GetClusterPeersRequest(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+func (m *mockTransportRaft) GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
 	return m.clusterRes
 }
 
-func (m *mockTransportRaft) PublishApplicationServiceRequest(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+func (m *mockTransportRaft) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	return m.publishRes
 }
 
@@ -317,7 +314,8 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 			if tm.batchMsg != nil {
 				assert.Nil(t, client.SendBatchMessage(*tm.batchMsg), identify)
 			} else if tm.snapMsg != nil {
-				assert.Nil(t, client.SendSnapshotMessage(*tm.snapMsg), identify)
+				_, err := client.SendSnapshotMessage(*tm.snapMsg)
+				assert.Nil(t, err, identify)
 			}
 
 			res := babuzapb.GetClusterPeersResponse{
@@ -326,14 +324,14 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				Peers: []babuzapb.Peer{
 					{
 						RaftPeerAttr: babuzapb.RaftPeerAttribute{
-							Id:             uint64(index),
+							PeerID:         uint64(index),
 							RaftListenAddr: c.PeerAddress,
 							IsLearner:      false,
 						},
 					},
 					{
 						RaftPeerAttr: babuzapb.RaftPeerAttribute{
-							Id:             uint64(index + 1),
+							PeerID:         uint64(index + 1),
 							RaftListenAddr: "localhost:14299",
 							IsLearner:      true,
 						},
@@ -341,7 +339,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 				},
 			}
 			mockTransport.clusterRes = res
-			getRes := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterId: 100, ToId: 1})
+			getRes, _ := client.GetClusterPeers(babuzapb.GetClusterPeersRequest{ClusterID: 100, To: 1})
 			assert.Equal(t, res, getRes, identify)
 		}
 
@@ -447,7 +445,8 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 					if tm.batchMsg != nil {
 						assert.Nil(t, client.SendBatchMessage(*tm.batchMsg), identify)
 					} else if tm.snapMsg != nil {
-						assert.Nil(t, client.SendSnapshotMessage(*tm.snapMsg), identify)
+						_, err := client.SendSnapshotMessage(*tm.snapMsg)
+						assert.Nil(t, err, identify)
 					}
 				}
 			}(n, allTms[n])
@@ -467,7 +466,6 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 func genTestMsg(totalMsgs, maxRaftMsgs int, fromNode uint64) []*testMsg {
 	r := make([]*testMsg, totalMsgs)
 	var startIndex uint64 = 1
-	rand.Seed(time.Now().UnixNano())
 	for i := 0; i < totalMsgs; i++ {
 		isBatch := rand.Intn(100)%2 == 0
 		if isBatch {

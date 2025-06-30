@@ -7,6 +7,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"net"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -19,21 +20,6 @@ import (
 //		return nil, err
 //	}
 //	return &r[0], nil
-//}
-//
-//func ValidateTcpAddr(addr string, validateIpFormat bool) bool {
-//	peerHost, peerPort, err := net.SplitHostPort(addr)
-//	if err != nil || len(peerHost) == 0 || len(peerPort) == 0 {
-//		return false
-//	}
-//	//_ , err = net.LookupPort("tcp",peerPort)
-//	//if err != nil {
-//	//	return false
-//	//}
-//	if validateIpFormat {
-//		return net.ParseIP(peerHost) != nil
-//	}
-//	return true
 //}
 //
 //func ResolveTcpAddr(addr string) (string, error) {
@@ -71,6 +57,25 @@ import (
 //	}
 //	return "", fmt.Errorf("failed to resolver tcp address %s err=(%s)", addr, ctx.Err())
 //}
+
+func IsValidAddress(addr string) bool {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 0 || port > 65535 {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return true
+	}
+	// check if host is a valid domain name
+	if len(host) == 0 || len(host) > 253 || host[0] == '.' || host[len(host)-1] == '.' {
+		return false
+	}
+	return true
+}
 
 func GetServerTlsConfig(tc ibabuza.TLSConfig) (*tls.Config, error) {
 	if !tc.EnableTLS {

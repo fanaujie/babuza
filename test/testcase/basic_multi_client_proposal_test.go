@@ -29,7 +29,7 @@ func (c *BasicMultiClientProposal) Run(tc *testcluster.BabuzaCluster, a any) {
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
 	// Identify the current leader
-	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Create multiple clients and have them concurrently send proposals
@@ -66,7 +66,7 @@ func (c *BasicMultiClientProposal) Run(tc *testcluster.BabuzaCluster, a any) {
 	wg.Wait()
 
 	// Verify that all nodes have consistent state
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestMultiClientProposal(t *testing.T) {

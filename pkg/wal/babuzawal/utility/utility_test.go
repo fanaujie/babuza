@@ -1,6 +1,7 @@
 package utility
 
 import (
+	"crypto/rand"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/storage"
@@ -8,14 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"io/ioutil"
-	"math/rand"
+	mathRand "math/rand"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
 func genEntries(t *testing.T, dir string, desc iwal.LogFileDesc, count, minEntryDataSize, maxEntryDataSize int) (
-	[]walbase.EntryIndex[storage.EntryMetadata], []raftpb.Entry, [][]byte) {
+	[]walbase.EntryIndex[storage.EntryIndexMetadata], []raftpb.Entry, [][]byte) {
 
 	maxLogSize := maxEntryDataSize + ((8 - (maxEntryDataSize % 8)) % 8)
 	handle, err := CreateLogFileHandle(filepath.Join(dir, desc.GetLogFileName()), count*maxLogSize)
@@ -23,13 +24,13 @@ func genEntries(t *testing.T, dir string, desc iwal.LogFileDesc, count, minEntry
 	defer handle.Close()
 	var expectData [][]byte
 	var entries []raftpb.Entry
-	var entsIndex []walbase.EntryIndex[storage.EntryMetadata]
+	var entsIndex []walbase.EntryIndex[storage.EntryIndexMetadata]
 	var offset = int64(LogFileHeaderLength)
-	entIndex := walbase.EntryIndex[storage.EntryMetadata]{
+	entIndex := walbase.EntryIndex[storage.EntryIndexMetadata]{
 		Term:  1,
 		Index: 1,
 		Type:  raftpb.EntryNormal,
-		Metadata: storage.EntryMetadata{
+		Metadata: storage.EntryIndexMetadata{
 			FileId: desc.Id,
 		},
 	}
@@ -38,11 +39,11 @@ func genEntries(t *testing.T, dir string, desc iwal.LogFileDesc, count, minEntry
 		Index: 1,
 		Type:  raftpb.EntryNormal,
 	}
-	cp := allocator.NewByteSlicePool(minEntryDataSize, maxEntryDataSize, 1.5)
+	cp := allocator.NewByteSlicePool(64, 1024, 2)
 
 	for i := 0; i < count; i++ {
 		func() {
-			dataSize := rand.Intn(maxEntryDataSize-minEntryDataSize+1) + minEntryDataSize
+			dataSize := mathRand.Intn(maxEntryDataSize-minEntryDataSize+1) + minEntryDataSize
 			totalSize := dataSize + (8-(dataSize%8))%8
 			data := make([]byte, dataSize, totalSize)
 			rand.Read(data)

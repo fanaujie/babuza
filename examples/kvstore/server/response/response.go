@@ -6,6 +6,11 @@ type RegisterSessionResponse struct {
 	SessionId uint64 `json:"session_id"`
 }
 
+type UnregisterSessionResponse struct {
+	SessionID      uint64 `json:"session_id"`
+	IsUnregistered bool   `json:"is_unregistered"`
+}
+
 type ClusterPeer struct {
 	Id                uint64 `json:"id"`
 	RaftListenAddr    string `json:"raft_listen_addr"`

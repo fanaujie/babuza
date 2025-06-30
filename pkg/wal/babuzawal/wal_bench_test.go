@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal"
-	"io/ioutil"
-	"os"
 	"testing"
 )
 
@@ -23,12 +21,7 @@ func BenchmarkBabuzaWalWrite100EntryOneBatchWithEntryIndex(b *testing.B) {
 	benchmarkBabuzaWalWriteEntryWithEntryIndex(b, 1000, 1000)
 }
 func benchmarkEtcdWalWriteEntry(b *testing.B, size int, batch int) {
-	p, err := ioutil.TempDir(os.TempDir(), "wal-bench-etcdwal")
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer os.RemoveAll(p)
-
+	p := b.TempDir()
 	w, err := wal.Create(nil, p, []byte("somedata"))
 	assert.Nil(b, err)
 
@@ -57,21 +50,17 @@ func benchmarkEtcdWalWriteEntry(b *testing.B, size int, batch int) {
 	}
 }
 func benchmarkBabuzaWalWriteEntry(b *testing.B, size int, batch int) {
-	p, err := ioutil.TempDir(os.TempDir(), "wal-bench-babuzawal")
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer os.RemoveAll(p)
+	p := b.TempDir()
 	cfg := logfile.ManagerConfig{
 		WalDir:            p,
 		LogFileChunkSize:  64 * 1024 * 1024,
 		AlignmentPageSize: 4096,
 		PageWriterBufSize: 1024 * 64,
 	}
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte("somedata")
 	logMgr, err := logfile.NewManager(cfg, cp)
-	w, err := CreateWal(metadata, logMgr)
+	w, err := CreateWal(metadata, logMgr, nil)
 	assert.Nil(b, err)
 	data := make([]byte, size)
 	for i := 0; i < size; i++ {
@@ -103,22 +92,20 @@ func benchmarkBabuzaWalWriteEntry(b *testing.B, size int, batch int) {
 }
 
 func benchmarkBabuzaWalWriteEntryWithEntryIndex(b *testing.B, size int, batch int) {
-	p, err := ioutil.TempDir(os.TempDir(), "wal-bench-babuzawal")
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer os.RemoveAll(p)
+	p := b.TempDir()
 	cfg := logfile.ManagerConfig{
 		WalDir:            p,
 		LogFileChunkSize:  64 * 1024 * 1024,
 		AlignmentPageSize: 4096,
 		PageWriterBufSize: 1024 * 64,
 	}
-	cp := allocator.NewDefaultTwoLevelPool(4096, 1024*1024)
+	cp := allocator.NewByteSlicePool(4096, 1024*1024, 2)
 	metadata := []byte("somedata")
 	logMgr, err := logfile.NewManager(cfg, cp)
-	w, err := CreateWal(metadata, logMgr)
-	w.SetEntryIndexStorage(walbase.NewEntryStorage[storage.EntryMetadata](w.logMgr))
+	assert.Nil(b, err)
+	w, err := CreateWal(metadata, logMgr, nil)
+	assert.Nil(b, err)
+	w.SetEntryIndexStorage(walbase.NewEntryStorage[storage.EntryIndexMetadata](w.logMgr))
 	data := make([]byte, size)
 	for i := 0; i < size; i++ {
 		data[i] = byte(i)

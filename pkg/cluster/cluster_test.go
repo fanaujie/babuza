@@ -2,34 +2,29 @@ package cluster
 
 import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
-	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 	"os"
 	"testing"
 )
 
 func TestCluster_ClusterId(t *testing.T) {
-	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	cl := NewCluster(l)
-	cl.SetClusterId(1)
-	assert.Equal(t, uint64(1), cl.ClusterId())
+	cl := NewCluster()
+	cl.SetClusterID(1)
+	assert.Equal(t, uint64(1), cl.ClusterID())
 }
 
 func TestCluster_LocalPeerId(t *testing.T) {
-	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	cl := NewCluster(l)
-	cl.SetLocalPeerId(1)
+	cl := NewCluster()
+	cl.SetLocalPeerID(1)
 	assert.Equal(t, uint64(1), cl.LocalPeerID())
 }
 
 func TestCluster_Add(t *testing.T) {
-	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	cl := NewCluster(l)
-	cl.SetClusterId(1)
-	cl.SetLocalPeerId(10)
+	cl := NewCluster()
+	cl.SetClusterID(1)
+	cl.SetLocalPeerID(10)
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             1,
+		PeerID:         1,
 		RaftListenAddr: "localhost:14200",
 	}))
 	_, ok := cl.store.Peers[1]
@@ -38,18 +33,17 @@ func TestCluster_Add(t *testing.T) {
 	// test remove id
 	cl.store.RemovedIds[2] = true
 	assert.Error(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             2,
+		PeerID:         2,
 		RaftListenAddr: "localhost:14200",
 	}))
 }
 
 func TestCluster_Remove(t *testing.T) {
-	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	cl := NewCluster(l)
-	cl.SetClusterId(1)
-	cl.SetLocalPeerId(10)
+	cl := NewCluster()
+	cl.SetClusterID(1)
+	cl.SetLocalPeerID(10)
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             1,
+		PeerID:         1,
 		RaftListenAddr: "localhost:14200",
 	}))
 	assert.Nil(t, cl.Remove(1))
@@ -57,33 +51,31 @@ func TestCluster_Remove(t *testing.T) {
 }
 
 func TestCluster_Update(t *testing.T) {
-	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	cl := NewCluster(l)
-	cl.SetClusterId(1)
-	cl.SetLocalPeerId(10)
+	cl := NewCluster()
+	cl.SetClusterID(1)
+	cl.SetLocalPeerID(10)
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             1,
+		PeerID:         1,
 		RaftListenAddr: "localhost:14200",
 	}))
-	assert.Nil(t, cl.Update(babuzapb.RaftPeerAttribute{
-		Id:             1,
+	assert.Nil(t, cl.Update(1, babuzapb.RaftPeerAttribute{
+		PeerID:         1,
 		RaftListenAddr: "localhost:14201",
 	}))
 	assert.Equal(t, "localhost:14201", cl.store.Peers[1].RaftPeerAttr.RaftListenAddr)
 
-	assert.Error(t, cl.Update(babuzapb.RaftPeerAttribute{
-		Id:             2,
+	assert.Error(t, cl.Update(2, babuzapb.RaftPeerAttribute{
+		PeerID:         2,
 		RaftListenAddr: "localhost:14201",
 	}))
 }
 
 func TestCluster_Promote(t *testing.T) {
-	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	cl := NewCluster(l)
-	cl.SetClusterId(1)
-	cl.SetLocalPeerId(10)
+	cl := NewCluster()
+	cl.SetClusterID(1)
+	cl.SetLocalPeerID(10)
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             1,
+		PeerID:         1,
 		RaftListenAddr: "localhost:14200",
 		IsLearner:      true,
 	}))
@@ -93,16 +85,15 @@ func TestCluster_Promote(t *testing.T) {
 }
 
 func TestCluster_Peers(t *testing.T) {
-	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	cl := NewCluster(l)
-	cl.SetClusterId(1)
-	cl.SetLocalPeerId(10)
+	cl := NewCluster()
+	cl.SetClusterID(1)
+	cl.SetLocalPeerID(10)
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             1,
+		PeerID:         1,
 		RaftListenAddr: "localhost:14200",
 	}))
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             2,
+		PeerID:         2,
 		RaftListenAddr: "localhost:14201",
 		IsLearner:      true,
 	}))
@@ -110,8 +101,8 @@ func TestCluster_Peers(t *testing.T) {
 	result := cl.Peers()
 	assert.Equal(t, 2, len(result))
 
-	assert.Equal(t, uint64(1), result[0].RaftPeerAttr.Id)
-	assert.Equal(t, uint64(2), result[1].RaftPeerAttr.Id)
+	assert.Equal(t, uint64(1), result[0].RaftPeerAttr.PeerID)
+	assert.Equal(t, uint64(2), result[1].RaftPeerAttr.PeerID)
 	assert.Equal(t, "localhost:14200", result[0].RaftPeerAttr.RaftListenAddr)
 	assert.Equal(t, "localhost:14201", result[1].RaftPeerAttr.RaftListenAddr)
 	assert.Equal(t, false, result[0].RaftPeerAttr.IsLearner)
@@ -120,22 +111,21 @@ func TestCluster_Peers(t *testing.T) {
 }
 
 func TestCluster_SnapshotRestore(t *testing.T) {
-	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	cl := NewCluster(l)
-	cl.SetClusterId(1)
-	cl.SetLocalPeerId(10)
+	cl := NewCluster()
+	cl.SetClusterID(1)
+	cl.SetLocalPeerID(10)
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             1,
+		PeerID:         1,
 		RaftListenAddr: "localhost:14200",
 	}))
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             2,
+		PeerID:         2,
 		RaftListenAddr: "localhost:14201",
 		IsLearner:      true,
 	}))
 	assert.Nil(t, cl.Remove(2))
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             3,
+		PeerID:         3,
 		RaftListenAddr: "localhost:14202",
 	}))
 
@@ -147,53 +137,47 @@ func TestCluster_SnapshotRestore(t *testing.T) {
 	p, err = os.Open(p.Name())
 	assert.Nil(t, err)
 	defer p.Close()
-	resCl := NewCluster(l)
+	resCl := NewCluster()
 	assert.Nil(t, resCl.Restore(p))
-	resCl.SetLocalPeerId(cl.LocalPeerID())
+	resCl.SetLocalPeerID(cl.LocalPeerID())
 	assert.Equal(t, cl, resCl)
 
 }
 
 func TestCluster_Apply(t *testing.T) {
-	l := logger.NewRaftLogger(zap.NewNop().Sugar())
-	cl := NewCluster(l)
-	cl.SetClusterId(1)
-	cl.SetLocalPeerId(3)
+	cl := NewCluster()
+	cl.SetClusterID(1)
+	cl.SetLocalPeerID(3)
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             1,
+		PeerID:         1,
 		RaftListenAddr: "localhost:14200",
 	}))
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             2,
+		PeerID:         2,
 		RaftListenAddr: "localhost:14201",
 		IsLearner:      true,
 	}))
 	assert.Nil(t, cl.Remove(2))
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             3,
+		PeerID:         3,
 		RaftListenAddr: "localhost:14202",
 	}))
 	// Cluster: peers [1,3], remove[2]
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             4,
+		PeerID:         4,
 		RaftListenAddr: "localhost:14204",
 	}))
 	// Cluster: peers [1,3,4], remove[2]
 	// id exists
 	assert.Error(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             1,
-		RaftListenAddr: "localhost:14200",
-	}))
-	//endpoint exists
-	assert.Error(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             5,
+		PeerID:         1,
 		RaftListenAddr: "localhost:14200",
 	}))
 
 	//add learner
 	// Cluster: peers [1,3,4], remove[2], learner[10]
 	assert.Nil(t, cl.Add(babuzapb.RaftPeerAttribute{
-		Id:             10,
+		PeerID:         10,
 		RaftListenAddr: "localhost:14210",
 		IsLearner:      true,
 	}))
@@ -213,14 +197,14 @@ func TestCluster_Apply(t *testing.T) {
 	// id has been removed
 	assert.Error(t, cl.Remove(1))
 
-	assert.Nil(t, cl.Update(babuzapb.RaftPeerAttribute{
-		Id:             3,
+	assert.Nil(t, cl.Update(3, babuzapb.RaftPeerAttribute{
+		PeerID:         3,
 		RaftListenAddr: "localhost:14203",
 	}))
 
 	// id does not found
-	assert.Error(t, cl.Update(babuzapb.RaftPeerAttribute{
-		Id:             2,
+	assert.Error(t, cl.Update(2, babuzapb.RaftPeerAttribute{
+		PeerID:         2,
 		RaftListenAddr: "localhost:14203",
 	}))
 }

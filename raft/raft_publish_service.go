@@ -22,31 +22,27 @@ func (r *Raft) applicationServiceStart(ctx context.Context,
 		default:
 		}
 		if err := func() error {
-			replyId := r.idGenerator.Next()
+			replyID := r.idGenerator.Next()
 			if r.config.DisableProposalForwarding {
-				leaderId, err := r.findLeader(ctx, checkLeaderTimeout)
+				leaderID, err := r.findLeader(ctx, checkLeaderTimeout)
 				if err != nil {
 					return err
 				}
-				if leaderId == r.config.LocalPeerId {
-					res := r.proposalPubAppService(ctx, replyId, appServiceAddresses)
+				if leaderID == r.config.LocalPeerID {
+					res := r.proposalPubAppService(ctx, replyID, appServiceAddresses)
 					return func() error {
-						pErr := res.Wait()
+						ar := res.WaitForApplyResult()
 						defer res.Release()
-						if pErr != nil {
-							return pErr
-						}
-						_ = res.Response()
-						return pErr
+						return ar.Error
 					}()
 				} else {
-					return r.sendPubAppServiceMsgToLeader(ctx, leaderId, replyId, appServiceAddresses)
+					return r.sendPubAppServiceMsgToLeader(ctx, leaderID, replyID, appServiceAddresses)
 				}
 			} else {
-				res := r.proposalPubAppService(ctx, replyId, appServiceAddresses)
-				err := res.Wait()
+				res := r.proposalPubAppService(ctx, replyID, appServiceAddresses)
+				ar := res.WaitForApplyResult()
 				res.Release()
-				return err
+				return ar.Error
 			}
 		}(); err != nil {
 			if errors.Is(err, ErrStopped) || errors.Is(err, context.DeadlineExceeded) {
@@ -54,9 +50,8 @@ func (r *Raft) applicationServiceStart(ctx context.Context,
 				break
 			}
 			r.logger.Warningf("Failed to publish application service addresses error: %v", err)
-			// continue
+			time.Sleep(time.Millisecond * 200)
 		} else {
-			r.status.MarkPublishServiceDone()
 			pubDoneCh <- nil
 			break
 		}
@@ -66,33 +61,33 @@ func (r *Raft) applicationServiceStart(ctx context.Context,
 func (r *Raft) findLeader(ctx context.Context, checkLeaderTimeout time.Duration) (uint64, error) {
 	ticker := time.NewTicker(checkLeaderTimeout + time.Duration(rand.Int63n(int64(checkLeaderTimeout/10))))
 	defer ticker.Stop()
-	leaderId := r.getLeaderId()
-	for leaderId == None {
+	leaderID := r.getLeaderId()
+	for leaderID == None {
 		select {
 		case <-r.closer.CloseCh():
 			return 0, ErrStopped
 		case <-ctx.Done():
 			return 0, ctx.Err()
 		case <-ticker.C:
-			leaderId = r.getLeaderId()
+			leaderID = r.getLeaderId()
 		}
 	}
-	return leaderId, nil
+	return leaderID, nil
 }
 
-func (r *Raft) proposalPubAppService(ctx context.Context, replyId uint64, appServiceAddresses []string) ProposedResult {
-	proposalData, err := encodePubAppServiceAddressesRequest(replyId, r.config.LocalPeerId, appServiceAddresses)
+func (r *Raft) proposalPubAppService(ctx context.Context, replyID uint64, appServiceAddresses []string) ProposedResult {
+	proposalData, err := EncodePubAppServiceAddressesRequest(replyID, r.config.LocalPeerID, appServiceAddresses)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
-	ch, err := r.propose(ctx, replyId, proposalData)
+	ch, err := r.propose(ctx, replyID, proposalData)
 	if err != nil {
-		return newErrorResult(err)
+		return NewErrorResult(err)
 	}
-	return newProposalResult(ctx, r.closer, ch)
+	return NewProposalResult(ctx, r.closer, ch)
 }
 
-func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderId, replyId uint64,
+func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderID, replyID uint64,
 	appServiceAddresses []string) error {
 
 	c, err := r.trans.CreateTransportClient()
@@ -100,16 +95,16 @@ func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderId, reply
 		return err
 	}
 	defer c.Close()
-	resultCh, err := r.resultReplier.AcquireResultChan(replyId)
+	resultCh, err := r.resultReplier.AcquireResultChan(replyID)
 	if err != nil {
 		return err
 	}
-	defer r.resultReplier.CancelResult(replyId)
-	res := c.PublishApplicationService(babuzapb.PublishApplicationServiceRequest{
-		ClusterId:           r.config.ClusterId,
-		FromId:              r.config.LocalPeerId,
-		ToId:                leaderId,
-		ProposalReplyId:     replyId,
+	defer r.resultReplier.CancelResult(replyID)
+	res, _ := c.PublishApplicationService(babuzapb.PublishApplicationServiceRequest{
+		ClusterID:           r.config.ClusterID,
+		From:                r.config.LocalPeerID,
+		To:                  leaderID,
+		ProposalReplyID:     replyID,
 		AppServiceAddresses: appServiceAddresses,
 	})
 	if res.Status == babuzapb.SUCCESS {
@@ -119,10 +114,7 @@ func (r *Raft) sendPubAppServiceMsgToLeader(ctx context.Context, leaderId, reply
 		case <-ctx.Done():
 			return ctx.Err()
 		case result := <-resultCh:
-			if result.Error != nil {
-				return result.Error
-			}
-			return nil
+			return result.Error
 		}
 	}
 	return errors.New(res.Message)

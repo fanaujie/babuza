@@ -81,7 +81,6 @@ func (t *Tcp) Setup(cfg ibabuza.TransportConfig) error {
 	t.config = cfg
 	t.pool = connpool.NewConnectionPool[*conn.FrameConnection](t, connpool.Config{
 		MaxConnectionsPerHost: t.options.MaxConnectionsPerHost,
-		DialTimeout:           t.options.DialTimeout,
 		IdleTimeout:           t.options.IdleConnTimeout,
 	})
 	return nil
@@ -103,7 +102,7 @@ func (t *Tcp) Close() error {
 }
 
 func (t *Tcp) Dial(address string) (*conn.FrameConnection, error) {
-	netConn, err := t.network.DialWithTimeout(t.config.TLSConfig, t.config.PeerId, address, t.options.DialTimeout)
+	netConn, err := t.network.DialWithTimeout(t.config.TLSConfig, t.config.LocalNodeID, address, t.options.DialTimeout)
 	if err != nil {
 		return nil, err
 	}

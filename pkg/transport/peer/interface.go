@@ -17,9 +17,15 @@ type SnapshotFileReader interface {
 }
 
 type Peer interface {
-	SendRaftMessage(msg *raftpb.Message) error
-	SendSnapshot(snapMsg *raftpb.Message, snapReader SnapshotFileReader)
+	SendRaftMessage(msg raftpb.Message) error
+	SendSnapshot(snapMsg raftpb.Message, snapReader SnapshotFileReader)
 	UpdateRaftReport(report ibabuza.RaftStatusReporter)
 	Stop()
-	UpdatePeer()
+}
+
+type MultiRaftPeer interface {
+	SendRaftMessage(msg *babuzapb.MultiRaftMessage) error
+	SendSnapshot(snapMsg babuzapb.MultiRaftMessage, snapReader SnapshotFileReader)
+	UpdateRaftReport(report ibabuza.MultiRaftStatusReporter)
+	Stop()
 }

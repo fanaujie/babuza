@@ -28,7 +28,7 @@ func (c *BasicTransferLeader) Run(tc *testcluster.BabuzaCluster, a any) {
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
@@ -46,7 +46,7 @@ func (c *BasicTransferLeader) Run(tc *testcluster.BabuzaCluster, a any) {
 	}
 
 	// Choose a different node to transfer leadership to
-	transferLeaderId := (leaderId % 3) + 1
+	transferLeaderId := (leaderID % 3) + 1
 
 	// Transfer leadership
 	assert.Nil(c.t, runWithCtxTimeout(wait*2, func(ctx context.Context) error {
@@ -54,18 +54,18 @@ func (c *BasicTransferLeader) Run(tc *testcluster.BabuzaCluster, a any) {
 	}))
 
 	// Verify the new leader is the one we transferred to
-	leaderId2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID2, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	assert.Equal(c.t, transferLeaderId, leaderId2)
+	assert.Equal(c.t, transferLeaderId, leaderID2)
 
 	// Join a learner node
 	learner := makeSingleStandardPeer(4, true)
 	connectGroup.Add(learner.ID())
-	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, learner, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, learner, connectGroup.GetIDs()))
 
 	// Verify the learner joined successfully
 	assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId2, learner)
+		return tc.CheckPeerExists(ctx, leaderID2, learner)
 	}))
 
 	// Try to transfer leadership to the learner (should fail)
@@ -85,11 +85,11 @@ func (c *BasicTransferLeader) Run(tc *testcluster.BabuzaCluster, a any) {
 	// Join a new voting member
 	follower := makeSingleStandardPeer(5, false)
 	connectGroup.Add(follower.ID())
-	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, follower, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, follower, connectGroup.GetIDs()))
 
 	// Verify the new voting member joined successfully
 	assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId2, follower)
+		return tc.CheckPeerExists(ctx, leaderID2, follower)
 	}))
 
 	// Transfer leadership to the new voting member
@@ -98,11 +98,11 @@ func (c *BasicTransferLeader) Run(tc *testcluster.BabuzaCluster, a any) {
 	}))
 
 	// Verify the new voting member is now the leader
-	leaderId3, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID3, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	assert.Equal(c.t, uint64(5), leaderId3)
+	assert.Equal(c.t, uint64(5), leaderID3)
 
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 
 }
 

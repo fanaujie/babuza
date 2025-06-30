@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
 	"github.com/fanaujie/babuza/pkg/cluster"
-	"github.com/fanaujie/babuza/pkg/session"
 	"github.com/fanaujie/babuza/raft"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -62,7 +62,8 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 		}
 		res, err := p.httpClient.Do(req)
 		if err != nil {
-			if err.(*url.Error).Timeout() {
+			var nErr net.Error
+			if errors.As(err, &nErr) && nErr.Timeout() {
 				return err
 			}
 			if err = p.moveNextLeader(); err != nil {
@@ -82,12 +83,6 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 				return err
 			}
 			continue
-		} else if res.StatusCode == http.StatusMovedPermanently {
-			newLeaderUrl, _ := url.Parse(res.Header["Location"][0])
-			if err = p.updateLeaderIndex(newLeaderUrl); err != nil {
-				return err
-			}
-			continue
 		} else if res.StatusCode == http.StatusGatewayTimeout {
 			if err = p.moveNextLeader(); err != nil {
 				return err
@@ -101,11 +96,11 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 	}
 }
 
-func (p *leaderProxyClient) SendRequestWithPeerId(peerId uint64, makeRequest func(leaderUrl url.URL) (*http.Request, error), result any) error {
+func (p *leaderProxyClient) SendRequestWithPeerId(peerID uint64, makeRequest func(leaderUrl url.URL) (*http.Request, error), result any) error {
 	var leaderUrl *url.URL
 	p.mu.RLock()
 	for _, peer := range p.peers {
-		if peer.Id == peerId {
+		if peer.Id == peerID {
 			leaderUrl = &url.URL{
 				Scheme: p.httpScheme,
 				Host:   peer.KvServiceAddress,
@@ -114,7 +109,7 @@ func (p *leaderProxyClient) SendRequestWithPeerId(peerId uint64, makeRequest fun
 	}
 	p.mu.RUnlock()
 	if leaderUrl == nil {
-		return fmt.Errorf("not found service address. (peerId=%d)", peerId)
+		return fmt.Errorf("not found service address. (peerID=%d)", peerID)
 	}
 	req, err := makeRequest(*leaderUrl)
 	if err != nil {
@@ -131,7 +126,7 @@ func (p *leaderProxyClient) SendRequestWithPeerId(peerId uint64, makeRequest fun
 	if err = res.Body.Close(); err != nil {
 		return err
 	}
-	if res.StatusCode == http.StatusMovedPermanently {
+	if res.StatusCode == http.StatusServiceUnavailable {
 		return raft.ErrNotLeader
 	}
 	if res.StatusCode != http.StatusOK {
@@ -210,8 +205,6 @@ func convertError(errString string) error {
 		return cluster.ErrPeerNotLearner
 	case context.DeadlineExceeded.Error():
 		return context.DeadlineExceeded
-	case session.ErrSessionExpired.Error():
-		return session.ErrSessionExpired
 	default:
 		return errors.New(errString)
 	}

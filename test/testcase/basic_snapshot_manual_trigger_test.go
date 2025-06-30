@@ -71,7 +71,7 @@ func snapshotManualTriggerTestComponents() []BabuzaComponent {
 						return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
 							b := customBabuzaComponent(builder.NoOpSession, builder.BabuzaWal, snapshotType,
 								transport, proxyNet).
-								SetClusterId(config.BubuzaConfig.ClusterId).
+								SetClusterId(config.BubuzaConfig.ClusterID).
 								SetStorageRootDir(storageDir)
 							if snapshotType == builder.MinIOSnapshot {
 								endpoint, err := mc.minioContainer.ConnectionString(context.Background())
@@ -121,7 +121,7 @@ func (c *SnapshotManualTrigger) Run(tc *testcluster.BabuzaCluster, testParams an
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 	// Identify the current leader
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Create a client with automatic incrementing session
@@ -146,21 +146,22 @@ func (c *SnapshotManualTrigger) Run(tc *testcluster.BabuzaCluster, testParams an
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
-	assert.Nil(c.t, tc.ExecutePeerRaftOperation(leaderId, func(r *babuza.Raft) error {
+	assert.Nil(c.t, tc.ExecutePeerRaftOperation(leaderID, func(r *babuza.Raft) error {
 		result := r.ManualSnapshot(ctx)
 		err = result.Wait()
 		if err != nil {
 			return err
 		}
 		// Verify snapshot
-		assert.Equal(c.t, result.SnapshotMetadata().Snapshot.Metadata.Index, r.Status().LastSnapshotIndex)
-		assert.Equal(c.t, result.SnapshotMetadata().Snapshot.Metadata.Term, r.Status().LastSnapshotTerm)
+		m, _ := result.SnapshotMetadata()
+		assert.Equal(c.t, m.Snapshot.Metadata.Index, r.Status().LastSnapshotIndex)
+		assert.Equal(c.t, m.Snapshot.Metadata.Term, r.Status().LastSnapshotTerm)
 		tagMap := map[babuzapb.SnapshotFileType]struct{}{
 			babuzapb.SnapshotFileType_Cluster:      {},
 			babuzapb.SnapshotFileType_StateMachine: {},
 			babuzapb.SnapshotFileType_Session:      {},
 		}
-		for _, tag := range result.SnapshotMetadata().Files {
+		for _, tag := range m.Files {
 			delete(tagMap, tag.FileType)
 		}
 		assert.Equal(c.t, 0, len(tagMap))

@@ -2,17 +2,15 @@ package testcase
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/anishathalye/porcupine"
+	"github.com/fanaujie/babuza/examples/kvstore/client"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
-	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/builder"
 	"github.com/fanaujie/babuza/pkg/session"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
-	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
 	"math/rand"
@@ -24,119 +22,10 @@ import (
 	"time"
 )
 
-type MyClient struct {
-	cs babuza.ClientSession
-}
-
-func NewMyClient(sessionId uint64) *MyClient {
-	return &MyClient{
-		cs: babuza.ClientSession{
-			SessionID:      sessionId,
-			SequenceNumber: 0,
-		},
-	}
-}
-
-func (c *MyClient) ClientSession() babuza.ClientSession {
-	c.cs.SequenceNumber++
-	return c.cs
-}
-
-func (c *MyClient) Response(sequenceNumber uint64) {
-
-}
-
-type KvClientProxy struct {
-	kvStores []*babuza.Raft
-	client   *MyClient
-	leader   int
-}
-
-func NewKvClientProxy(kvStoreCluster []*babuza.Raft) *KvClientProxy {
-	c := &KvClientProxy{
-		kvStores: kvStoreCluster,
-	}
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		res := c.kvStores[c.leader].RegisterSession(ctx)
-		if err := res.Wait(); err == nil {
-			c.client = NewMyClient(res.LogIndex())
-			res.Release()
-			cancel()
-			break
-		}
-		res.Release()
-		cancel()
-		c.nextTryLeader()
-		time.Sleep(time.Millisecond * 300)
-	}
-	return c
-}
-
-func (c *KvClientProxy) nextTryLeader() {
-	c.leader++
-	if c.leader == len(c.kvStores) {
-		c.leader = 0
-	}
-}
-
-func (c *KvClientProxy) Get(key string) (string, error) {
-
-	r := c.kvStores[c.leader]
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-	err := r.LinearizableRead(ctx)
-	defer cancel()
-	if err == nil {
-		v, err := r.GetStateMachine().(*kvstore.MemoryStoreWithSession).Load(key)
-		if err != nil {
-			if errors.Is(err, kverror.ErrKeyNotFound) {
-				return "", nil
-			}
-			fmt.Println("KvClientProxy: failed to get key", err.Error())
-			return "", err
-		}
-		return v, nil
-	}
-	fmt.Println("KvClientProxy: failed to get key", err.Error())
-	return "", err
-}
-
-func (c *KvClientProxy) Set(key string, value string) {
-	var req kvstore.KvCommand
-	command, err := req.Set(key, value)
-	if err != nil {
-		panic("KvClientProxy: failed to set key")
-	}
-	c.command(command)
-}
-func (c *KvClientProxy) Append(key string, value string) {
-	var req kvstore.KvCommand
-	command, err := req.Append(key, value)
-	if err != nil {
-		panic("KvClientProxy: failed to append key")
-	}
-	c.command(command)
-}
-
-func (c *KvClientProxy) command(command []byte) {
-	cs := c.client.ClientSession()
-	for {
-		r := c.kvStores[c.leader]
-		if r.Status().IsLeader() {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
-			_, err := r.ProposeThenWaitResponse(ctx, cs, command)
-			if err == nil {
-				cancel()
-				//TODO: finish
-				c.client.Response(0)
-				return
-			}
-			cancel()
-			fmt.Println("KvClientProxy: failed to propose command, retrying...", err.Error())
-		}
-		c.nextTryLeader()
-		time.Sleep(time.Millisecond * 100)
-	}
+type linearizabilityKvClient interface {
+	Get(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key string, value string) error
+	Append(ctx context.Context, key string, value string) error
 }
 
 // KvStoreInput defines the input model for KvStore operations
@@ -238,7 +127,7 @@ func (c *LinearizabilityWithKvStoreTestCase) CreateTestComponents() []BabuzaComp
 						// Due to the append operation in tests requiring idempotence, sessions must be used.
 						b := customBabuzaComponent(builder.LRUSession, walType, builder.DurableSnapshot,
 							transportType, proxyNet).
-							SetClusterId(config.BubuzaConfig.ClusterId).
+							SetClusterId(config.BubuzaConfig.ClusterID).
 							SetStorageRootDir(storageDir).
 							AddLruSessionOptions(session.SetLruMgrOptionsWithMaxSessions(100))
 						return *config, *b.Build()
@@ -264,12 +153,28 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
 	// Connect all peers
-	assert.Nil(c.t, tc.SetPartition(connectGroup.GetIds()))
+	assert.Nil(c.t, tc.SetPartition(connectGroup.GetIDs()))
 
 	// Wait for leader election
-	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	rs := tc.GetAllRaft()
+
+	//createDirectRaftKvClient := func() linearizabilityKvClient {
+	//	var rs []*babuza.Raft
+	//	for _, r := range tc.GetAllRaft() {
+	//		rs = append(rs, r)
+	//	}
+	//	return newDirectRaftKvClient(rs)
+	//}
+	createHttpKvClient := func() linearizabilityKvClient {
+		s := client.NewManualIncrementSession()
+		cli, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), s)
+		if err != nil {
+			c.t.Logf("Error creating HTTP client: %v", err)
+			c.t.FailNow()
+		}
+		return newKvClientWrapper(10, cli, s)
+	}
 
 	// Storage for operations to check linearizability
 	var operations []porcupine.Operation
@@ -281,27 +186,16 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 		partitionStopCh := make(chan struct{})
 		wg := sync.WaitGroup{}
 
-		var kvClient []*KvClientProxy
+		var kvClient []linearizabilityKvClient
 		for index := 0; index < clients; index++ {
-			kvClient = append(kvClient, NewKvClientProxy(rs))
+			kvClient = append(kvClient, createHttpKvClient())
 		}
 
 		// Start client routines
 		for cr := 0; cr < clients; cr++ {
 			wg.Add(1)
-			go func(clientId int, myKvClient *KvClientProxy) {
+			go func(clientId int, cli linearizabilityKvClient) {
 				defer wg.Done()
-
-				// TODO: Create a new client session for each client for linearizable test
-				// Using embedapp.NewKvStoreClient leads to unstable tests that occasionally fail, likely due to issues in the KvStoreClient implementation
-				// Therefore, KvClientProxy is used to propose directly to the Raft instance, bypassing network transmission
-
-				//kvClient, err := embedapp.NewKvStoreClient(
-				//	tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
-				//assert.Nil(c.t, err)
-				//defer func() {
-				//	_ = kvClient.Close()
-				//}()
 
 				it := 0
 				for {
@@ -319,35 +213,32 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 					value := fmt.Sprintf("c:%d v:%d ", clientId, it)
 
 					func() {
-						//ctx, cancel := context.WithTimeout(context.Background(), wait)
-						//defer cancel()
-
 						start := time.Now().UnixNano()
 
 						// Randomly select operation: 20% Set, 20% Append, 60% Get
 						if (rand.Int() % 1000) < 200 {
 							// Set operation
-							myKvClient.Set(key, value)
+							if err = cli.Set(context.Background(), key, value); err != nil {
+								c.t.Logf("Error setting key %s: %v", key, err)
+								c.t.FailNow()
+							}
 							input = KvStoreInput{Command: 1, Key: key, Value: value}
-							//output = KvStoreOutput{Value: res.Value}
-
 						} else if (rand.Int() % 1000) < 400 {
 							// Append operation
-							myKvClient.Append(key, value)
+							if err = cli.Append(context.Background(), key, value); err != nil {
+								c.t.Logf("Error appending key %s: %v", key, err)
+								c.t.FailNow()
+							}
 							input = KvStoreInput{Command: 2, Key: key, Value: value}
-							//output = KvStoreOutput{Value: res.Value}
-							//}
 						} else {
 							//Linearizable Get operation
-							res, err := myKvClient.Get(key)
+							res, err := cli.Get(context.Background(), key)
 							if err == nil {
 								input = KvStoreInput{Command: 0, Key: key}
 								output = KvStoreOutput{Value: res}
 							}
 						}
-
 						end := time.Now().UnixNano()
-
 						// Record operation for linearizability check
 						opMu.Lock()
 						count++
@@ -379,7 +270,7 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 
 				// Create random partitions
 				partitions := make(map[uint64]int)
-				for _, id := range connectGroup.GetIds() {
+				for _, id := range connectGroup.GetIDs() {
 					partitions[id] = rand.Int() % 2
 				}
 
@@ -413,8 +304,8 @@ func (c *LinearizabilityWithKvStoreTestCase) Run(tc *testcluster.BabuzaCluster, 
 		<-partitionDoneCh
 
 		//Reconnect all nodes
-		assert.Nil(c.t, tc.SetPartition(connectGroup.GetIds()))
-		_, err = tc.CheckOneLeader(wait, connectGroup.GetIds())
+		assert.Nil(c.t, tc.SetPartition(connectGroup.GetIDs()))
+		_, err = tc.CheckOneLeader(wait, connectGroup.GetIDs())
 		assert.Nil(c.t, err)
 		// Stop client operations
 		close(clientStopCh)

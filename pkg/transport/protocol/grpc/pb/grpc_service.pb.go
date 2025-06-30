@@ -27,26 +27,29 @@ const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 func init() { proto.RegisterFile("grpc_service.proto", fileDescriptor_626e658682f5c341) }
 
 var fileDescriptor_626e658682f5c341 = []byte{
-	// 294 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x84, 0x91, 0xc1, 0x4a, 0x03, 0x31,
-	0x10, 0x86, 0xa9, 0x87, 0x1e, 0x16, 0x8a, 0x12, 0x51, 0x70, 0xd5, 0x1e, 0xf5, 0x96, 0x80, 0x9e,
-	0xbc, 0x08, 0x56, 0xa5, 0xa7, 0x4a, 0x69, 0x3d, 0x79, 0x91, 0x64, 0x9d, 0xcd, 0x46, 0xd3, 0x24,
-	0x66, 0x26, 0x82, 0x3e, 0xa1, 0x47, 0xc1, 0x17, 0x90, 0x3e, 0x89, 0x6c, 0xc3, 0x82, 0x14, 0x8a,
-	0xc7, 0xf9, 0x66, 0xe6, 0x1b, 0x98, 0xbf, 0x60, 0x3a, 0x86, 0xea, 0x11, 0x21, 0xbe, 0x99, 0x0a,
-	0x78, 0x88, 0x9e, 0x3c, 0xeb, 0xb7, 0x2c, 0xa8, 0x72, 0x10, 0x65, 0x4d, 0x13, 0xd4, 0x19, 0x97,
-	0x87, 0xda, 0x7b, 0x6d, 0x41, 0xac, 0x2a, 0x95, 0x6a, 0x01, 0x8b, 0x40, 0xef, 0xb9, 0x79, 0xf6,
-	0xbd, 0x55, 0x0c, 0x66, 0xb2, 0xa6, 0xfb, 0x28, 0x1d, 0x06, 0x1f, 0x89, 0x5d, 0x16, 0x3b, 0x73,
-	0x70, 0x4f, 0x23, 0x49, 0x55, 0x33, 0x01, 0x44, 0xa9, 0x81, 0x31, 0xde, 0x2a, 0xf9, 0x5f, 0x56,
-	0xee, 0xf3, 0xec, 0xe5, 0x9d, 0x97, 0xdf, 0xb6, 0x5e, 0x76, 0x53, 0xec, 0xb6, 0xfb, 0x73, 0x27,
-	0x03, 0x36, 0x9e, 0x3a, 0xc5, 0x5e, 0x56, 0xac, 0xe1, 0x8d, 0x96, 0xbb, 0x62, 0x7b, 0x0c, 0x74,
-	0x6d, 0x13, 0x12, 0xc4, 0x29, 0x40, 0x44, 0x76, 0x94, 0x0d, 0x6b, 0x78, 0x06, 0xaf, 0x09, 0x90,
-	0xca, 0xe3, 0x0d, 0x5d, 0x0c, 0xde, 0x21, 0x30, 0x5b, 0x1c, 0x4c, 0x93, 0xb2, 0x06, 0x9b, 0xab,
-	0x10, 0xac, 0xa9, 0x24, 0x19, 0xef, 0xe6, 0xf9, 0x7d, 0xec, 0x24, 0xef, 0x6e, 0x1c, 0xe8, 0x6e,
-	0x9c, 0xfe, 0x3b, 0x97, 0xaf, 0x8d, 0xc6, 0x9f, 0xcb, 0x61, 0xef, 0x6b, 0x39, 0xec, 0xfd, 0x2c,
-	0x87, 0xbd, 0x87, 0x0b, 0x6d, 0xa8, 0x49, 0x8a, 0x57, 0x7e, 0x21, 0x6a, 0xe9, 0x64, 0x7a, 0x36,
-	0x20, 0x94, 0x54, 0xe9, 0x43, 0x8a, 0xf0, 0xa2, 0x05, 0x75, 0xbf, 0xcf, 0x11, 0x55, 0xde, 0x8a,
-	0x36, 0x49, 0x11, 0x94, 0xea, 0xaf, 0xc8, 0xf9, 0x6f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xec, 0x62,
-	0x97, 0x8b, 0xef, 0x01, 0x00, 0x00,
+	// 342 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xec, 0x93, 0xbf, 0x4e, 0xfb, 0x30,
+	0x10, 0xc7, 0x95, 0x0e, 0x1d, 0x2c, 0x55, 0xbf, 0x9f, 0xcc, 0x1f, 0x89, 0x14, 0x3a, 0x02, 0x53,
+	0x8c, 0xca, 0xc4, 0x82, 0x44, 0x11, 0xea, 0x80, 0x0a, 0x55, 0xcb, 0xc4, 0x82, 0xec, 0x70, 0x49,
+	0x0c, 0x6e, 0x6c, 0xec, 0x33, 0x12, 0x3c, 0x21, 0x23, 0x33, 0x13, 0xea, 0x13, 0xf0, 0x08, 0x28,
+	0x35, 0xa9, 0xa0, 0x80, 0xe0, 0x01, 0x18, 0xf3, 0xb9, 0xbb, 0xcf, 0x45, 0x5f, 0xeb, 0x08, 0xcd,
+	0xad, 0x49, 0x2f, 0x1c, 0xd8, 0x5b, 0x99, 0x42, 0x62, 0xac, 0x46, 0x4d, 0x9b, 0x15, 0x33, 0x22,
+	0x6e, 0x59, 0x9e, 0xe1, 0xc0, 0xe5, 0x01, 0xc7, 0xed, 0x5c, 0xeb, 0x5c, 0x01, 0x9b, 0x7d, 0x09,
+	0x9f, 0x31, 0x98, 0x18, 0xbc, 0x0b, 0xc5, 0xee, 0x53, 0x83, 0xb4, 0x46, 0x3c, 0xc3, 0x33, 0xcb,
+	0x4b, 0x67, 0xb4, 0x45, 0xba, 0x4f, 0xfe, 0x8f, 0xa1, 0xbc, 0xec, 0x71, 0x4c, 0x8b, 0x01, 0x38,
+	0xc7, 0x73, 0xa0, 0x34, 0xa9, 0x94, 0xc9, 0x7b, 0x16, 0xaf, 0x26, 0xc1, 0x9b, 0xd4, 0xde, 0xe4,
+	0xa8, 0xf2, 0xd2, 0x63, 0xb2, 0x54, 0xcd, 0x8f, 0x4b, 0x6e, 0x5c, 0xa1, 0xb1, 0x56, 0xac, 0x04,
+	0xc5, 0x02, 0x8e, 0x37, 0xbe, 0xc4, 0x23, 0x70, 0x46, 0x97, 0x0e, 0xe8, 0x09, 0xf9, 0xd7, 0x07,
+	0x3c, 0x54, 0xde, 0x21, 0xd8, 0x21, 0x80, 0x75, 0x74, 0x3d, 0x4c, 0x2c, 0xe0, 0x11, 0xdc, 0x78,
+	0x70, 0x58, 0xfb, 0x3e, 0x55, 0xdf, 0x7c, 0x8a, 0xac, 0x0d, 0xbd, 0x50, 0xd2, 0x15, 0x07, 0xc6,
+	0x28, 0x99, 0x72, 0x94, 0xba, 0x1c, 0x87, 0x14, 0xe9, 0x66, 0x98, 0xfd, 0xb6, 0xa1, 0xde, 0xb1,
+	0xf5, 0x63, 0x5f, 0xd8, 0xd6, 0x7d, 0x69, 0x10, 0x3a, 0xf0, 0x0a, 0xe5, 0xc7, 0x84, 0x4f, 0xc9,
+	0x72, 0x95, 0xd0, 0xbc, 0x52, 0x47, 0xd4, 0x0e, 0xde, 0x39, 0xff, 0x4d, 0xdc, 0xdb, 0xd1, 0x4e,
+	0xf4, 0x17, 0xf9, 0xfc, 0xef, 0x7b, 0xfd, 0x87, 0x69, 0x27, 0x7a, 0x9c, 0x76, 0xa2, 0xe7, 0x69,
+	0x27, 0x3a, 0xdf, 0xcb, 0x25, 0x16, 0x5e, 0x24, 0xa9, 0x9e, 0xb0, 0x8c, 0x97, 0xdc, 0x5f, 0x49,
+	0x60, 0x82, 0x0b, 0x7f, 0xcf, 0x99, 0xb9, 0xce, 0x19, 0xd6, 0x6f, 0x12, 0x8e, 0x23, 0xd5, 0x8a,
+	0x55, 0x37, 0xc4, 0x8c, 0x10, 0xcd, 0x19, 0xd9, 0x7d, 0x0d, 0x00, 0x00, 0xff, 0xff, 0xe9, 0x97,
+	0xad, 0x5b, 0x69, 0x03, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -64,7 +67,7 @@ type RaftTransportClient interface {
 	// SendBatchMessage sends a batch of Raft messages
 	SendBatchMessage(ctx context.Context, in *babuzapb.BatchMessage, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// SendSnapshotMessage sends a snapshot message
-	SendSnapshotMessage(ctx context.Context, in *babuzapb.SnapshotMessage, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	SendSnapshotMessage(ctx context.Context, in *babuzapb.SnapshotMessage, opts ...grpc.CallOption) (*babuzapb.SnapshotMessageResponse, error)
 	// GetClusterPeers gets information about peers in the cluster
 	GetClusterPeers(ctx context.Context, in *babuzapb.GetClusterPeersRequest, opts ...grpc.CallOption) (*babuzapb.GetClusterPeersResponse, error)
 	// PublishApplicationService publishes application service addresses
@@ -88,8 +91,8 @@ func (c *raftTransportClient) SendBatchMessage(ctx context.Context, in *babuzapb
 	return out, nil
 }
 
-func (c *raftTransportClient) SendSnapshotMessage(ctx context.Context, in *babuzapb.SnapshotMessage, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
+func (c *raftTransportClient) SendSnapshotMessage(ctx context.Context, in *babuzapb.SnapshotMessage, opts ...grpc.CallOption) (*babuzapb.SnapshotMessageResponse, error) {
+	out := new(babuzapb.SnapshotMessageResponse)
 	err := c.cc.Invoke(ctx, "/grpcpb.RaftTransport/SendSnapshotMessage", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -120,7 +123,7 @@ type RaftTransportServer interface {
 	// SendBatchMessage sends a batch of Raft messages
 	SendBatchMessage(context.Context, *babuzapb.BatchMessage) (*emptypb.Empty, error)
 	// SendSnapshotMessage sends a snapshot message
-	SendSnapshotMessage(context.Context, *babuzapb.SnapshotMessage) (*emptypb.Empty, error)
+	SendSnapshotMessage(context.Context, *babuzapb.SnapshotMessage) (*babuzapb.SnapshotMessageResponse, error)
 	// GetClusterPeers gets information about peers in the cluster
 	GetClusterPeers(context.Context, *babuzapb.GetClusterPeersRequest) (*babuzapb.GetClusterPeersResponse, error)
 	// PublishApplicationService publishes application service addresses
@@ -225,5 +228,209 @@ var _RaftTransport_serviceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
+	Metadata: "grpc_service.proto",
+}
+
+// MultiRaftTransportClient is the client API for MultiRaftTransport service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
+type MultiRaftTransportClient interface {
+	// SendBatchMessage sends stream of batch messages
+	SendMultiRaftMessage(ctx context.Context, opts ...grpc.CallOption) (MultiRaftTransport_SendMultiRaftMessageClient, error)
+	// SendSnapshotMessage sends a snapshot message
+	SendSnapshotMessage(ctx context.Context, in *babuzapb.SnapshotMessage, opts ...grpc.CallOption) (*babuzapb.SnapshotMessageResponse, error)
+	// GetClusterPeers gets information about peers in the cluster
+	GetClusterPeers(ctx context.Context, in *babuzapb.GetClusterPeersRequest, opts ...grpc.CallOption) (*babuzapb.GetClusterPeersResponse, error)
+	// PublishApplicationService publishes application service addresses
+	PublishApplicationService(ctx context.Context, in *babuzapb.PublishApplicationServiceRequest, opts ...grpc.CallOption) (*babuzapb.PublishApplicationServiceResponse, error)
+}
+
+type multiRaftTransportClient struct {
+	cc *grpc.ClientConn
+}
+
+func NewMultiRaftTransportClient(cc *grpc.ClientConn) MultiRaftTransportClient {
+	return &multiRaftTransportClient{cc}
+}
+
+func (c *multiRaftTransportClient) SendMultiRaftMessage(ctx context.Context, opts ...grpc.CallOption) (MultiRaftTransport_SendMultiRaftMessageClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_MultiRaftTransport_serviceDesc.Streams[0], "/grpcpb.MultiRaftTransport/SendMultiRaftMessage", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &multiRaftTransportSendMultiRaftMessageClient{stream}
+	return x, nil
+}
+
+type MultiRaftTransport_SendMultiRaftMessageClient interface {
+	Send(*babuzapb.MultiRaftBatchMessage) error
+	Recv() (*emptypb.Empty, error)
+	grpc.ClientStream
+}
+
+type multiRaftTransportSendMultiRaftMessageClient struct {
+	grpc.ClientStream
+}
+
+func (x *multiRaftTransportSendMultiRaftMessageClient) Send(m *babuzapb.MultiRaftBatchMessage) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *multiRaftTransportSendMultiRaftMessageClient) Recv() (*emptypb.Empty, error) {
+	m := new(emptypb.Empty)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *multiRaftTransportClient) SendSnapshotMessage(ctx context.Context, in *babuzapb.SnapshotMessage, opts ...grpc.CallOption) (*babuzapb.SnapshotMessageResponse, error) {
+	out := new(babuzapb.SnapshotMessageResponse)
+	err := c.cc.Invoke(ctx, "/grpcpb.MultiRaftTransport/SendSnapshotMessage", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *multiRaftTransportClient) GetClusterPeers(ctx context.Context, in *babuzapb.GetClusterPeersRequest, opts ...grpc.CallOption) (*babuzapb.GetClusterPeersResponse, error) {
+	out := new(babuzapb.GetClusterPeersResponse)
+	err := c.cc.Invoke(ctx, "/grpcpb.MultiRaftTransport/GetClusterPeers", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *multiRaftTransportClient) PublishApplicationService(ctx context.Context, in *babuzapb.PublishApplicationServiceRequest, opts ...grpc.CallOption) (*babuzapb.PublishApplicationServiceResponse, error) {
+	out := new(babuzapb.PublishApplicationServiceResponse)
+	err := c.cc.Invoke(ctx, "/grpcpb.MultiRaftTransport/PublishApplicationService", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// MultiRaftTransportServer is the server API for MultiRaftTransport service.
+type MultiRaftTransportServer interface {
+	// SendBatchMessage sends stream of batch messages
+	SendMultiRaftMessage(MultiRaftTransport_SendMultiRaftMessageServer) error
+	// SendSnapshotMessage sends a snapshot message
+	SendSnapshotMessage(context.Context, *babuzapb.SnapshotMessage) (*babuzapb.SnapshotMessageResponse, error)
+	// GetClusterPeers gets information about peers in the cluster
+	GetClusterPeers(context.Context, *babuzapb.GetClusterPeersRequest) (*babuzapb.GetClusterPeersResponse, error)
+	// PublishApplicationService publishes application service addresses
+	PublishApplicationService(context.Context, *babuzapb.PublishApplicationServiceRequest) (*babuzapb.PublishApplicationServiceResponse, error)
+}
+
+func RegisterMultiRaftTransportServer(s *grpc.Server, srv MultiRaftTransportServer) {
+	s.RegisterService(&_MultiRaftTransport_serviceDesc, srv)
+}
+
+func _MultiRaftTransport_SendMultiRaftMessage_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MultiRaftTransportServer).SendMultiRaftMessage(&multiRaftTransportSendMultiRaftMessageServer{stream})
+}
+
+type MultiRaftTransport_SendMultiRaftMessageServer interface {
+	Send(*emptypb.Empty) error
+	Recv() (*babuzapb.MultiRaftBatchMessage, error)
+	grpc.ServerStream
+}
+
+type multiRaftTransportSendMultiRaftMessageServer struct {
+	grpc.ServerStream
+}
+
+func (x *multiRaftTransportSendMultiRaftMessageServer) Send(m *emptypb.Empty) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *multiRaftTransportSendMultiRaftMessageServer) Recv() (*babuzapb.MultiRaftBatchMessage, error) {
+	m := new(babuzapb.MultiRaftBatchMessage)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _MultiRaftTransport_SendSnapshotMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(babuzapb.SnapshotMessage)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MultiRaftTransportServer).SendSnapshotMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/grpcpb.MultiRaftTransport/SendSnapshotMessage",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MultiRaftTransportServer).SendSnapshotMessage(ctx, req.(*babuzapb.SnapshotMessage))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MultiRaftTransport_GetClusterPeers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(babuzapb.GetClusterPeersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MultiRaftTransportServer).GetClusterPeers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/grpcpb.MultiRaftTransport/GetClusterPeers",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MultiRaftTransportServer).GetClusterPeers(ctx, req.(*babuzapb.GetClusterPeersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MultiRaftTransport_PublishApplicationService_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(babuzapb.PublishApplicationServiceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MultiRaftTransportServer).PublishApplicationService(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/grpcpb.MultiRaftTransport/PublishApplicationService",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MultiRaftTransportServer).PublishApplicationService(ctx, req.(*babuzapb.PublishApplicationServiceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+var _MultiRaftTransport_serviceDesc = grpc.ServiceDesc{
+	ServiceName: "grpcpb.MultiRaftTransport",
+	HandlerType: (*MultiRaftTransportServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SendSnapshotMessage",
+			Handler:    _MultiRaftTransport_SendSnapshotMessage_Handler,
+		},
+		{
+			MethodName: "GetClusterPeers",
+			Handler:    _MultiRaftTransport_GetClusterPeers_Handler,
+		},
+		{
+			MethodName: "PublishApplicationService",
+			Handler:    _MultiRaftTransport_PublishApplicationService_Handler,
+		},
+	},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "SendMultiRaftMessage",
+			Handler:       _MultiRaftTransport_SendMultiRaftMessage_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "grpc_service.proto",
 }

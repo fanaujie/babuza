@@ -14,6 +14,11 @@ import (
 	"sync"
 )
 
+type purgeRequest struct {
+	groupID  ibabuza.RaftGroupID
+	snapshot raftpb.Snapshot
+}
+
 type Config struct {
 	SnapshotVersion uint64
 	MaxSnapFiles    uint
@@ -28,19 +33,28 @@ type Snapshotor struct {
 	fileValidator     *io.FileValidator
 	logger            ibabuza.Logger
 	mu                sync.Mutex
+	purgeRequestCh    chan purgeRequest
+	stopCh            chan struct{}
+	once              sync.Once
 }
 
-// TODO: add snapshot and wal consistency testing
-func New(config Config, fs api.SnapshotFileSystem, logger ibabuza.Logger) *Snapshotor {
+func New(config Config, fs api.SnapshotFileSystem, logger ibabuza.Logger, purgeRequestCh chan purgeRequest) *Snapshotor {
 	mc := &codec.Metadata{}
-	return &Snapshotor{
+	s := &Snapshotor{
 		config:            config,
 		fs:                fs,
 		metadataCodec:     mc,
 		fileValidator:     io.NewFileValidator(fs, mc),
 		logger:            logger,
 		installedSnapshot: make(map[uint64]struct{}),
+		stopCh:            make(chan struct{}),
 	}
+	if purgeRequestCh == nil {
+		s.purgeRequestCh = make(chan purgeRequest, 1)
+	} else {
+		s.purgeRequestCh = purgeRequestCh
+	}
+	return s
 }
 
 func (s *Snapshotor) ScanInstalledSnapshots(removeUnfinishedSnapshotDir bool) error {
@@ -117,7 +131,34 @@ func (s *Snapshotor) LoadLastValidSnapshot(walSnaps []walpb.Snapshot) (*raftpb.S
 	return nil, nil
 }
 
-func (s *Snapshotor) Purge(snapshot raftpb.Snapshot) error {
+func (s *Snapshotor) Purger() ibabuza.SnapshotPurger {
+	return &purger{
+		Snapshotor: s,
+	}
+}
+
+type purger struct {
+	*Snapshotor
+}
+
+func (p *purger) Start() {
+	p.once.Do(func() {
+		go func() {
+			for {
+				select {
+				case <-p.stopCh:
+					return
+				case req := <-p.purgeRequestCh:
+					if err := p.purgeSnapshot(req.snapshot); err != nil {
+						p.logger.Errorf("failed to purge snapshot index=%d: %v", req.snapshot.Metadata.Index, err)
+					}
+				}
+			}
+		}()
+	})
+}
+
+func (s *Snapshotor) purgeSnapshot(snapshot raftpb.Snapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	installSnapshot := s.getInstalledSnapshotIndexSlice()
@@ -137,7 +178,20 @@ func (s *Snapshotor) Purge(snapshot raftpb.Snapshot) error {
 	return nil
 }
 
+func (s *Snapshotor) Purge(snapshot raftpb.Snapshot) error {
+	s.purgeRequestCh <- purgeRequest{
+		snapshot: snapshot,
+	}
+	return nil
+}
+
 func (s *Snapshotor) Close() error {
+	select {
+	case <-s.stopCh:
+		return nil
+	default:
+		close(s.stopCh)
+	}
 	return nil
 }
 

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
-	"github.com/fanaujie/babuza/pkg/wal/babuzawal/collection"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/entrycollection"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/utility"
@@ -25,18 +25,18 @@ type Parser struct {
 	result        iwal.ReplayWalResult
 	startSnapshot walpb.Snapshot
 
-	cascade       *allocator.TwoLevelPool
+	memPool       *allocator.ByteSlicePool
 	parseEntry    bool
 	findNextEntry bool
 }
 
 func NewParser(result iwal.ReplayWalResult, startSnapshot walpb.Snapshot,
-	cascade *allocator.TwoLevelPool) *Parser {
-	_, NotParseEntry := result.EntryCollection().(*collection.NopEntry)
+	memPool *allocator.ByteSlicePool) *Parser {
+	_, NotParseEntry := result.EntryCollection().(*entrycollection.NopEntryStore)
 	return &Parser{
 		result:        result,
 		startSnapshot: startSnapshot,
-		cascade:       cascade,
+		memPool:       memPool,
 		parseEntry:    !NotParseEntry,
 	}
 }
@@ -47,7 +47,7 @@ func (p *Parser) Parse(reader iwal.LogFileReader) error {
 	p.findNextEntry = false
 
 	defer reader.Close()
-	logDecoder := codec.NewDecoder(bufio.NewReader(reader), p.cascade, p.logHandler)
+	logDecoder := codec.NewDecoder(bufio.NewReader(reader), p.memPool, p.logHandler)
 
 	for {
 		if err := logDecoder.Decode(); err != nil {

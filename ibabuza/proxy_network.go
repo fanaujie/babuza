@@ -1,10 +1,11 @@
 package ibabuza
 
 type ProxyConfig struct {
-	Id      uint64
-	InAddr  string
-	OutAddr string
-	TLSConfig
+	Id                uint64
+	InAddr            string
+	OutAddr           string
+	InListenTLSConfig TLSConfig
+	OutDialTLSConfig  TLSConfig
 }
 
 type ProxyNetwork interface {

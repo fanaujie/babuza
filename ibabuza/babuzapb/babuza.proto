@@ -17,15 +17,17 @@ option (gogoproto.goproto_sizecache_all) = false;
 
 
 message RaftPeerAttribute {
-  uint64    id = 1;
+  uint64    peerID = 1;
   string    raftListenAddr = 2;
   bool      isLearner = 3;
+  uint64    storeID = 4;
 }
 
 message Peer {
   RaftPeerAttribute raftPeerAttr = 1 [(gogoproto.nullable) = false];
   repeated string appServiceAddresses = 2;
 }
+
 
 enum SnapshotFileCompressionType{
   SnapshotFileCompression_None = 0;
@@ -66,16 +68,18 @@ message SnapshotMetadata {
 
 
 message RegisterSessionRequest {
+   bool   unregister = 1;
+   uint64 sessionID = 2;
 }
 
 message PubAppServiceRequest {
-  uint64            pubServicePeerId = 1;
+  uint64            pubServicePeerID = 1;
   repeated string   appServiceAddresses = 3;
 }
 
 
 message RequestContext {
-  uint64    replyId = 1;
+  uint64    replyID = 1;
   uint64    sessionID = 2;
   uint64    sequenceNum = 3;
   uint64    lowestSeqNumNotYetReplied = 4;
@@ -91,11 +95,13 @@ message NormalRequest {
 
 message ConfChangeRequest {
   RequestContext    context = 1 [(gogoproto.nullable) = false];
-  RaftPeerAttribute raftPeerAttr = 2 [(gogoproto.nullable) = false];
-  bool              promoteLearner = 3;
+  uint64            groupID = 2;
+  RaftPeerAttribute raftPeerAttr = 3 [(gogoproto.nullable) = false];
+  bool              promoteLearner = 4;
 }
 
 message WalMetadata {
-  uint64  clusterId = 1;
-  uint64  localPeerId = 2;
+  uint64  clusterID   = 1;
+  uint64  localPeerID = 2;
+  uint64  groupID     = 3;
 }

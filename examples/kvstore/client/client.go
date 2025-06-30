@@ -43,7 +43,7 @@ type KvStoreClient struct {
 	proxy          *leaderProxyClient
 	closeCh        chan struct{}
 	autoSyncDoneCh chan struct{}
-	mu             sync.Mutex
+	sessionMu      sync.RWMutex
 }
 
 func CreateKvStoreClient(cfg Config, session ISession) (*KvStoreClient, error) {
@@ -81,6 +81,16 @@ func CreateKvStoreClient(cfg Config, session ISession) (*KvStoreClient, error) {
 	return c, nil
 }
 
+func (c *KvStoreClient) UnregisterSession(ctx context.Context) error {
+	err := c.session.Unregister(ctx, c.proxy, api.SessionsHttpPath)
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	if err == nil {
+		c.session = nil
+	}
+	return err
+}
+
 func (c *KvStoreClient) Sync(ctx context.Context) error {
 	if c.isClosed() {
 		return ErrClientClosed
@@ -106,21 +116,30 @@ func (c *KvStoreClient) Close() error {
 	<-c.autoSyncDoneCh
 	return nil
 }
-
-func (c *KvStoreClient) Session() Session {
-	return c.session.ClientSession()
+func (c *KvStoreClient) Session() (Session, error) {
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return Session{}, errors.New("session is nil")
+	}
+	return c.session.ClientSession(), nil
 }
 
-func (c *KvStoreClient) Join(ctx context.Context, peerId uint64, raftListenAddr string, isLearner bool) error {
+func (c *KvStoreClient) Join(ctx context.Context, peerID uint64, raftListenAddr string, isLearner bool) error {
 	if c.isClosed() {
 		return ErrClientClosed
+	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return errors.New("session is nil")
 	}
 	s := c.session.ClientSession()
 	req := request.JoinPeerRequest{
 		SessionID:                         s.SessionID,
 		SequenceNumber:                    s.SequenceNumber,
 		LowestSequenceNumberNotYetReplied: s.LowestSequenceNumberNotYetReplied,
-		RaftPeerId:                        peerId,
+		RaftPeerId:                        peerID,
 		RaftListenAddr:                    raftListenAddr,
 		IsLearner:                         isLearner,
 	}
@@ -144,16 +163,21 @@ func (c *KvStoreClient) Join(ctx context.Context, peerId uint64, raftListenAddr 
 	return nil
 }
 
-func (c *KvStoreClient) Update(ctx context.Context, peerId uint64, raftListenAddr string) error {
+func (c *KvStoreClient) Update(ctx context.Context, peerID uint64, raftListenAddr string) error {
 	if c.isClosed() {
 		return ErrClientClosed
+	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return errors.New("session is nil")
 	}
 	s := c.session.ClientSession()
 	req := request.UpdatePeerRequest{
 		SessionID:                         s.SessionID,
 		SequenceNumber:                    s.SequenceNumber,
 		LowestSequenceNumberNotYetReplied: s.LowestSequenceNumberNotYetReplied,
-		RaftPeerId:                        peerId,
+		RaftPeerId:                        peerID,
 		RaftListenAddr:                    raftListenAddr,
 	}
 	var res response.ClusterConfigurationResponse
@@ -175,16 +199,21 @@ func (c *KvStoreClient) Update(ctx context.Context, peerId uint64, raftListenAdd
 	return nil
 }
 
-func (c *KvStoreClient) Remove(ctx context.Context, peerId uint64) error {
+func (c *KvStoreClient) Remove(ctx context.Context, peerID uint64) error {
 	if c.isClosed() {
 		return ErrClientClosed
+	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return errors.New("session is nil")
 	}
 	s := c.session.ClientSession()
 	req := request.RemovePeerRequest{
 		SessionID:                         s.SessionID,
 		SequenceNumber:                    s.SequenceNumber,
 		LowestSequenceNumberNotYetReplied: s.LowestSequenceNumberNotYetReplied,
-		RaftPeerId:                        peerId,
+		RaftPeerId:                        peerID,
 	}
 	var res response.ClusterConfigurationResponse
 	if err := c.proxy.SendRequest(ctx, func(reqCtx context.Context, leaderUrl url.URL) (*http.Request, error) {
@@ -205,16 +234,21 @@ func (c *KvStoreClient) Remove(ctx context.Context, peerId uint64) error {
 	return nil
 }
 
-func (c *KvStoreClient) PromoteLearner(ctx context.Context, peerId uint64) error {
+func (c *KvStoreClient) PromoteLearner(ctx context.Context, peerID uint64) error {
 	if c.isClosed() {
 		return ErrClientClosed
+	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return errors.New("session is nil")
 	}
 	s := c.session.ClientSession()
 	req := request.PromoteLearnerRequest{
 		SessionID:                         s.SessionID,
 		SequenceNumber:                    s.SequenceNumber,
 		LowestSequenceNumberNotYetReplied: s.LowestSequenceNumberNotYetReplied,
-		RaftPeerId:                        peerId,
+		RaftPeerId:                        peerID,
 	}
 	var res response.ClusterConfigurationResponse
 	if err := c.proxy.SendRequest(ctx, func(reqCtx context.Context, leaderUrl url.URL) (*http.Request, error) {
@@ -312,6 +346,11 @@ func (c *KvStoreClient) Set(ctx context.Context, key, value string) (*response.K
 	if c.isClosed() {
 		return nil, ErrClientClosed
 	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return nil, errors.New("session is nil")
+	}
 	s := c.session.ClientSession()
 	req := request.KvStoreSetRequest{
 		SessionID:                         s.SessionID,
@@ -334,6 +373,11 @@ func (c *KvStoreClient) Set(ctx context.Context, key, value string) (*response.K
 func (c *KvStoreClient) Append(ctx context.Context, key, value string) (*response.KvStoreResponse, error) {
 	if c.isClosed() {
 		return nil, ErrClientClosed
+	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return nil, errors.New("session is nil")
 	}
 	s := c.session.ClientSession()
 	req := request.KvStoreAppendRequest{
@@ -358,6 +402,11 @@ func (c *KvStoreClient) Delete(ctx context.Context, key string) (*response.KvSto
 	if c.isClosed() {
 		return nil, ErrClientClosed
 	}
+	c.sessionMu.RLock()
+	defer c.sessionMu.RUnlock()
+	if c.session == nil {
+		return nil, errors.New("session is nil")
+	}
 	s := c.session.ClientSession()
 	req := request.KvStoreDeleteRequest{
 		SessionID:                         s.SessionID,
@@ -376,7 +425,7 @@ func (c *KvStoreClient) Delete(ctx context.Context, key string) (*response.KvSto
 	return &res, nil
 }
 
-func (c *KvStoreClient) DirectKvStore(ctx context.Context, peerId uint64, command uint64, key, value string) (*response.KvStoreResponse, error) {
+func (c *KvStoreClient) DirectKvStore(ctx context.Context, peerID uint64, command uint64, key, value string) (*response.KvStoreResponse, error) {
 	s := c.session.ClientSession()
 	var res response.KvStoreResponse
 	var err error
@@ -389,7 +438,7 @@ func (c *KvStoreClient) DirectKvStore(ctx context.Context, peerId uint64, comman
 			Key:                               key,
 			Value:                             value,
 		}
-		err = c.SendRequestWithPeerId(peerId, func(leaderUrl url.URL) (*http.Request, error) {
+		err = c.SendRequestWithPeerId(peerID, func(leaderUrl url.URL) (*http.Request, error) {
 			leaderUrl.Path = api.KvHttpPath
 			return makeSetKvRequest(ctx, leaderUrl, &req)
 		}, &res)
@@ -401,7 +450,7 @@ func (c *KvStoreClient) DirectKvStore(ctx context.Context, peerId uint64, comman
 			Key:                               key,
 			Value:                             value,
 		}
-		err = c.SendRequestWithPeerId(peerId, func(leaderUrl url.URL) (*http.Request, error) {
+		err = c.SendRequestWithPeerId(peerID, func(leaderUrl url.URL) (*http.Request, error) {
 			leaderUrl.Path = api.KvHttpPath
 			return makeAppendKvRequest(ctx, leaderUrl, &req)
 		}, &res)
@@ -412,12 +461,12 @@ func (c *KvStoreClient) DirectKvStore(ctx context.Context, peerId uint64, comman
 			LowestSequenceNumberNotYetReplied: s.LowestSequenceNumberNotYetReplied,
 			Key:                               key,
 		}
-		err = c.SendRequestWithPeerId(peerId, func(leaderUrl url.URL) (*http.Request, error) {
+		err = c.SendRequestWithPeerId(peerID, func(leaderUrl url.URL) (*http.Request, error) {
 			leaderUrl.Path = api.KvHttpPath
 			return makeDeleteKvRequest(ctx, leaderUrl, &req)
 		}, &res)
 	case Read:
-		err = c.SendRequestWithPeerId(peerId, func(leaderUrl url.URL) (*http.Request, error) {
+		err = c.SendRequestWithPeerId(peerID, func(leaderUrl url.URL) (*http.Request, error) {
 			leaderUrl.Path = api.KvHttpPath
 			return makeGetKvRequest(ctx, leaderUrl, key)
 		}, &res)
@@ -428,8 +477,8 @@ func (c *KvStoreClient) DirectKvStore(ctx context.Context, peerId uint64, comman
 	return &res, nil
 }
 
-func (c *KvStoreClient) SendRequestWithPeerId(peerId uint64, makeRequest func(leaderUrl url.URL) (*http.Request, error), result any) error {
-	return c.proxy.SendRequestWithPeerId(peerId, makeRequest, result)
+func (c *KvStoreClient) SendRequestWithPeerId(peerID uint64, makeRequest func(leaderUrl url.URL) (*http.Request, error), result any) error {
+	return c.proxy.SendRequestWithPeerId(peerID, makeRequest, result)
 }
 
 func (c *KvStoreClient) isClosed() bool {

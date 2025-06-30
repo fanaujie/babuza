@@ -43,6 +43,7 @@ type SnapshotManager interface {
 	ScanTempSnapshotFolder(snapshotDirPath string) (tmpWriter []string, tmpReceiver []string, err error)
 	InstallSnapshotFromTempFolder(snapshotDirPath string, folderType babuzapb.SnapshotFolderType, snapshotIndex uint64) error
 	PathHelper() PathHelper
+	Close() error
 }
 
 type PathHelper interface {

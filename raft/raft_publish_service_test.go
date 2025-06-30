@@ -25,9 +25,9 @@ func TestRaft_PubAppService_FindLeader(t *testing.T) {
 			closer: closer,
 		}
 		r.status.SetSoftState(raft.SoftState{Lead: 1})
-		leaderId, err := r.findLeader(context.Background(), time.Millisecond*100)
+		leaderID, err := r.findLeader(context.Background(), time.Millisecond*100)
 		assert.Nil(t, err)
-		assert.Equal(t, uint64(1), leaderId)
+		assert.Equal(t, uint64(1), leaderID)
 	})
 
 	t.Run("raft stop: find leader", func(t *testing.T) {
@@ -44,7 +44,6 @@ func TestRaft_PubAppService_FindLeader(t *testing.T) {
 
 func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-
 		closer := syncutil.NewCloser()
 		r := &Raft{
 			raftNode:         newMockRaftNode(),
@@ -59,12 +58,10 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 			LogIndex: uint64(100),
 			Response: uint64(1000),
 		})
-		err := res.Wait()
-		assert.Nil(t, err)
-		assert.Equal(t, uint64(100), res.LogIndex())
-		ar := res.Response()
-		assert.Nil(t, err)
-		assert.Equal(t, uint64(1000), ar.(uint64))
+		ar := res.WaitForApplyResult()
+		assert.Nil(t, ar.Error)
+		assert.Equal(t, uint64(100), ar.LogIndex)
+		assert.Equal(t, uint64(1000), ar.Response.(uint64))
 	})
 
 	t.Run("raft stop", func(t *testing.T) {
@@ -79,8 +76,8 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		closer.Close()
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
-		err := res.Wait()
-		assert.Equal(t, ErrStopped, err)
+		ar := res.WaitForApplyResult()
+		assert.Equal(t, ErrStopped, ar.Error)
 	})
 
 	t.Run("failure: raftNodeProposal ", func(t *testing.T) {
@@ -89,7 +86,7 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		m.errorPropose = ErrNotLeader
 		log := &logger.Mock{}
 		cl := cluster.NewCluster(log)
-		cl.SetClusterId(1)
+		cl.SetClusterID(1)
 		r := &Raft{
 			raftNode:         m,
 			cluster:          cl,
@@ -101,8 +98,8 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		}
 		res := r.proposalPubAppService(context.Background(), 1, nil)
 		defer res.Release()
-		err := res.Wait()
-		assert.Equal(t, ErrNotLeader, err)
+		ar := res.WaitForApplyResult()
+		assert.Equal(t, ErrNotLeader, ar.Error)
 	})
 }
 
@@ -133,7 +130,7 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 		}
 		log := &logger.Mock{}
 		cl := cluster.NewCluster(log)
-		cl.SetClusterId(1)
+		cl.SetClusterID(1)
 		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
 			cluster:          cl,
@@ -166,7 +163,7 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 		}
 		log := &logger.Mock{}
 		cl := cluster.NewCluster(log)
-		cl.SetClusterId(1)
+		cl.SetClusterID(1)
 		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
 			cluster:          cl,
@@ -218,14 +215,14 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 		}
 		log := &logger.Mock{}
 		cl := cluster.NewCluster(log)
-		cl.SetClusterId(1)
+		cl.SetClusterID(1)
 		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
 			idGenerator: &mockIdGenerator{
 				id: 1,
 			},
 			config: BabuzaConfig{
-				LocalPeerId: 1,
+				LocalPeerID: 1,
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: true,
 				}},
@@ -258,7 +255,7 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 				id: 1,
 			},
 			config: BabuzaConfig{
-				LocalPeerId: 10,
+				LocalPeerID: 10,
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: true,
 				}},
@@ -288,7 +285,7 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 				id: 1,
 			},
 			config: BabuzaConfig{
-				LocalPeerId: 1,
+				LocalPeerID: 1,
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: false,
 				}},
@@ -319,7 +316,7 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 				id: 1,
 			},
 			config: BabuzaConfig{
-				LocalPeerId: 1,
+				LocalPeerID: 1,
 				RaftConfig: RaftConfig{
 					DisableProposalForwarding: false,
 				}},

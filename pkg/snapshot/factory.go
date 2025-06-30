@@ -47,7 +47,7 @@ func NewDurableSnapshotManager(snapshotDir string, logger ibabuza.Logger, option
 		SnapshotVersion: defaultOpt.snapshotVersion,
 		MaxSnapFiles:    defaultOpt.maxKeepSnapFiles,
 		SnapshotDir:     snapshotDir,
-	}, fs, logger)
+	}, fs, logger, nil)
 }
 
 func NewVolatileSnapshotManager(snapshotDir string, logger ibabuza.Logger, options ...SetOptions) ibabuza.SnapshotManager {
@@ -64,7 +64,7 @@ func NewVolatileSnapshotManager(snapshotDir string, logger ibabuza.Logger, optio
 		SnapshotVersion: defaultOpt.snapshotVersion,
 		MaxSnapFiles:    defaultOpt.maxKeepSnapFiles,
 		SnapshotDir:     snapshotDir,
-	}, fs, logger)
+	}, fs, logger, nil)
 }
 
 func NewMinIOSnapshotManager(snapshotDir string, config cloudstorage.Config, logger ibabuza.Logger,
@@ -85,5 +85,5 @@ func NewMinIOSnapshotManager(snapshotDir string, config cloudstorage.Config, log
 		SnapshotVersion: defaultOpt.snapshotVersion,
 		MaxSnapFiles:    defaultOpt.maxKeepSnapFiles,
 		SnapshotDir:     snapshotDir,
-	}, fs, logger)
+	}, fs, logger, nil)
 }

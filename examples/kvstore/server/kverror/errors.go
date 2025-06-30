@@ -3,8 +3,9 @@ package kverror
 import "errors"
 
 var (
-	ErrKeyNotFound = errors.New("key not found")
-
+	ErrKeyNotFound    = errors.New("key not found")
+	ErrUnknownCommand = errors.New("unknown command")
+	ErrInvalidKeyType = errors.New("invalid key type, must be string")
 	//ErrNotLeader                  = errors.New("raft: not leader")
 	//ErrLearnerNotReady            = errors.New("raft: can only promote a learner which is in sync with leader")
 	//ErrLearnerNotSwitchLeaderShip = errors.New("raft: learner can not switch to leadership")

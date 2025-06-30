@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-func (r *Raft) propose(ctx context.Context, replyId uint64, proposalData []byte) (chan ibabuza.ApplyResult, error) {
-	ch, err := r.resultReplier.AcquireResultChan(replyId)
+func (r *Raft) propose(ctx context.Context, replyID uint64, proposalData []byte) (chan ibabuza.ApplyResult, error) {
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
 	if err != nil {
 		return nil, err
 	}
@@ -18,20 +18,20 @@ func (r *Raft) propose(ctx context.Context, replyId uint64, proposalData []byte)
 	defer r.metricsCollector.DecrementProposalPending()
 	if err = r.raftNode.Propose(ctx, proposalData); err != nil {
 		r.metricsCollector.IncrementProposalFailed()
-		r.resultReplier.CancelResult(replyId)
+		r.resultReplier.CancelResult(replyID)
 		if errors.Is(err, raft.ErrProposalDropped) {
 			err = ErrNotLeader
 		} else if errors.Is(err, raft.ErrStopped) {
 			err = ErrStopped
 		}
-		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.ClusterId(), err)
+		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.LocalPeerID(), err)
 		return nil, err
 	}
 	return ch, nil
 }
 
-func (r *Raft) proposeConfChange(ctx context.Context, replyId uint64, confChange raftpb.ConfChangeI) (ProposedResult, error) {
-	ch, err := r.resultReplier.AcquireResultChan(replyId)
+func (r *Raft) proposeConfChange(ctx context.Context, replyID uint64, confChange raftpb.ConfChangeI) (ProposedResult, error) {
+	ch, err := r.resultReplier.AcquireResultChan(replyID)
 	if err != nil {
 		return nil, err
 	}
@@ -39,16 +39,16 @@ func (r *Raft) proposeConfChange(ctx context.Context, replyId uint64, confChange
 	defer r.metricsCollector.DecrementProposalPending()
 	if err = r.raftNode.ProposeConfChange(ctx, confChange); err != nil {
 		r.metricsCollector.IncrementProposalFailed()
-		r.resultReplier.CancelResult(replyId)
+		r.resultReplier.CancelResult(replyID)
 		if errors.Is(err, raft.ErrProposalDropped) {
 			err = ErrNotLeader
 		} else if errors.Is(err, raft.ErrStopped) {
 			err = ErrStopped
 		}
-		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.ClusterId(), err)
+		r.logger.Warningf("raft[%d] propose failed, err: %v", r.cluster.LocalPeerID(), err)
 		return nil, err
 	}
-	return newProposalResult(ctx, r.closer, ch), nil
+	return NewProposalResult(ctx, r.closer, ch), nil
 }
 
 func (r *Raft) learnerReady(learnerId uint64) error {
@@ -58,16 +58,16 @@ func (r *Raft) learnerReady(learnerId uint64) error {
 	}
 	var learnerMatch uint64
 	found := false
-	leaderID := rs.ID
-	for peerId, progress := range rs.Progress {
-		if learnerId == peerId {
+	ClusterID := rs.ID
+	for peerID, progress := range rs.Progress {
+		if learnerId == peerID {
 			learnerMatch = progress.Match
 			found = true
 			break
 		}
 	}
 	if found {
-		leaderMatch := rs.Progress[leaderID].Match
+		leaderMatch := rs.Progress[ClusterID].Match
 		if float64(learnerMatch) < float64(leaderMatch)*r.config.LearnerReadyPercent {
 			return ErrLearnerNotReady
 		}

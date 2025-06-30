@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -10,16 +11,10 @@ import (
 type applyEntryToStateMachine struct {
 	entries  []raftpb.Entry
 	snapshot raftpb.Snapshot
-	notifyCh chan struct{}
-}
-
-type snapshotResult struct {
-	metadata babuzapb.SnapshotMetadata
-	err      error
 }
 
 type manualSnapshot struct {
-	resultCh chan snapshotResult
+	resultCh chan SnapshotResult
 }
 
 func (r *Raft) processStateMachine() {
@@ -29,75 +24,79 @@ func (r *Raft) processStateMachine() {
 			return
 		case s := <-r.manualSnapshotCh:
 			term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
-			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionMgr)
+			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionManager)
 			if err != nil {
-				s.resultCh <- snapshotResult{
+				s.resultCh <- SnapshotResult{
 					err: err,
 				}
-				r.logger.Panicf("raft[id=%d]: create manual snapshot context failed: %v", r.cluster.ClusterId(), err)
+				r.logger.Panicf("raft[id=%d]: create manual snapshot context failed: %v", r.cluster.ClusterID(), err)
 				continue
 			}
 			r.triggerSnapshot(ctx, s.resultCh)
 		case ap := <-r.applyCh:
 			r.applySnapshot(ap.snapshot)
-			if r.applyEntries(ap.entries) {
-				close(r.removeSelfCh)
-				select {
-				case <-r.shutdownCh: //already shutdown
-				default:
-					time.AfterFunc(time.Second, func() {
-						r.stop()
-					})
-				}
-				return
-			}
+			r.applyEntries(ap.entries)
 			if r.status.GetAppliedIndex()-r.status.GetSnapshotIndex() < r.config.SnapshotCount {
 				continue
 			}
 			term, index := r.status.GetAppliedTerm(), r.status.GetAppliedIndex()
-			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionMgr)
+			ctx, err := r.storage.CreateSnapshotContext(term, index, r.status.CloneConfState(), r.cluster, r.sessionManager)
 			if err != nil {
-				r.logger.Panicf("raft[id=%d]: create snapshot context failed: %v", r.cluster.ClusterId(), err)
+				r.logger.Panicf("raft[id=%d]: create snapshot context failed: %v", r.cluster.ClusterID(), err)
 			}
 			r.triggerSnapshot(ctx, nil)
 		}
 	}
 }
 
-func (r *Raft) applyEntries(entries []raftpb.Entry) bool {
-	removeSelf := false
+func (r *Raft) applyEntries(entries []raftpb.Entry) {
 	defer func() {
 		appliedIndex := r.status.GetAppliedIndex()
 		r.completionReplier.MarkCompleted(appliedIndex)
 		r.metricsCollector.SetProposalAppliedIndex(appliedIndex)
 	}()
-	for pos := 0; pos < len(entries); pos++ {
-		if removeSelf {
-			break
-		}
-		entry := entries[pos]
+	length := len(entries)
+	bsmInfo := r.storage.GetBasedStateMachineInfo()
+	for _, entry := range entries {
 		if len(entry.Data) == 0 {
 			r.appliedFacade.ApplyNilEntryInNewTerm(entry.Index, entry.Term)
 		} else {
 			switch entry.Type {
 			case raftpb.EntryNormal:
-				applyEntry := r.appliedFacade.ApplyNormalEntry(entry)
-				if applyEntry != nil {
-					now := time.Now()
-					r.storage.Apply(applyEntry)
+				if entry.Index <= bsmInfo.OpenAppliedIndex() {
+					if !bsmInfo.IsDiskType() {
+						r.logger.Panicf("raft[id=%d]: apply entry index %d <= opened applied index %d", r.cluster.LocalPeerID(),
+							entry.Index, bsmInfo.OpenAppliedIndex())
+					}
+					continue
+				}
+				normalReq, ar, session := r.appliedFacade.ApplyNormalEntry(entry)
+				now := time.Now()
+				if ar.IsEmpty() {
+					// not applied yet
+					ar = r.storage.Apply(ibabuza.Entry{
+						Term:    entry.Term,
+						Index:   entry.Index,
+						Command: normalReq.StateMachineLog,
+					})
+
 					r.metricsCollector.RecordApplySec(time.Since(now).Seconds())
+					if err := session.AddResult(normalReq.Context.SequenceNum, now.UnixNano(), ar); err != nil {
+						r.logger.Panicf("raft[id=%d]: add result failed: %v", r.cluster.LocalPeerID(), err)
+					}
 				}
+				r.appliedFacade.SendAppliedResult(normalReq.Context.ReplyID, ar)
 			case raftpb.EntryConfChange:
-				removeSelf = r.appliedFacade.ApplyConfChangeEntry(entry)
-				if removeSelf {
-					break
-				}
+				// do nothing, just apply conf change entry before
 			default:
-				r.logger.Panicf("raft[id=%d]: not support raft toApplyEntry type %d", r.cluster.ClusterId(), uint64(entry.Type))
+				r.logger.Panicf("raft[id=%d]: not support raft toApplyEntry type %d", r.cluster.LocalPeerID(), uint64(entry.Type))
 			}
 		}
 	}
-	return removeSelf
+	if length > 0 {
+		r.status.SetAppliedTerm(entries[length-1].Term)
+		r.status.SetAppliedIndex(entries[length-1].Index)
+	}
 }
 
 func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
@@ -105,7 +104,7 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 		return
 	}
 	if snap.Metadata.Index <= r.status.GetAppliedIndex() {
-		r.logger.Panicf("raft[id=%d]: apply snapshot index %d <= applied index %d", r.cluster.ClusterId(), snap.Metadata.Index, r.status.GetAppliedIndex())
+		r.logger.Panicf("raft[id=%d]: apply snapshot index %d <= applied index %d", r.cluster.LocalPeerID(), snap.Metadata.Index, r.status.GetAppliedIndex())
 	}
 	if err := func() error {
 		now := time.Now()
@@ -114,28 +113,27 @@ func (r *Raft) applySnapshot(snap raftpb.Snapshot) {
 			r.metricsCollector.SetSnapshotApplyInProgress(0)
 			r.metricsCollector.RecordApplySnapshotSec(time.Since(now).Seconds())
 		}()
-		return r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.sessionMgr)
+		return r.storage.RestoreFromSnapshot(snap.Metadata.Index, true, r.cluster, r.sessionManager)
 	}(); err != nil {
-		r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.cluster.ClusterId(), err)
+		r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.cluster.LocalPeerID(), err)
 	}
 	r.trans.RemovePeers()
 	for _, p := range r.cluster.Peers() {
-		if p.RaftPeerAttr.Id == r.cluster.ClusterId() {
+		if p.RaftPeerAttr.PeerID == r.cluster.LocalPeerID() {
 			continue
 		}
-		r.trans.AddPeer(p.RaftPeerAttr.Id, p.RaftPeerAttr.RaftListenAddr)
+		r.trans.AddPeer(p.RaftPeerAttr.PeerID, p.RaftPeerAttr.RaftListenAddr)
 	}
-	r.logger.Infof("raft[id=%d]: applyEntry done for apply snapshot to storage (snapshot index=%d)",
-		r.config.LocalPeerId, snap.Metadata.Index)
+	r.logger.Infof("raft[id=%d]: snapshot applied to storage successfully (index=%d)",
+		r.cluster.LocalPeerID(), snap.Metadata.Index)
 
 	r.status.SetAppliedTerm(snap.Metadata.Term)
 	r.status.SetAppliedIndex(snap.Metadata.Index)
 	r.status.SetSnapshotIndex(snap.Metadata.Index)
 	r.status.SetConfState(snap.Metadata.ConfState)
-	r.storage.SetStateMachineAppliedIndex(snap.Metadata.Index)
 }
 
-func (r *Raft) doSnapshot(snapCtx InternalStorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
+func (r *Raft) doSnapshot(snapCtx StorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
 	now := time.Now()
 	metadata, err := r.storage.SaveStateMachineSnapshot(snapCtx)
 	if err != nil {
@@ -147,10 +145,10 @@ func (r *Raft) doSnapshot(snapCtx InternalStorageSnapshotContext) (babuzapb.Snap
 	}
 	inflight := r.status.GetInflightSnapshots()
 	if inflight > 0 {
-		r.logger.Warningf("raft[id=%d]: inflight snapshot counts=%d, skip compaction", r.cluster.ClusterId(), inflight)
+		r.logger.Warningf("raft[id=%d]: inflight snapshot counts=%d, skip compaction", r.cluster.LocalPeerID(), inflight)
 		return metadata, nil
 	} else if inflight < 0 {
-		r.logger.Fatalf("raft[id=%d]: inflight snapshot counts=%d is less than zero ", r.cluster.ClusterId(), inflight)
+		r.logger.Fatalf("raft[id=%d]: inflight snapshot counts=%d is less than zero ", r.cluster.LocalPeerID(), inflight)
 	}
 
 	if err = r.storage.CompactAndReleaseSnapshot(snapCtx.Index(), metadata.Snapshot); err != nil {
@@ -159,22 +157,22 @@ func (r *Raft) doSnapshot(snapCtx InternalStorageSnapshotContext) (babuzapb.Snap
 	return metadata, nil
 }
 
-func (r *Raft) triggerSnapshot(snapCtx InternalStorageSnapshotContext, snapshotResultCh chan snapshotResult) {
+func (r *Raft) triggerSnapshot(snapCtx StorageSnapshotContext, snapshotResultCh chan SnapshotResult) {
 	r.status.SetSnapshotIndex(snapCtx.Index())
 	doSnapshot := func() {
 		metadata, err := r.doSnapshot(snapCtx)
 		if err != nil {
-			r.logger.Panicf("raft[id=%d]: do snapshot failed: %v", r.cluster.ClusterId(), err)
+			r.logger.Panicf("raft[id=%d]: do snapshot failed: %v", r.cluster.LocalPeerID(), err)
 		}
-		r.logger.Infof("raft[id=%d]: do snapshot done (index=%d)", r.cluster.ClusterId(), metadata.Snapshot.Metadata.Index)
+		r.logger.Infof("raft[id=%d]: do snapshot done (index=%d)", r.cluster.LocalPeerID(), metadata.Snapshot.Metadata.Index)
 		if snapshotResultCh != nil {
-			snapshotResultCh <- snapshotResult{
+			snapshotResultCh <- SnapshotResult{
 				metadata: metadata,
 				err:      err,
 			}
 		}
 	}
-	if !r.storage.SupportConcurrentSnapshot() {
+	if !r.storage.GetBasedStateMachineInfo().SupportConcurrentSnapshot() {
 		doSnapshot()
 	} else {
 		r.closer.Run(func() {

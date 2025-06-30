@@ -21,7 +21,7 @@ func RunTests(testCase ICase) {
 				_ = os.RemoveAll(storageDir)
 			}()
 			tc := testcluster.CreateTestCluster(component.ClusterId, storageDir, component.ProxyNetwork,
-				func(votingPeersCfg *babuza.VotingPeersConfiguration, config babuza.BabuzaConfig, restart bool,
+				func(votingPeersCfg *babuza.PeersConfiguration, config babuza.BabuzaConfig, restart bool,
 					proxyNet ibabuza.ProxyNetwork, appDir string, appServiceAddresses []string) (testcluster.EmbeddedApp, error) {
 					appConfig := embedapp.KvStoreAppConfig{
 						BubuzaConfig:   config,

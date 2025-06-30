@@ -1,12 +1,12 @@
 package raft
 
-import "context"
+import (
+	"context"
+	"github.com/fanaujie/babuza/ibabuza"
+)
 
-func (r *Raft) ProposeThenWaitResponse(ctx context.Context, session ClientSession, proposalLog []byte) (any, error) {
+func (r *Raft) ProposeThenWaitResponse(ctx context.Context, session ClientSession, proposalLog []byte) ibabuza.ApplyResult {
 	result := r.Propose(ctx, session, proposalLog)
 	defer result.Release()
-	if err := result.Wait(); err != nil {
-		return nil, err
-	}
-	return result.Response(), nil
+	return result.WaitForApplyResult()
 }

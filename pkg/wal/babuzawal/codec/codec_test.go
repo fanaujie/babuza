@@ -39,7 +39,7 @@ func (l *mockLog) Encode(buf []byte, logSize int, lastCrc uint32) (uint32, error
 func TestEncoderDecoder(t *testing.T) {
 	r, w, err := os.Pipe()
 	assert.Nil(t, err)
-	cp := allocator.NewDefaultTwoLevelPool(64, 1024)
+	cp := allocator.NewByteSlicePool(64, 1024, 2)
 	e := NewEncoder(w, cp, 100)
 	m := &mockDecoder{}
 	d := NewDecoder(r, cp, m.LogHandler)

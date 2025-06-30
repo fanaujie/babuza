@@ -1,42 +1,62 @@
 package raft
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	"go.etcd.io/etcd/raft/v3"
 	"math"
 	"time"
 )
 
-type VotingPeersConfiguration struct {
+type PeersConfiguration struct {
 	raftPeersAttr map[uint64]babuzapb.RaftPeerAttribute
 }
 
-func NewVotingPeersConfiguration() *VotingPeersConfiguration {
-	return &VotingPeersConfiguration{
+func NewPeersConfiguration() *PeersConfiguration {
+	return &PeersConfiguration{
 		raftPeersAttr: make(map[uint64]babuzapb.RaftPeerAttribute),
 	}
 }
 
-func (c *VotingPeersConfiguration) AddPeer(id uint64, raftListenAddr string) error {
+func (c *PeersConfiguration) AddPeer(id uint64, raftListenAddr string, isLearner bool) error {
 	if _, ok := c.raftPeersAttr[id]; ok {
-		return errors.New("")
+		return fmt.Errorf("peer already exists: %d", id)
 	}
 	c.raftPeersAttr[id] = babuzapb.RaftPeerAttribute{
-		Id:             id,
+		PeerID:         id,
 		RaftListenAddr: raftListenAddr,
+		IsLearner:      isLearner,
 	}
-
 	return nil
 }
 
-func (c *VotingPeersConfiguration) RemovePeer(id uint64) {
+func (c *PeersConfiguration) GetPeer(id uint64) (babuzapb.RaftPeerAttribute, error) {
+	raftPeerAttr, ok := c.raftPeersAttr[id]
+	if !ok {
+		return babuzapb.RaftPeerAttribute{}, fmt.Errorf("peer not found: %d", id)
+	}
+	return raftPeerAttr, nil
+}
+
+func (c *PeersConfiguration) UpdatePeer(peerID uint64, peerAttr babuzapb.RaftPeerAttribute) error {
+	if _, ok := c.raftPeersAttr[peerID]; !ok {
+		return fmt.Errorf("peer not found: %d", peerID)
+	}
+	if peerAttr.PeerID != peerID {
+		return fmt.Errorf("peer ID mismatch: expected %d, got %d", peerID, peerAttr.PeerID)
+	}
+	c.raftPeersAttr[peerID] = peerAttr
+	return nil
+}
+
+func (c *PeersConfiguration) RemovePeer(id uint64) {
 	delete(c.raftPeersAttr, id)
 }
 
-func (c *VotingPeersConfiguration) RaftPeersAttribute() []babuzapb.RaftPeerAttribute {
+func (c *PeersConfiguration) RaftPeersAttribute() []babuzapb.RaftPeerAttribute {
 	var raftPeersAttr []babuzapb.RaftPeerAttribute
 	for _, raftPeerAttr := range c.raftPeersAttr {
 		raftPeersAttr = append(raftPeersAttr, raftPeerAttr)
@@ -44,72 +64,120 @@ func (c *VotingPeersConfiguration) RaftPeersAttribute() []babuzapb.RaftPeerAttri
 	return raftPeersAttr
 }
 
-func (c *VotingPeersConfiguration) PeerIds() []uint64 {
+func (c *PeersConfiguration) RaftPeerAttributeMap() map[uint64]babuzapb.RaftPeerAttribute {
+	return c.raftPeersAttr
+}
+
+func (c *PeersConfiguration) PeerIds() []uint64 {
 	var raftPeers []uint64
 	for _, raftPeerAttr := range c.raftPeersAttr {
-		raftPeers = append(raftPeers, raftPeerAttr.Id)
+		raftPeers = append(raftPeers, raftPeerAttr.PeerID)
 	}
 	return raftPeers
 }
 
-func (c *VotingPeersConfiguration) ToRaftPeers() ([]raft.Peer, error) {
+func (c *PeersConfiguration) ToRaftPeers() ([]raft.Peer, error) {
 	var peers []raft.Peer
 	for _, raftPeerAttr := range c.raftPeersAttr {
-		data, err := raftPeerAttr.Marshal()
-		if err != nil {
-			return nil, err
-		}
 		req := babuzapb.ConfChangeRequest{
 			RaftPeerAttr: raftPeerAttr,
 		}
-		data, err = req.Marshal()
+		data, err := req.Marshal()
 		if err != nil {
 			return nil, err
 		}
 		peers = append(peers, raft.Peer{
-			ID:      raftPeerAttr.Id,
+			ID:      raftPeerAttr.PeerID,
 			Context: data,
 		})
 	}
 	return peers, nil
 }
 
-func (c *VotingPeersConfiguration) Clone() *VotingPeersConfiguration {
-	conf := NewVotingPeersConfiguration()
+func (c *PeersConfiguration) Clone() *PeersConfiguration {
+	conf := NewPeersConfiguration()
 	for k, v := range c.raftPeersAttr {
 		conf.raftPeersAttr[k] = v
 	}
 	return conf
 }
 
-func (c *VotingPeersConfiguration) Validate() error {
+func (c *PeersConfiguration) Validate() error {
 	idSet := make(map[uint64]struct{})
 	endpointSet := make(map[string]struct{})
 	for _, raftPeerAttr := range c.raftPeersAttr {
-		if raftPeerAttr.Id == 0 {
-			return fmt.Errorf("VotingPeersConfiguration: empty peer id in votingPeersCfg: %v", *c)
+		if raftPeerAttr.PeerID == 0 {
+			return fmt.Errorf("PeersConfiguration: empty peer id in config: %v", *c)
 		}
-		if raftPeerAttr.RaftListenAddr == "" {
-			return fmt.Errorf("VotingPeersConfiguration: empty RaftListenAddr in votingPeersCfg: %v", *c)
+		if !netutil.IsValidAddress(raftPeerAttr.RaftListenAddr) {
+			return fmt.Errorf("PeersConfiguration: invalid RaftListenAddr in config: %v", raftPeerAttr.RaftListenAddr)
 		}
-		if raftPeerAttr.IsLearner {
-			return fmt.Errorf("VotingPeersConfiguration: peer can not be a learner in votingPeersCfg: %v", *c)
+		if _, ok := idSet[raftPeerAttr.PeerID]; ok {
+			return fmt.Errorf("PeersConfiguration: found duplicate ID in config: %v", *c)
 		}
-		if _, ok := idSet[raftPeerAttr.Id]; ok {
-			return fmt.Errorf("VotingPeersConfiguration: found duplicate ID in votingPeersCfg: %v", *c)
-		}
-		idSet[raftPeerAttr.Id] = struct{}{}
+		idSet[raftPeerAttr.PeerID] = struct{}{}
 		if _, ok := endpointSet[raftPeerAttr.RaftListenAddr]; ok {
-			return fmt.Errorf("VotingPeersConfiguration: found duplicate RaftListenAddr in votingPeersCfg: %v", *c)
+			return fmt.Errorf("PeersConfiguration: found duplicate RaftListenAddr in config: %v", *c)
 		}
 		endpointSet[raftPeerAttr.RaftListenAddr] = struct{}{}
 	}
 	return nil
 }
 
-func (c *VotingPeersConfiguration) MatchRemoteCluster(remotePeers []babuzapb.Peer) error {
-	//TODO:
+func (c *PeersConfiguration) Visit(visitor func(babuzapb.RaftPeerAttribute) error) error {
+	for _, raftPeerAttr := range c.raftPeersAttr {
+		if err := visitor(raftPeerAttr); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (c *PeersConfiguration) MatchRemoteCluster(remoteCtx context.Context, clusterID, fromID uint64,
+	groupID ibabuza.RaftGroupID, client ibabuza.TransportClient) error {
+	req := babuzapb.GetClusterPeersRequest{
+		ClusterID: clusterID,
+		GroupID:   uint64(groupID),
+		From:      fromID,
+	}
+	for _, raftPeerAttr := range c.RaftPeersAttribute() {
+		if raftPeerAttr.PeerID == fromID {
+			continue
+		}
+		select {
+		case <-remoteCtx.Done():
+			return remoteCtx.Err()
+		default:
+		}
+		res, err := func(to uint64) (babuzapb.GetClusterPeersResponse, error) {
+			req.To = to
+			return client.GetClusterPeers(req)
+		}(raftPeerAttr.PeerID)
+		if err != nil || res.Status != babuzapb.SUCCESS {
+			continue
+		}
+		if !c.equal(res.Peers) {
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("bootstrap: could not get remote cluster from %v", c.RaftPeersAttribute())
+}
+func (c *PeersConfiguration) equal(other []babuzapb.Peer) bool {
+	if len(c.RaftPeersAttribute()) != len(other) {
+		return false
+	}
+	for _, peer := range other {
+		if _, ok := c.raftPeersAttr[peer.RaftPeerAttr.PeerID]; !ok {
+			return false
+		}
+		peerAttr, ok := c.raftPeersAttr[peer.RaftPeerAttr.PeerID]
+		if !ok || peerAttr.RaftListenAddr != peer.RaftPeerAttr.RaftListenAddr ||
+			peerAttr.IsLearner != peer.RaftPeerAttr.IsLearner {
+			return false
+		}
+	}
+	return true
 }
 
 type RaftConfig struct {
@@ -126,8 +194,8 @@ type RaftConfig struct {
 }
 
 type BabuzaConfig struct {
-	ClusterId         uint64
-	LocalPeerId       uint64
+	ClusterID         uint64
+	LocalPeerID       uint64
 	RaftListenAddress string
 	Join              bool
 	EnableWalNoSync   bool
@@ -139,10 +207,10 @@ type BabuzaConfig struct {
 	LinearizedReadRetryTimeout   time.Duration
 }
 
-func DefaultBabuzaConfig(ClusterId, localPeerId uint64, raftListenAddr string) BabuzaConfig {
+func DefaultBabuzaConfig(ClusterId, localPeerID uint64, raftListenAddr string) BabuzaConfig {
 	return BabuzaConfig{
-		ClusterId:                    ClusterId,
-		LocalPeerId:                  localPeerId,
+		ClusterID:                    ClusterId,
+		LocalPeerID:                  localPeerID,
 		RaftListenAddress:            raftListenAddr,
 		SnapshotCount:                10000,
 		RaftConfig:                   DefaultRaftConfig(),
@@ -170,7 +238,7 @@ func DefaultRaftConfig() RaftConfig {
 
 func (c *BabuzaConfig) convertToRaftConfig(logger raft.Logger, ms raft.Storage) raft.Config {
 	return raft.Config{
-		ID:                        c.LocalPeerId,
+		ID:                        c.LocalPeerID,
 		ElectionTick:              c.ElectionTicks,
 		HeartbeatTick:             c.HeartbeatTicks,
 		Storage:                   ms,

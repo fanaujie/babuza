@@ -1,7 +1,9 @@
 package raft
 
 import (
+	"github.com/fanaujie/babuza/pkg/cluster"
 	"github.com/fanaujie/babuza/pkg/idgenerator"
+	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/replier"
 	"github.com/fanaujie/babuza/pkg/status"
 	"github.com/stretchr/testify/assert"
@@ -12,12 +14,14 @@ import (
 
 func TestRaft_WaitReadIndexResponse(t *testing.T) {
 
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	raftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.config.LinearizedReadRequestTimeout = time.Second * 2
 	tr.raftNode = raftNode
 	tr.status = status.New()
+	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster.SetLocalPeerID(localPeerID)
 	readCtx := []byte{1, 2, 3, 4, 5, 6, 7, 8}
 	t.Run("correctness", func(t *testing.T) {
 		readState := raft.ReadState{
@@ -25,7 +29,7 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 			RequestCtx: readCtx,
 		}
 		tr.readStateCh <- readState
-		rs, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Get())
+		rs, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Channel())
 		assert.Nil(t, err)
 		assert.Equal(t, readState, rs)
 	})
@@ -33,40 +37,42 @@ func TestRaft_WaitReadIndexResponse(t *testing.T) {
 	t.Run("leader changed", func(t *testing.T) {
 		resultCh := make(chan error)
 		go func() {
-			_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Get())
+			_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Channel())
 			resultCh <- err
 		}()
 		time.Sleep(tr.config.LinearizedReadRequestTimeout / 2)
 		tr.updateLeadership(raft.SoftState{
-			Lead:      localPeerId,
+			Lead:      localPeerID,
 			RaftState: raft.StateLeader,
 		})
 		assert.ErrorIs(t, <-resultCh, ErrLeaderChange)
 	})
 
 	t.Run("internal request timeout", func(t *testing.T) {
-		_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Get())
-		assert.ErrorIs(t, err, errReadIndexRequestTimeout)
+		_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Channel())
+		assert.ErrorIs(t, err, ErrReadIndexRequestTimeout)
 	})
 
 	t.Run("raft stop", func(t *testing.T) {
 		raftNode.readIndexFunc = func(rctx []byte) error {
 			return raft.ErrStopped
 		}
-		_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Get())
+		_, err := tr.readIndexResponse(readCtx, tr.leaderChangeNotifier.Channel())
 		assert.ErrorIs(t, err, raft.ErrStopped)
 		raftNode.readIndexFunc = nil
 	})
 }
 
 func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.config.LinearizedReadRequestTimeout = time.Second * 2
 	tr.raftNode = etcdRaftNode
-	tr.idGenerator = idgenerator.New(localPeerId, 10000)
+	tr.idGenerator = idgenerator.New(localPeerID, 10000)
 	tr.status = status.New()
+	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster.SetLocalPeerID(localPeerID)
 	defer tr.closer.Close()
 	tr.closer.Run(func() {
 		tr.processRaftLinearizedRead()
@@ -78,13 +84,13 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 			return nil
 		}
 		tr.status.SetAppliedIndex(10)
-		n := tr.linearizeReqNotifier.Get()
+		n := tr.linearizeReqNotifier.Current()
 		select {
 		case tr.readIndexCh <- struct{}{}:
 		default:
 		}
-		<-n.GetCh()
-		assert.Nil(t, n.GetError())
+		<-n.Channel()
+		assert.Nil(t, n.Error())
 		etcdRaftNode.readIndexFunc = nil
 	})
 
@@ -98,7 +104,7 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 			etcdRaftNode.readIndexFunc = nil
 		}()
 		tr.status.SetAppliedIndex(5)
-		n := tr.linearizeReqNotifier.Get()
+		n := tr.linearizeReqNotifier.Current()
 		select {
 		case tr.readIndexCh <- struct{}{}:
 		default:
@@ -106,41 +112,41 @@ func TestRaft_ProcessRaftLinearizedRead(t *testing.T) {
 		go func() {
 			tr.status.SetAppliedIndex(10)
 		}()
-		<-n.GetCh()
-		assert.Nil(t, n.GetError())
+		<-n.Channel()
+		assert.Nil(t, n.Error())
 	})
 
 	t.Run("request timeout", func(t *testing.T) {
-		n := tr.linearizeReqNotifier.Get()
+		n := tr.linearizeReqNotifier.Current()
 		select {
 		case tr.readIndexCh <- struct{}{}:
 		default:
 		}
-		<-n.GetCh()
-		assert.ErrorIs(t, n.GetError(), errReadIndexRequestTimeout)
+		<-n.Channel()
+		assert.ErrorIs(t, n.Error(), ErrReadIndexRequestTimeout)
 	})
 
 	t.Run("leader changed", func(t *testing.T) {
-		n := tr.linearizeReqNotifier.Get()
+		n := tr.linearizeReqNotifier.Current()
 		select {
 		case tr.readIndexCh <- struct{}{}:
 		default:
 		}
 		tr.updateLeadership(raft.SoftState{
-			Lead:      localPeerId,
+			Lead:      localPeerID,
 			RaftState: raft.StateLeader,
 		})
-		<-n.GetCh()
-		assert.ErrorIs(t, n.GetError(), ErrLeaderChange)
+		<-n.Channel()
+		assert.ErrorIs(t, n.Error(), ErrLeaderChange)
 	})
 }
 
 func TestRaft_ProcessRaftLinearizedRead_Timeout_AppliedIndexIsNotEqualToCommittedIndex(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = etcdRaftNode
-	tr.idGenerator = idgenerator.New(localPeerId, 10000)
+	tr.idGenerator = idgenerator.New(localPeerID, 10000)
 	tr.status = status.New()
 	tr.completionReplier = replier.NewCompletion()
 	defer tr.closer.Close()
@@ -154,7 +160,7 @@ func TestRaft_ProcessRaftLinearizedRead_Timeout_AppliedIndexIsNotEqualToCommitte
 		return nil
 	}
 	tr.status.SetAppliedIndex(5)
-	n := tr.linearizeReqNotifier.Get()
+	n := tr.linearizeReqNotifier.Current()
 	select {
 	case tr.readIndexCh <- struct{}{}:
 	default:
@@ -162,7 +168,7 @@ func TestRaft_ProcessRaftLinearizedRead_Timeout_AppliedIndexIsNotEqualToCommitte
 	select {
 	case <-time.After(time.Second * 2):
 		return
-	case <-n.GetCh():
+	case <-n.Channel():
 		assert.Fail(t, "must be timeout")
 	}
 }

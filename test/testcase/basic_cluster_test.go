@@ -27,7 +27,7 @@ func (c *BasicCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 	wait := tc.RaftElectionTimeout() * 3
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
-	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
 	assert.Nil(c.t, err)
@@ -41,7 +41,7 @@ func (c *BasicCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 			return err
 		}))
 	}
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestBasicCluster(t *testing.T) {

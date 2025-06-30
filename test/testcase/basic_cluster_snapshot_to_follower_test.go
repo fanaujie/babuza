@@ -31,7 +31,7 @@ func (c *BasicSendSnapshotToFollower) Run(tc *testcluster.BabuzaCluster, testPar
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 	// Identify the current leader
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Create a client with automatic incrementing session
@@ -61,40 +61,46 @@ func (c *BasicSendSnapshotToFollower) Run(tc *testcluster.BabuzaCluster, testPar
 	}
 
 	// Verify all peers have consistent state
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 
 	// Record snapshot metadata from leader for later verification
 	lastSnapshotIndex := uint64(0)
 	lastSnapshotTerm := uint64(0)
-	assert.Nil(c.t, tc.CheckStatus(wait, leaderId, func(s babuza.Status) bool {
+	assert.Nil(c.t, tc.CheckStatus(wait, leaderID, func(s babuza.Status) bool {
 		lastSnapshotIndex = s.LastSnapshotIndex
 		lastSnapshotTerm = s.LastSnapshotTerm
 		return s.LastSnapshotIndex >= c.snapshotCount &&
 			s.LastSnapshotTerm > 0
 	}))
 
-	// Add a new follower to the cluster that will receive a snapshot
-	newFollowerId := uint64(4)
-	newFollower := makeSingleStandardPeer(newFollowerId, false)
-	connectGroup.Add(newFollowerId)
+	newFollowers := make([]testcluster.Peer, 0)
+	for i := 0; i < 3; i++ {
+		// Add a new follower to the cluster that will receive a snapshot
+		newFollowerId := uint64(4 + i)
+		newFollower := makeSingleStandardPeer(newFollowerId, false)
+		newFollowers = append(newFollowers, newFollower)
+		connectGroup.Add(newFollowerId)
+		// Join the new node to the cluster - it should receive a snapshot
+		assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, newFollower, connectGroup.GetIDs()))
+	}
 
-	// Join the new node to the cluster - it should receive a snapshot
-	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, newFollower, connectGroup.GetIds()))
-
-	// Check if the new follower properly joined
-	assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId, newFollower)
-	}))
+	for _, newFollower := range newFollowers {
+		// Check if the new follower properly joined
+		assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
+			return tc.CheckPeerExists(ctx, leaderID, newFollower)
+		}))
+	}
 
 	// Wait a bit for snapshot transfer to complete
 	time.Sleep(time.Second)
 
-	// Verify the snapshot was transferred properly to the new follower
-	assert.Nil(c.t, tc.CheckStatus(wait, newFollowerId, func(s babuza.Status) bool {
-		return s.LastSnapshotIndex == lastSnapshotIndex &&
-			s.LastSnapshotTerm == lastSnapshotTerm
-	}))
-
+	for _, newFollower := range newFollowers {
+		// Verify the snapshot was transferred properly to the new follower
+		assert.Nil(c.t, tc.CheckStatus(wait, newFollower.ID(), func(s babuza.Status) bool {
+			return s.LastSnapshotIndex == lastSnapshotIndex &&
+				s.LastSnapshotTerm == lastSnapshotTerm
+		}))
+	}
 	// Write additional data with the new follower in the cluster
 	for i := uint64(100); i < 108; i++ {
 		assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
@@ -107,7 +113,7 @@ func (c *BasicSendSnapshotToFollower) Run(tc *testcluster.BabuzaCluster, testPar
 	}
 
 	// Final verification that all nodes (including the new follower) have identical state
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestSendSnapshotToFollower(t *testing.T) {

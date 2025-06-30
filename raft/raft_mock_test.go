@@ -144,13 +144,15 @@ func (m *mockSessionManager) Restore(reader io.Reader) error {
 
 type mockCluster struct{}
 
-func (m *mockCluster) SetClusterId(clusterId uint64) {
+func (m *mockCluster) SetClusterID(clusterID uint64) {
 }
 
-func (m *mockCluster) SetLocalPeerId(localPeerId uint64) {
+func (m *mockCluster) SetLocalPeerID(localPeerID uint64) {
 }
 
-func (m *mockCluster) Peer(peerId uint64) (babuzapb.Peer, error) {
+func (m *mockCluster) SetGroupID(groupID ibabuza.RaftGroupID) {}
+
+func (m *mockCluster) Peer(peerID uint64) (babuzapb.Peer, error) {
 	return babuzapb.Peer{}, nil
 }
 
@@ -166,13 +168,15 @@ func (m *mockCluster) Peers() []babuzapb.Peer {
 	return nil
 }
 
-func (m *mockCluster) ClusterId() uint64 {
+func (m *mockCluster) ClusterID() uint64 {
 	return 0
 }
 
 func (m *mockCluster) LocalPeerID() uint64 {
 	return 0
 }
+
+func (m *mockCluster) GroupID() ibabuza.RaftGroupID { return 0 }
 
 func (m *mockCluster) Add(attribute babuzapb.RaftPeerAttribute) error {
 	return nil
@@ -182,15 +186,15 @@ func (m *mockCluster) Update(attribute babuzapb.RaftPeerAttribute) error {
 	return nil
 }
 
-func (m *mockCluster) Remove(peerId uint64) error {
+func (m *mockCluster) Remove(peerID uint64) error {
 	return nil
 }
 
-func (m *mockCluster) Promote(peerId uint64) error {
+func (m *mockCluster) Promote(peerID uint64) error {
 	return nil
 }
 
-func (m *mockCluster) UpdateAppServiceAddresses(peerId uint64, addresses []string) error {
+func (m *mockCluster) UpdateAppServiceAddresses(peerID uint64, addresses []string) error {
 	return nil
 }
 
@@ -316,6 +320,22 @@ type mockStorageMgr struct {
 	entryStorage mockEntryStorage
 }
 
+func (m *mockStorageMgr) GetBasedStateMachineInfo() *BasedStateMachineInfo {
+	return nil
+}
+
+func (m *mockStorageMgr) ProcessMetadataSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+	return nil
+}
+
+func (m *mockStorageMgr) ProcessFinishSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+	return nil
+}
+
+func (m *mockStorageMgr) ProcessChunkSnapshotMessage(msg babuzapb.SnapshotMessage) error {
+	return nil
+}
+
 func (m *mockStorageMgr) CompactAndReleaseSnapshot(index uint64, snapshot raftpb.Snapshot) error {
 	m.releaseSnap = snapshot
 	return nil
@@ -335,11 +355,11 @@ func (m *mockStorageMgr) GetApplyResultSerializer() ibabuza.ResponseSerializer {
 	return nil
 }
 
-func (m *mockStorageMgr) CreateSnapshotContext(snapshotTerm, snapshotIndex uint64, confState raftpb.ConfState, cluster ibabuza.Cluster, sessionMgr ibabuza.SessionManager) (InternalStorageSnapshotContext, error) {
+func (m *mockStorageMgr) CreateSnapshotContext(snapshotTerm, snapshotIndex uint64, confState raftpb.ConfState, cluster ibabuza.Cluster, sessionMgr ibabuza.SessionManager) (StorageSnapshotContext, error) {
 	return nil, nil
 }
 
-func (m *mockStorageMgr) SaveStateMachineSnapshot(ctx InternalStorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
+func (m *mockStorageMgr) SaveStateMachineSnapshot(ctx StorageSnapshotContext) (babuzapb.SnapshotMetadata, error) {
 	return babuzapb.SnapshotMetadata{}, nil
 }
 
@@ -354,15 +374,8 @@ func (m *mockStorageMgr) GetStateMachineAppliedIndex() uint64 {
 func (m *mockStorageMgr) SetStateMachineAppliedIndex(index uint64) {
 }
 
-func (m *mockStorageMgr) Apply(e ibabuza.Entry) {
-}
-
-func (m *mockStorageMgr) SupportConcurrentSnapshot() bool {
-	return false
-}
-
-func (m *mockStorageMgr) ReceiveSnapshotMessage(msg babuzapb.SnapshotMessage) (bool, error) {
-	return false, nil
+func (m *mockStorageMgr) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
+	return ibabuza.ApplyResult{}
 }
 
 func (m *mockStorageMgr) GetEntryStorage() (ibabuza.EntryStorage, error) {
@@ -440,7 +453,7 @@ func (m *mockEventDelegate) NotifyMemberUpdate(peerAttribute babuzapb.RaftPeerAt
 
 }
 
-func (m *mockEventDelegate) NotifyMemberLeave(peerId uint64) {
+func (m *mockEventDelegate) NotifyMemberLeave(peerID uint64) {
 
 }
 
@@ -461,23 +474,43 @@ type mockPubTransClient struct {
 	errMsg string
 }
 
-func (c *mockPubTransClient) SendBatchMessage(babuzapb.BatchMessage) error       { return nil }
-func (c *mockPubTransClient) SendSnapshotMessage(babuzapb.SnapshotMessage) error { return nil }
-func (c *mockPubTransClient) GetClusterPeers(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	return babuzapb.GetClusterPeersResponse{}
+func (c *mockPubTransClient) SendMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) error {
+	return nil
 }
-func (c *mockPubTransClient) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+
+func (c *mockPubTransClient) SendSnapshotMessage(message babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
+	return babuzapb.SnapshotMessageResponse{}, nil
+}
+
+func (c *mockPubTransClient) SendBatchMessage(babuzapb.BatchMessage) error { return nil }
+func (c *mockPubTransClient) GetClusterPeers(babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
+	return babuzapb.GetClusterPeersResponse{}, nil
+}
+func (c *mockPubTransClient) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
 	return babuzapb.PublishApplicationServiceResponse{
 		Status:  c.status,
 		Message: c.errMsg,
-	}
+	}, nil
 }
 func (c *mockPubTransClient) Close() error { return nil }
+
+type mockRaftListener struct {
+	leaderIDs map[uint64]uint64
+}
+
+func (m *mockRaftListener) OnLeaderChange(term, leaderID uint64) {
+	m.leaderIDs[term] = leaderID
+}
+func (m *mockRaftListener) OnAcquiredLeader() {}
+func (m *mockRaftListener) OnLostLeader()     {}
+
+func (m *mockRaftListener) OnMemberChange(memberEvent int, term, peerID uint64) {}
+func (m *mockRaftListener) OnRaftShutdown()                                     {}
 
 func newTestRaft(nodeId uint64) *Raft {
 	return &Raft{
 		config: BabuzaConfig{
-			LocalPeerId: nodeId,
+			LocalPeerID: nodeId,
 			RaftConfig: RaftConfig{
 				LogicalTickMs: 100,
 			},
@@ -489,80 +522,9 @@ func newTestRaft(nodeId uint64) *Raft {
 		manualSnapshotCh:          make(chan manualSnapshot),
 		readStateCh:               make(chan raft.ReadState, 1),
 		readIndexCh:               make(chan struct{}),
-		leaderCh:                  make(chan bool, 1),
-		linearizeReqNotifier:      syncutil.NewErrNotifier(),
-		firstCommitInTermNotifier: syncutil.NewNotifier(),
-		leaderChangeNotifier:      syncutil.NewNotifier(),
+		linearizeReqNotifier:      syncutil.NewSignalManager(),
+		firstCommitInTermNotifier: syncutil.NewEventSignal(),
+		leaderChangeNotifier:      syncutil.NewEventSignal(),
 		closer:                    syncutil.NewCloser(),
 	}
 }
-
-type KvStoreInput struct {
-	Command uint64 // 0 => get, 1 => set, 2 => append, 3=>delete
-	Key     string
-	Value   string
-}
-
-type KvStoreOutput struct {
-	Value string
-}
-
-//
-//var KvStoreModel = porcupine.Model{
-//	Partition: func(history []porcupine.Operation) [][]porcupine.Operation {
-//		m := make(map[string][]porcupine.Operation)
-//		for _, v := range history {
-//			key := v.Input.(KvStoreInput).Key
-//			m[key] = append(m[key], v)
-//		}
-//		keys := make([]string, 0, len(m))
-//		for k := range m {
-//			keys = append(keys, k)
-//		}
-//		sort.Strings(keys)
-//		ret := make([][]porcupine.Operation, 0, len(keys))
-//		for _, k := range keys {
-//			ret = append(ret, m[k])
-//		}
-//		return ret
-//	},
-//	Init: func() interface{} {
-//		return ""
-//	},
-//	Step: func(state, input, output interface{}) (bool, interface{}) {
-//		kvInput := input.(KvStoreInput)
-//		kvOutput := output.(KvStoreOutput)
-//		st := state.(string)
-//		switch kvInput.Command {
-//		case 0:
-//			return kvOutput.Value == st, state
-//		case 1:
-//			return true, kvInput.Value
-//		case 2:
-//			return true, st + kvInput.Value
-//		case 3:
-//			return true, ""
-//		default:
-//			panic("porcupine.Model: not support command of kvstore")
-//		}
-//	},
-//	Equal: func(state1, state2 interface{}) bool {
-//		return state1 == state2
-//	},
-//	DescribeOperation: func(input, output interface{}) string {
-//		kvInput := input.(KvStoreInput)
-//		kvOutput := output.(KvStoreOutput)
-//		switch kvInput.Command {
-//		case 0:
-//			return fmt.Sprintf("get('%s') -> '%s'", kvInput.Key, kvOutput.Value)
-//		case 1:
-//			return fmt.Sprintf("put('%s', '%s')", kvInput.Key, kvInput.Value)
-//		case 2:
-//			return fmt.Sprintf("append('%s', '%s')", kvInput.Key, kvInput.Value)
-//		case 3:
-//			return fmt.Sprintf("delete('%s')", kvInput.Key)
-//		default:
-//			return "<invalid>"
-//		}
-//	},
-//}

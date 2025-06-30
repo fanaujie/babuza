@@ -59,11 +59,11 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        const leaderId = clusterConfig.leader_id;
+        const leaderID = clusterConfig.leader_id;
         const peers = clusterConfig.peers;
         
         // Update leader information
-        leaderInfo.innerHTML = `<strong>Leader:</strong> Peer ID ${leaderId}`;
+        leaderInfo.innerHTML = `<strong>Leader:</strong> Peer ID ${leaderID}`;
         leaderInfo.className = 'alert alert-info';
         
         // Update table body
@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Render each peer as a table row
         peers.forEach(peer => {
-            const isLeader = peer.id === leaderId;
+            const isLeader = peer.id === leaderID;
             const row = document.createElement('tr');
             
             // Apply styling for leader or learner
@@ -83,9 +83,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             // Peer ID
-            const peerIdCell = document.createElement('td');
-            peerIdCell.textContent = peer.id;
-            row.appendChild(peerIdCell);
+            const peerIDCell = document.createElement('td');
+            peerIDCell.textContent = peer.id;
+            row.appendChild(peerIDCell);
             
             // Role
             const roleCell = document.createElement('td');
@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const updateBtn = document.createElement('button');
             updateBtn.type = 'button';
             updateBtn.className = 'btn btn-primary update-peer';
-            updateBtn.dataset.peerId = peer.id;
+            updateBtn.dataset.peerID = peer.id;
             updateBtn.dataset.raftAddr = peer.raft_listen_addr || '';
             updateBtn.innerHTML = '<i class="bi bi-pencil"></i> Update';
             updateBtn.addEventListener('click', handleUpdatePeer);
@@ -125,7 +125,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const transferBtn = document.createElement('button');
                 transferBtn.type = 'button';
                 transferBtn.className = 'btn btn-warning transfer-leader';
-                transferBtn.dataset.peerId = peer.id;
+                transferBtn.dataset.peerID = peer.id;
                 transferBtn.innerHTML = '<i class="bi bi-shuffle"></i> Make Leader';
                 transferBtn.addEventListener('click', handleTransferLeader);
                 btnGroup.appendChild(transferBtn);
@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const promoteBtn = document.createElement('button');
                 promoteBtn.type = 'button';
                 promoteBtn.className = 'btn btn-success promote-learner';
-                promoteBtn.dataset.peerId = peer.id;
+                promoteBtn.dataset.peerID = peer.id;
                 promoteBtn.innerHTML = '<i class="bi bi-arrow-up-circle"></i> Promote';
                 promoteBtn.addEventListener('click', handlePromoteLearner);
                 btnGroup.appendChild(promoteBtn);
@@ -146,7 +146,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const removeBtn = document.createElement('button');
             removeBtn.type = 'button';
             removeBtn.className = 'btn btn-danger remove-peer';
-            removeBtn.dataset.peerId = peer.id;
+            removeBtn.dataset.peerID = peer.id;
             removeBtn.innerHTML = '<i class="bi bi-trash"></i> Remove';
             removeBtn.addEventListener('click', handleRemovePeer);
             btnGroup.appendChild(removeBtn);
@@ -162,7 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateTransfereeDropdown(clusterConfig) {
         if (!clusterConfig || !clusterConfig.peers) return;
         
-        const leaderId = clusterConfig.leader_id;
+        const leaderID = clusterConfig.leader_id;
         const peers = clusterConfig.peers;
         
         // Clear existing options
@@ -171,7 +171,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add peer options
         peers.forEach(peer => {
             // Only add non-leader peers as transferee options
-            if (peer.id !== leaderId && !peer.is_learner) {
+            if (peer.id !== leaderID && !peer.is_learner) {
                 const transfereeOption = document.createElement('option');
                 transfereeOption.value = peer.id;
                 transfereeOption.textContent = `Peer ${peer.id} (${peer.raft_listen_addr})`;
@@ -182,14 +182,14 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Add Peer button handler
     addPeerSubmit.addEventListener('click', async function() {
-        const peerId = parseInt(document.getElementById('peerID').value);
+        const peerID = parseInt(document.getElementById('peerID').value);
         const peerAddr = document.getElementById('peerAddr').value;
         const peerServiceAddr = document.getElementById('peerServiceAddr').value;
         const isLearner = document.getElementById('isLearner').checked;
         
         try {
-            await client.addPeer(peerId, peerAddr, isLearner);
-            showNotification('Success', `Added peer ${peerId} successfully`);
+            await client.addPeer(peerID, peerAddr, isLearner);
+            showNotification('Success', `Added peer ${peerID} successfully`);
             refreshClusterStatus();
             addPeerForm.reset();
             addPeerModal.hide();
@@ -218,12 +218,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Update Peer button handler
     updatePeerSubmit.addEventListener('click', async function() {
-        const peerId = parseInt(document.getElementById('updatePeerID').value);
+        const peerID = parseInt(document.getElementById('updatePeerID').value);
         const raftAddr = document.getElementById('updatePeerRaftAddr').value;
         
         try {
-            await client.updatePeer(peerId, raftAddr);
-            showNotification('Success', `Updated peer ${peerId} successfully`);
+            await client.updatePeer(peerID, raftAddr);
+            showNotification('Success', `Updated peer ${peerID} successfully`);
             refreshClusterStatus();
             updatePeerModal.hide();
         } catch (error) {
@@ -234,11 +234,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handlers for row action buttons
     function handleUpdatePeer(e) {
         const btn = e.currentTarget;
-        const peerId = parseInt(btn.dataset.peerId);
+        const peerID = parseInt(btn.dataset.peerID);
         const raftAddr = btn.dataset.raftAddr;
         
         // Set form values
-        document.getElementById('updatePeerID').value = peerId;
+        document.getElementById('updatePeerID').value = peerID;
         document.getElementById('updatePeerRaftAddr').value = raftAddr;
         
         // Show modal
@@ -247,10 +247,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     async function handleTransferLeader(e) {
         const btn = e.currentTarget;
-        const peerId = parseInt(btn.dataset.peerId);
+        const peerID = parseInt(btn.dataset.peerID);
         
         // Set dropdown value
-        transfereePeerID.value = peerId;
+        transfereePeerID.value = peerID;
         
         // Show modal
         transferLeaderModal.show();
@@ -258,12 +258,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     async function handlePromoteLearner(e) {
         const btn = e.currentTarget;
-        const peerId = parseInt(btn.dataset.peerId);
+        const peerID = parseInt(btn.dataset.peerID);
         
-        if (confirm(`Are you sure you want to promote learner ${peerId} to a voting member?`)) {
+        if (confirm(`Are you sure you want to promote learner ${peerID} to a voting member?`)) {
             try {
-                await client.promoteLearner(peerId);
-                showNotification('Success', `Promoted learner ${peerId} to voting member`);
+                await client.promoteLearner(peerID);
+                showNotification('Success', `Promoted learner ${peerID} to voting member`);
                 refreshClusterStatus();
             } catch (error) {
                 showNotification('Error', `Failed to promote learner: ${error.message}`, 'error');
@@ -273,12 +273,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     async function handleRemovePeer(e) {
         const btn = e.currentTarget;
-        const peerId = parseInt(btn.dataset.peerId);
+        const peerID = parseInt(btn.dataset.peerID);
         
-        if (confirm(`Are you sure you want to remove peer ${peerId} from the cluster?`)) {
+        if (confirm(`Are you sure you want to remove peer ${peerID} from the cluster?`)) {
             try {
-                await client.removePeer(peerId);
-                showNotification('Success', `Removed peer ${peerId} from the cluster`);
+                await client.removePeer(peerID);
+                showNotification('Success', `Removed peer ${peerID} from the cluster`);
                 refreshClusterStatus();
             } catch (error) {
                 showNotification('Error', `Failed to remove peer: ${error.message}`, 'error');

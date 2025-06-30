@@ -1,10 +1,15 @@
 package raft
 
 import (
+	"github.com/fanaujie/babuza/ibabuza"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"time"
 )
+
+func (r *Raft) ApplyConfChange(clusterID uint64, cc raftpb.ConfChangeI) (*raftpb.ConfState, error) {
+	return r.raftNode.ApplyConfChange(cc), nil
+}
 
 func (r *Raft) processRaftReady() {
 	isLeader := false
@@ -17,6 +22,9 @@ func (r *Raft) processRaftReady() {
 		case <-r.closer.CloseCh():
 			return
 		case rd := <-r.raftNode.Ready():
+			if !raft.IsEmptyHardState(rd.HardState) {
+				r.status.SetHardStateTerm(rd.HardState.Term)
+			}
 			if rd.SoftState != nil {
 				r.updateLeadership(*rd.SoftState)
 				isLeader = rd.SoftState.RaftState == raft.StateLeader
@@ -25,30 +33,29 @@ func (r *Raft) processRaftReady() {
 				select {
 				case r.readStateCh <- rd.ReadStates[len(rd.ReadStates)-1]:
 				case <-time.After(time.Second):
-					r.logger.Warningf("raft[id=%d] timed out sending read state. timeout=%d", r.config.LocalPeerId, time.Second)
+					r.logger.Warningf("raft[id=%d] timed out sending read state. timeout=%d", r.cluster.LocalPeerID(), time.Second)
 				case <-r.closer.CloseCh():
 					return
 				}
 			}
-
 			r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
 			waitWALSync := shouldWaitWALSync(rd)
 			if waitWALSync {
 				if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
+					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.cluster.LocalPeerID(), err)
 				}
+
 			}
 
-			notifyCh := make(chan struct{}, 1)
 			emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
 			if len(rd.CommittedEntries) > 0 || !emptySnapshot {
+
 				select {
 				case <-r.closer.CloseCh():
 					return
 				case r.applyCh <- applyEntryToStateMachine{
 					entries:  rd.CommittedEntries,
-					snapshot: rd.Snapshot,
-					notifyCh: notifyCh}:
+					snapshot: rd.Snapshot}:
 				}
 			}
 			if isLeader {
@@ -57,46 +64,56 @@ func (r *Raft) processRaftReady() {
 
 			if !waitWALSync {
 				if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
-					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.config.LocalPeerId, err)
+					r.logger.Panicf("raft[id=%d] save hard state, entries and snapshot failed: %v", r.cluster.LocalPeerID(), err)
 				}
 			}
 
 			if !emptySnapshot {
 				if err := r.storage.ApplyAndReleaseSnapshot(rd.Snapshot); err != nil {
-					r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.config.LocalPeerId, err)
+					r.logger.Panicf("raft[id=%d]: apply snapshot failed: %v", r.cluster.LocalPeerID(), err)
 				}
 			}
 			if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
-				r.logger.Panicf("raft[id=%d]: append entries failed: %v", r.config.LocalPeerId, err)
+				r.logger.Panicf("raft[id=%d]: append entries failed: %v", r.cluster.LocalPeerID(), err)
+			}
+			// The applyConfChangeEntry must be handled here to ensure the leader sends out messages (e.g., removing a follower) first.
+			// This guarantees that the follower receives the message before the configuration change is actually applied.
+			if r.applyConfChangeEntry(rd.CommittedEntries) {
+				close(r.removeSelfCh)
+				select {
+				case <-r.shutdownCh: //already shutdown
+				default:
+					time.AfterFunc(time.Second, func() {
+						r.stop()
+					})
+				}
+				return
 			}
 			if !isLeader {
-
-				// Candidate or follower needs to wait for all pending configuration
-				// changes to be applied before sending messages.
-				// Otherwise we might incorrectly count votes (e.g. votes from removed members).
-				// Also slow machine's follower raft-layer could proceed to become the leader
-				// on its own single-node cluster, before apply-layer applies the config change.
-				// We simply wait for ALL pending entries to be applied for now.
-				// We might improve this later on if it causes unnecessary long blocking issues.
-				var lastConfChangIndex uint64
-				for i := range rd.CommittedEntries {
-					e := &rd.CommittedEntries[i]
-					if raftpb.EntryConfChange == e.Type {
-						lastConfChangIndex = e.Index
-					}
-				}
-				if lastConfChangIndex > 0 {
-					select {
-					case <-r.completionReplier.AcquireCompletionChan(lastConfChangIndex):
-					case <-r.closer.CloseCh():
-						return
-					}
-				}
 				r.sendRaftMessage(rd.Messages)
 			}
 			r.raftNode.Advance()
 		}
 	}
+}
+
+func (r *Raft) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
+	for _, entry := range committedEntries {
+		if entry.Type == raftpb.EntryConfChange {
+			reqCtx, ar, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
+			if ar.Error == nil {
+				state, ok := ar.Response.(*raftpb.ConfState)
+				if ok && state != nil {
+					r.status.SetConfState(*state)
+				}
+			}
+			r.appliedFacade.SendAppliedResult(reqCtx.ReplyID, ar)
+			if removeSelf {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *Raft) sendRaftMessage(msgs []raftpb.Message) {
@@ -149,20 +166,34 @@ func (r *Raft) updateLeadership(currentState raft.SoftState) {
 	} else {
 		r.metricsCollector.SetHasLeader(1)
 	}
-	if currentState.Lead == r.config.LocalPeerId {
+	if currentState.Lead == r.cluster.LocalPeerID() {
 		r.status.SetLeader(true)
 		r.metricsCollector.SetIsLeader(1)
-		r.leaderCh <- true
+		if r.raftEventPublisher != nil {
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:  ibabuza.AcquiredLeader,
+				PeerID: currentState.Lead,
+			})
+		}
 	} else {
 		if r.status.IsLeader() {
 			r.status.SetLeader(false)
 			r.metricsCollector.SetIsLeader(0)
-			r.leaderCh <- false
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:  ibabuza.LostLeader,
+				PeerID: r.cluster.LocalPeerID(),
+			})
 		}
 	}
 	if newLeader {
+		if r.raftEventPublisher != nil {
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:  ibabuza.LeaderChanged,
+				PeerID: currentState.Lead,
+			})
+		}
 		r.metricsCollector.IncrementLeaderChanges()
-		r.leaderChangeNotifier.CloseAndRenew()
+		r.leaderChangeNotifier.Reset()
 	}
 
 }

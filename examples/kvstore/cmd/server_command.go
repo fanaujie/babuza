@@ -163,7 +163,7 @@ func parseAndValidateServerParams() error {
 	}
 
 	// Validate WAL option
-	validWalTypes := map[string]bool{builder.BabuzaWal: true, builder.ETCDWal: true, builder.LsmtWalDisk: true, builder.LsmtWalMemory: true}
+	validWalTypes := map[string]bool{builder.BabuzaWal: true, builder.ETCDWal: true, builder.BadgerWalDisk: true, builder.BadgerWalMemory: true}
 	if _, ok := validWalTypes[kvStoreConfig.BabuzaWal]; !ok {
 		return fmt.Errorf("invalid WAL option: %s (must be 'babuza-wal', 'etcd-wal', 'lsmt-wal-disk', or 'lsmt-wal-memory')", kvStoreConfig.BabuzaWal)
 	}

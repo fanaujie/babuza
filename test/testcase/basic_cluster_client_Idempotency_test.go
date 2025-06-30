@@ -78,7 +78,7 @@ func idempotencyTestComponents() []BabuzaComponent {
 					return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
 						b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
 							transport, proxyNet).
-							SetClusterId(config.BubuzaConfig.ClusterId).
+							SetClusterId(config.BubuzaConfig.ClusterID).
 							SetStorageRootDir(storageDir)
 						return *config, *b.Build()
 					}
@@ -108,7 +108,7 @@ func (c *BasicClientRequestIdempotency) Run(tc *testcluster.BabuzaCluster, a any
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 	// Identify the current leader
-	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Create a client with manual session control so we can test idempotency
@@ -172,6 +172,39 @@ func (c *BasicClientRequestIdempotency) Run(tc *testcluster.BabuzaCluster, a any
 		return err
 	})
 	assert.Nil(c.t, err)
+	// test join idempotency
+	ms.SetSequenceNumber(3)
+	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
+		return kvClient.Join(ctx, 100, "localhost:10000", false)
+	})
+	assert.Nil(c.t, err)
+	leaderRaft := tc.GetAllRaft()[leaderID]
+	assert.NotNil(c.t, leaderRaft)
+	bFind := false
+	clusterConfig := leaderRaft.ClusterInfo()
+	assert.Equal(c.t, 4, len(clusterConfig.Peers))
+	for _, p := range clusterConfig.Peers {
+		if p.RaftPeerAttr.PeerID == 100 {
+			bFind = true
+			assert.Equal(c.t, "localhost:10000", p.RaftPeerAttr.RaftListenAddr)
+		}
+	}
+	assert.True(c.t, bFind)
+	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
+		return kvClient.Join(ctx, 101, "localhost:20000", false)
+	})
+	assert.Nil(c.t, err)
+	bFind = false
+	clusterConfig = leaderRaft.ClusterInfo()
+	assert.Equal(c.t, 4, len(clusterConfig.Peers))
+	for _, p := range clusterConfig.Peers {
+		if p.RaftPeerAttr.PeerID == 100 {
+			bFind = true
+			assert.Equal(c.t, "localhost:10000", p.RaftPeerAttr.RaftListenAddr)
+		}
+	}
+	assert.True(c.t, bFind)
+
 }
 
 func TestClientRequestIdempotency(t *testing.T) {

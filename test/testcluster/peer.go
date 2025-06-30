@@ -20,13 +20,14 @@ type ProxyPeer interface {
 }
 
 type BabuzaPeer struct {
-	Id                  uint64
-	RaftListenAddr      string
-	TLSConfig           ibabuza.TLSConfig
-	ProxyListenAddr     string
-	ProxyTLSConfig      ibabuza.TLSConfig
-	AppServiceAddresses []string
-	IsLearner           bool
+	Id                     uint64
+	RaftListenAddr         string
+	TLSConfig              ibabuza.TLSConfig
+	ProxyListenAddr        string
+	ProxyInListenTLSConfig ibabuza.TLSConfig
+	ProxyOotDialTLSConfig  ibabuza.TLSConfig
+	AppServiceAddresses    []string
+	IsLearner              bool
 }
 
 func (b *BabuzaPeer) ID() uint64 {
@@ -66,10 +67,11 @@ func (b *BabuzaPeer) RaftTLSConfig() ibabuza.TLSConfig {
 
 func (b *BabuzaPeer) ProxyConfig() ibabuza.ProxyConfig {
 	return ibabuza.ProxyConfig{
-		Id:        b.Id,
-		InAddr:    b.ProxyListenAddr,
-		OutAddr:   b.RaftListenAddr,
-		TLSConfig: b.ProxyTLSConfig,
+		Id:                b.Id,
+		InAddr:            b.ProxyListenAddr,
+		OutAddr:           b.RaftListenAddr,
+		InListenTLSConfig: b.ProxyInListenTLSConfig,
+		OutDialTLSConfig:  b.ProxyOotDialTLSConfig,
 	}
 }
 

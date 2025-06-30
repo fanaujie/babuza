@@ -23,6 +23,7 @@ import (
 	"io"
 	"math/rand"
 	"testing"
+	"time"
 )
 
 type snapFileDesc struct {
@@ -174,7 +175,7 @@ func TestSnapshotor_CreateFileWriterAndReader(t *testing.T) {
 			SnapshotVersion: snapVer,
 			MaxSnapFiles:    snapMaxFiles,
 			SnapshotDir:     p,
-		}, fs, &logger.Mock{})
+		}, fs, &logger.Mock{}, nil)
 		genSnapFiles(t, s, snapTerm, snapIndex, fds)
 		reader, err := s.CreateInstalledSnapshotReader(snapIndex, true)
 		assert.Nil(t, err)
@@ -197,7 +198,7 @@ func TestSnapshotor_ValidateFileReceiverAndInstall(t *testing.T) {
 			SnapshotVersion: snapVer,
 			MaxSnapFiles:    snapMaxFiles,
 			SnapshotDir:     p,
-		}, fs, &logger.Mock{})
+		}, fs, &logger.Mock{}, nil)
 		tmpSnapshotMetadata := snapshotMetadata
 		d := make([]byte, tmpSnapshotMetadata.Files["one"].FileSize)
 		rand.Read(d)
@@ -245,7 +246,7 @@ func TestSnapshotor_ValidateFileReceiverAndInstall_Fail(t *testing.T) {
 			SnapshotVersion: snapVer,
 			MaxSnapFiles:    snapMaxFiles,
 			SnapshotDir:     p,
-		}, fs, &logger.Mock{})
+		}, fs, &logger.Mock{}, nil)
 		receiver, err := s.CreateAtomicSnapshotReceiver(snapshotMetadata)
 		assert.Nil(t, err)
 		assert.NotNil(t, receiver)
@@ -361,7 +362,7 @@ func TestSnapshotor_LoadLastValidSnapshot(t *testing.T) {
 					SnapshotVersion: snapVer,
 					MaxSnapFiles:    snapMaxFiles,
 					SnapshotDir:     p,
-				}, fs, &logger.Mock{})
+				}, fs, &logger.Mock{}, nil)
 				for _, m := range tc.realSnaps {
 					genSnapFiles(t, s, m.Metadata.Term, m.Metadata.Index, []snapFileDesc{
 						{
@@ -413,7 +414,13 @@ func TestSnapshotor_Purge(t *testing.T) {
 					SnapshotVersion: snapVer,
 					MaxSnapFiles:    snapMaxFiles,
 					SnapshotDir:     p,
-				}, fs, &logger.Mock{})
+				}, fs, &logger.Mock{}, nil)
+
+				// Start the async purger
+				sp := s.Purger()
+				sp.Start()
+				defer s.Close()
+
 				for _, snapIndex := range tc.snapIndex {
 					wDir, err := fs.CreateDirAndTouch(p, babuzapb.SnapshotFolderType_TempWrite, snapIndex)
 					assert.Nil(t, err)
@@ -423,11 +430,20 @@ func TestSnapshotor_Purge(t *testing.T) {
 					_, err = w.Commit(tmpSnapshotMetadata.Snapshot)
 					assert.Nil(t, err)
 				}
+
+				// Send purge request asynchronously
 				assert.Nil(t, s.Purge(raftpb.Snapshot{
 					Metadata: raftpb.SnapshotMetadata{
 						Index: tc.purgeIndex,
 					},
 				}))
+
+				// Wait a bit for async purging to complete
+				// In a real test environment, you might want to use channels or other synchronization
+				// For now, we'll use a simple sleep to ensure the async operation completes
+				// Consider adding a synchronization mechanism in production code
+				time.Sleep(100 * time.Millisecond)
+
 				for _, snapIndex := range tc.remainIndex {
 					dir, err := fs.PathHelper().GenerateSnapshotFolderPath(p, babuzapb.SnapshotFolderType_InstallSnapshot, snapIndex)
 					assert.Nil(t, err)
@@ -435,9 +451,7 @@ func TestSnapshotor_Purge(t *testing.T) {
 				}
 			}
 		}()
-
 	}
-
 }
 
 func TestSnapshotor_CommitSnapshot(t *testing.T) {
@@ -459,7 +473,7 @@ func TestSnapshotor_CommitSnapshot(t *testing.T) {
 				s := New(Config{
 					SnapshotVersion: 1,
 					SnapshotDir:     p,
-				}, fs, &logger.Mock{})
+				}, fs, &logger.Mock{}, nil)
 				assert.Nil(t, s.commitSnapshot(dt, 1))
 				_, ok := s.installedSnapshot[1]
 				assert.Equal(t, true, ok)
@@ -503,7 +517,7 @@ func TestSnapshotor_scanInstalledSnapshot(t *testing.T) {
 		s := New(Config{
 			SnapshotVersion: 1,
 			SnapshotDir:     p,
-		}, fs, &logger.Mock{})
+		}, fs, &logger.Mock{}, nil)
 		for index := uint64(1); index <= 8; index++ {
 			genSnapFiles(t, s, 1, index, fds)
 		}

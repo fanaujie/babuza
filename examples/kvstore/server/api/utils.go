@@ -9,12 +9,8 @@ import (
 	"net/http"
 )
 
-func processRaftProposeError(err error, w http.ResponseWriter, req *http.Request, redirectLeaderAddresses []string) {
+func processRaftProposeError(err error, w http.ResponseWriter) {
 	if errors.Is(err, raft.ErrNotLeader) {
-		if redirectLeaderAddresses != nil {
-			http.Redirect(w, req, "http://"+redirectLeaderAddresses[0], http.StatusMovedPermanently)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	} else if errors.Is(err, context.DeadlineExceeded) {
@@ -30,15 +26,15 @@ func writeHttpResponse(w http.ResponseWriter, response any) error {
 }
 
 func convertRaftClusterPeersToResponse(babuza *raft.Raft, sessionId, sessionSeqNum uint64) *response.ClusterConfigurationResponse {
-	babuzaResponse := babuza.ClusterConfiguration()
+	babuzaResponse := babuza.ClusterInfo()
 	res := &response.ClusterConfigurationResponse{
 		SessionID:      sessionId,
 		SequenceNumber: sessionSeqNum,
-		LeaderID:       babuza.Status().LeaderId,
+		LeaderID:       babuza.Status().LeaderID,
 	}
 	for _, peer := range babuzaResponse.Peers {
 		r := response.ClusterPeer{
-			Id:             peer.RaftPeerAttr.Id,
+			Id:             peer.RaftPeerAttr.PeerID,
 			RaftListenAddr: peer.RaftPeerAttr.RaftListenAddr,
 			IsLearner:      peer.RaftPeerAttr.IsLearner,
 		}

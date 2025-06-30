@@ -36,12 +36,12 @@ type Manager struct {
 	cfg        ManagerConfig
 	filesDesc  map[uint64]iwal.LogFileDesc
 	nextLogId  uint64
-	cascade    *allocator.TwoLevelPool
+	memPool    *allocator.ByteSlicePool
 	walDirFile *os.File
 	mu         sync.Mutex
 }
 
-func NewManager(cfg ManagerConfig, cascade *allocator.TwoLevelPool) (*Manager, error) {
+func NewManager(cfg ManagerConfig, memPool *allocator.ByteSlicePool) (*Manager, error) {
 	var dirFile *os.File
 	dirFile, err := os.Open(cfg.WalDir)
 	if err != nil {
@@ -50,12 +50,12 @@ func NewManager(cfg ManagerConfig, cascade *allocator.TwoLevelPool) (*Manager, e
 	return &Manager{
 		cfg:        cfg,
 		filesDesc:  make(map[uint64]iwal.LogFileDesc),
-		cascade:    cascade,
+		memPool:    memPool,
 		walDirFile: dirFile,
 	}, nil
 }
 
-func NewManagerWithScan(cfg ManagerConfig, startSnapshot walpb.Snapshot, cascade *allocator.TwoLevelPool) (*Manager, error) {
+func NewManagerWithScan(cfg ManagerConfig, startSnapshot walpb.Snapshot, memPool *allocator.ByteSlicePool) (*Manager, error) {
 	var dirFile *os.File
 	dirFile, err := os.Open(cfg.WalDir)
 	if err != nil {
@@ -76,7 +76,7 @@ func NewManagerWithScan(cfg ManagerConfig, startSnapshot walpb.Snapshot, cascade
 		cfg:        cfg,
 		filesDesc:  filesDesc,
 		nextLogId:  logFiles[len(logFiles)-1].Id + 1,
-		cascade:    cascade,
+		memPool:    memPool,
 		walDirFile: dirFile,
 	}, nil
 }
@@ -100,7 +100,7 @@ func (m *Manager) OpenLogFile(id uint64, seekTo int64, initCrc uint32) (iwal.Log
 	if err != nil {
 		return nil, err
 	}
-	return New(pw, codec.NewEncoder(pw, m.cascade, initCrc)), nil
+	return New(pw, codec.NewEncoder(pw, m.memPool, initCrc)), nil
 }
 
 func (m *Manager) CreateNextTempLogFile(id uint64, startLogIndex uint64) (iwal.LogFile, error) {
@@ -125,7 +125,7 @@ func (m *Manager) CreateNextTempLogFile(id uint64, startLogIndex uint64) (iwal.L
 	if err != nil {
 		return nil, err
 	}
-	return New(pw, codec.NewEncoder(pw, m.cascade, 0)), nil
+	return New(pw, codec.NewEncoder(pw, m.memPool, 0)), nil
 }
 
 func (m *Manager) FinalizeTempLogFile(id uint64) error {
@@ -187,7 +187,7 @@ func (m *Manager) Purge(snapshotIndex uint64) error {
 	return nil
 }
 
-func (m *Manager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryMetadata], destEnts []raftpb.Entry) error {
+func (m *Manager) ReadEntriesData(readEntryIndex []walbase.EntryIndex[storage.EntryIndexMetadata], destEnts []raftpb.Entry) error {
 	if len(readEntryIndex) != len(destEnts) || len(readEntryIndex) == 0 {
 		return errors.New("logfile manager: invalid the size of entryIndex and raftpb.Entry")
 	}

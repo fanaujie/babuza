@@ -31,11 +31,11 @@ func (c *OneFollowerDisconnectionCluster) Run(tc *testcluster.BabuzaCluster, a a
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
 	// Check initial leader election
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Disconnect a follower
-	followerId := (leaderId % 3) + 1
+	followerId := (leaderID % 3) + 1
 	assert.Nil(c.t, tc.DisconnectPeer(followerId))
 	connectGroup.Remove(followerId)
 
@@ -60,9 +60,9 @@ func (c *OneFollowerDisconnectionCluster) Run(tc *testcluster.BabuzaCluster, a a
 	connectGroup.Add(followerId)
 
 	// Verify leader is still the same
-	lastLeaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	lastLeaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-	assert.Equal(c.t, leaderId, lastLeaderId)
+	assert.Equal(c.t, leaderID, lastLeaderId)
 
 	// Execute more commands after follower reconnection
 	for i := 8; i < 16; i++ {
@@ -74,7 +74,7 @@ func (c *OneFollowerDisconnectionCluster) Run(tc *testcluster.BabuzaCluster, a a
 	}
 
 	// Verify data consistency across all peers
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 }
 
 func TestOneFollowerDisconnectionCluster(t *testing.T) {

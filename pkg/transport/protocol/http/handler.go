@@ -39,8 +39,8 @@ func (h *handler) snapshotMessageFunc(w http.ResponseWriter, req *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.raft.ProcessSnapshotMessage(snapMsg)
-	w.WriteHeader(http.StatusOK)
+	res := h.raft.ProcessSnapshotMessage(snapMsg)
+	writeProtoMessage[*babuzapb.SnapshotMessageResponse](w, &res)
 }
 
 func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
@@ -49,12 +49,12 @@ func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	cId := req.URL.Query().Get("clusterId")
+	cId := req.URL.Query().Get("clusterID")
 	if cId == "" {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
-	clusterId, err := strconv.ParseUint(cId, 10, 64)
+	clusterID, err := strconv.ParseUint(cId, 10, 64)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -79,23 +79,12 @@ func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	res := h.raft.GetClusterPeersRequest(babuzapb.GetClusterPeersRequest{
-		ClusterId: uint64(clusterId),
-		FromId:    uint64(fromId),
-		ToId:      uint64(toId),
+	res := h.raft.GetClusterPeer(babuzapb.GetClusterPeersRequest{
+		ClusterID: clusterID,
+		From:      fromId,
+		To:        toId,
 	})
-	msgSize := res.Size()
-	byteSlice := allocator.Acquire(msgSize)
-	defer allocator.Release(byteSlice)
-	n, err := res.MarshalTo(byteSlice.Buffer)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if _, err = w.Write(byteSlice.Buffer[:n]); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	writeProtoMessage[*babuzapb.GetClusterPeersResponse](w, &res)
 }
 
 // TODO: add test case
@@ -111,17 +100,25 @@ func (h *handler) publishApplicationServiceFunc(w http.ResponseWriter, req *http
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	res := h.raft.PublishApplicationServiceRequest(appServiceUrlReq)
-	var byteSlice *allocator.ByteSlice
-	byteSlice = allocator.Acquire(int(res.Size()))
+	res := h.raft.PublishApplicationService(appServiceUrlReq)
+	writeProtoMessage[*babuzapb.PublishApplicationServiceResponse](w, &res)
+}
+
+func writeProtoMessage[T interface {
+	Size() int
+	MarshalTo([]byte) (int, error)
+}](w http.ResponseWriter, res T) {
+	msgSize := res.Size()
+	byteSlice := allocator.Acquire(msgSize)
 	defer allocator.Release(byteSlice)
-	buf := byteSlice.Buffer[:res.Size()]
-	_, err := res.MarshalTo(buf)
+
+	n, err := res.MarshalTo(byteSlice.Buffer)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if _, err = w.Write(buf); err != nil {
+
+	if _, err = w.Write(byteSlice.Buffer[:n]); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -14,10 +14,12 @@ const (
 	GRPCTransport      = "grpc"
 
 	// WAL implementations
-	BabuzaWal     = "babuza-wal"
-	ETCDWal       = "etcd-wal"
-	LsmtWalDisk   = "lsmt-wal"
-	LsmtWalMemory = "lsmt-wal-memory"
+	BabuzaWal       = "babuza-wal"
+	ETCDWal         = "etcd-wal"
+	BadgerWalDisk   = "badger-wal"
+	BadgerWalMemory = "badger-wal-memory"
+	PebbleWalDisk   = "pebble-wal"
+	PebbleWalMemory = "pebble-wal-memory"
 
 	// Snapshot implementations
 	DurableSnapshot  = "durable"

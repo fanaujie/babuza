@@ -29,7 +29,7 @@ func (m *MockMessage) Unmarshal(data []byte) error {
 }
 
 func TestWriterAndReader(t *testing.T) {
-	tests := []struct {
+	for _, tt := range []struct {
 		name     string
 		msgType  MessageType
 		msgData  []byte
@@ -45,7 +45,7 @@ func TestWriterAndReader(t *testing.T) {
 		},
 		{
 			name:    "zero length message",
-			msgType: SnapshotMsgType,
+			msgType: SnapshotMsgReqType,
 			msgData: []byte{},
 			bufSize: 100,
 		},
@@ -71,48 +71,45 @@ func TestWriterAndReader(t *testing.T) {
 			wantErr:  true,
 			errorMsg: "message size",
 		},
-	}
+	} {
+		// Create a buffer for communication
+		buf := new(bytes.Buffer)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create a buffer for communication
-			buf := new(bytes.Buffer)
+		// Create writer and message
+		writer := NewWriter(buf)
+		msg := &MockMessage{Data: tt.msgData}
 
-			// Create writer and message
-			writer := NewWriter(buf)
-			msg := &MockMessage{Data: tt.msgData}
+		// Write to buffer
+		writeBuf := allocator.Acquire(tt.bufSize).Buffer
+		err := writer.Encode(writeBuf, tt.msgType, msg)
 
-			// Write to buffer
-			writeBuf := allocator.Acquire(tt.bufSize).Buffer
-			err := writer.Encode(writeBuf, tt.msgType, msg)
+		// Check write errors
+		if tt.wantErr {
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errorMsg)
+			return
+		}
 
-			// Check write errors
-			if tt.wantErr {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorMsg)
-				return
-			}
+		assert.NoError(t, err)
 
-			assert.NoError(t, err)
+		// Create reader
+		reader := NewReader(buf)
 
-			// Create reader
-			reader := NewReader(buf)
+		// Read back
+		var readMsgType MessageType
+		var readData []byte
 
-			// Read back
-			var readMsgType MessageType
-			var readData []byte
-
-			err = reader.ReadFrame(func(msgType MessageType, msgBuf []byte) error {
-				readMsgType = msgType
-				readData = make([]byte, len(msgBuf))
-				copy(readData, msgBuf)
-				return nil
-			})
-
-			assert.NoError(t, err)
-			assert.Equal(t, tt.msgType, readMsgType)
-			assert.Equal(t, tt.msgData, readData)
+		err = reader.ReadFrame(func(msgType MessageType, msgBuf []byte) error {
+			readMsgType = msgType
+			readData = make([]byte, len(msgBuf))
+			copy(readData, msgBuf)
+			return nil
 		})
+
+		assert.NoError(t, err)
+		assert.Equal(t, tt.msgType, readMsgType)
+		assert.Equal(t, tt.msgData, readData)
+
 	}
 }
 
@@ -149,7 +146,7 @@ func TestCorruptedMessage(t *testing.T) {
 func TestMessageTypes(t *testing.T) {
 	messageTypes := []MessageType{
 		BatchMsgType,
-		SnapshotMsgType,
+		SnapshotMsgReqType,
 		ClusterPeersReqType,
 		ClusterPeersResType,
 		PubAppServiceReqType,

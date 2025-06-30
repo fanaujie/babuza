@@ -47,7 +47,6 @@ func (es *EntryStorage[T]) Entries(lo, hi, maxSize uint64) ([]raftpb.Entry, erro
 	if err != nil {
 		return nil, err
 	}
-	////TODO: avoid copy?
 	copyEnts := make([]raftpb.Entry, hiOffset-loOffset)
 	copyIndex := 0
 	for i := loOffset; i < hiOffset; i++ {
@@ -138,15 +137,14 @@ func (es *EntryStorage[T]) ApplySnapshot(snap raftpb.Snapshot) error {
 	defer es.mu.Unlock()
 
 	//handle check for old snapshot being applied
-	msIndex := es.snapshot.Metadata.Index
-	snapIndex := snap.Metadata.Index
-	if msIndex >= snapIndex {
+	currentSnapshotIndex := es.snapshot.Metadata.Index
+	newSnapshotIndex := snap.Metadata.Index
+	if currentSnapshotIndex >= newSnapshotIndex {
 		return raft.ErrSnapOutOfDate
 	}
 
 	es.snapshot = snap
 	es.cache.Clear()
-	//TODO: GC?
 	es.ents = []EntryIndex[T]{
 		{
 			Term:  snap.Metadata.Term,
@@ -280,44 +278,6 @@ func (es *EntryStorage[T]) validateGetEntriesRange(lo, hi uint64) (uint64, uint6
 	}
 	return firstEntIndex, lo - firstEntIndex, hi - firstEntIndex, nil
 }
-
-//func (s *Storage) copyEntries(lo, hi uint64, maxSize int64) ([]raftpb.Entry, uint64, uint64, error) {
-//	offset := s.ents[0].Index
-//	if lo <= offset {
-//		return nil, 0, 0, raft.ErrCompacted
-//	}
-//	if hi > s.lastIndex()+1 {
-//		return nil, 0, 0, errors.New(fmt.Sprintf("entries' hi(%d) is out of bound lastindex(%d)", hi, s.lastIndex()))
-//	}
-//	// only contains dummy Entries.
-//	if len(s.ents) == 1 {
-//		return nil, 0, 0, raft.ErrUnavailable
-//	}
-//	startIndex := lo - offset
-//	endIndex := hi - offset
-//	size := int64(0)
-//	limitIndex := startIndex
-//	for ; limitIndex < endIndex; limitIndex++ {
-//		e := &s.ents[limitIndex]
-//		size += e.EntryDataLen
-//		if size > maxSize {
-//			break
-//		}
-//	}
-//	if limitIndex == startIndex {
-//		return nil, 0, 0, errors.New("")
-//	}
-//	outEntries := make([]raftpb.Entry, 0, limitIndex-startIndex)
-//	for i := startIndex; i < limitIndex; i++ {
-//		e := &s.ents[i]
-//		outEntries = append(outEntries, raftpb.Entry{
-//			Term:  e.Term,
-//			Index: e.Index,
-//			Type:  e.Type,
-//		})
-//	}
-//	return outEntries, startIndex, limitIndex, nil
-//}
 
 func limitSize(ents []raftpb.Entry, maxSize uint64) []raftpb.Entry {
 	if len(ents) == 0 {

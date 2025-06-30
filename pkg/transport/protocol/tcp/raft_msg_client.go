@@ -26,8 +26,8 @@ func NewRaftMsgClient(pool connpool.Pool[*conn.FrameConnection], resolver ibabuz
 	}
 }
 
-func (r *RaftMsgClient) getConnection(peerId uint64) (*conn.FrameConnection, error) {
-	addr, err := r.resolver.ResolvePeerAddress(peerId)
+func (r *RaftMsgClient) getConnection(peerID uint64) (*conn.FrameConnection, error) {
+	addr, err := r.resolver.ResolvePeerAddress(peerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve peer address: %w", err)
 	}
@@ -36,6 +36,11 @@ func (r *RaftMsgClient) getConnection(peerId uint64) (*conn.FrameConnection, err
 		return nil, fmt.Errorf("failed to get connection from pool: %w", err)
 	}
 	return c, nil
+}
+
+func (r *RaftMsgClient) SendMultiRaftMessage(babuzapb.MultiRaftBatchMessage) error {
+	// not supported
+	return nil
 }
 
 func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
@@ -53,35 +58,44 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	return err
 }
 
-func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) error {
+func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
+	var res babuzapb.SnapshotMessageResponse
 	c, err := r.getConnection(snapMsg.To)
 	if err != nil {
-		return err
+		return res, err
 	}
 	defer func() {
 		r.returnPool(c, err)
 	}()
-	err = c.SendFrame(frame.SnapshotMsgType, &snapMsg)
-	return err
+	err = c.SendFrame(frame.SnapshotMsgReqType, &snapMsg)
+	if err != nil {
+		return res, nil
+	}
+	err = c.ReadFrame(func(msgType frame.MessageType, msgBuf []byte) error {
+		if msgType != frame.SnapshotMsgResType {
+			return fmt.Errorf("unexpected message type: %v", msgType)
+		}
+		return res.Unmarshal(msgBuf)
+	})
+	if err != nil {
+		return res, err
+	}
+	return res, nil
 }
 
-func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {
 	var res babuzapb.GetClusterPeersResponse
 
-	c, err := r.getConnection(request.ToId)
+	c, err := r.getConnection(request.To)
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
 	defer func() {
 		r.returnPool(c, err)
 	}()
 	err = c.SendFrame(frame.ClusterPeersReqType, &request)
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
 
 	err = c.ReadFrame(func(msgType frame.MessageType, msgBuf []byte) error {
@@ -91,20 +105,16 @@ func (r *RaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest)
 		return res.Unmarshal(msgBuf)
 	})
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
-	return res
+	return res, nil
 }
 
-func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplicationServiceRequest) (babuzapb.PublishApplicationServiceResponse, error) {
 	var res babuzapb.PublishApplicationServiceResponse
-	c, err := r.getConnection(request.ToId)
+	c, err := r.getConnection(request.To)
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
 	defer func() {
 		r.returnPool(c, err)
@@ -112,9 +122,7 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 
 	err = c.SendFrame(frame.PubAppServiceReqType, &request)
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
 	err = c.ReadFrame(func(msgType frame.MessageType, msgBuf []byte) error {
 		if msgType != frame.PubAppServiceResType {
@@ -123,11 +131,9 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 		return res.Unmarshal(msgBuf)
 	})
 	if err != nil {
-		res.Status = babuzapb.FAILED
-		res.Message = err.Error()
-		return res
+		return res, err
 	}
-	return res
+	return res, nil
 }
 
 func (r *RaftMsgClient) Close() error {

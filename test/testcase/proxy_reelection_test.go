@@ -27,7 +27,7 @@ func (c *ReElectionCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
 	// Check for initial leader election
-	leader1, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leader1, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Disconnect the first leader to trigger re-election
@@ -36,7 +36,7 @@ func (c *ReElectionCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 	time.Sleep(wait)
 
 	// Verify a new leader is elected among remaining peers
-	leader2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leader2, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Reconnect the first leader and verify it doesn't become leader immediately
@@ -51,7 +51,7 @@ func (c *ReElectionCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 	connectGroup.Remove(leader2)
 
 	// Verify no leader exists in the remaining single node (can't reach quorum)
-	assert.Nil(c.t, tc.CheckNoLeader(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckNoLeader(wait, connectGroup.GetIDs()))
 
 	// Reconnect leader2, allowing a new election to occur
 	assert.Nil(c.t, tc.ConnectPeer(leader2))
@@ -59,7 +59,7 @@ func (c *ReElectionCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 	time.Sleep(wait)
 
 	// Verify a third leader is elected
-	leader3, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leader3, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Reconnect all nodes and verify leader stability
@@ -67,7 +67,7 @@ func (c *ReElectionCluster) Run(tc *testcluster.BabuzaCluster, a any) {
 	connectGroup.Add(leader1)
 
 	// Verify the leader doesn't change when all nodes are reconnected
-	lastLeader, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	lastLeader, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 	assert.Equal(c.t, leader3, lastLeader)
 }

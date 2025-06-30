@@ -1,0 +1,366 @@
+package experimental
+
+import (
+	"errors"
+	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/utility/queue"
+	babuza "github.com/fanaujie/babuza/raft"
+	"go.etcd.io/etcd/raft/v3"
+	"go.etcd.io/etcd/raft/v3/raftpb"
+	"time"
+)
+
+func (r *replica) processTick() {
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	for nodeID, _ := range r.mu.unreachable {
+		r.mu.rawNode.ReportUnreachable(nodeID)
+		delete(r.mu.unreachable, nodeID)
+	}
+	r.mu.rawNode.Tick()
+}
+
+func (r *replica) processReady() {
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	if r.mu.rawNode.HasReady() {
+		rd := r.mu.rawNode.Ready()
+
+		if !raft.IsEmptyHardState(rd.HardState) {
+			r.status.SetHardStateTerm(rd.HardState.Term)
+		}
+		if rd.SoftState != nil {
+			r.updateLeadership(*rd.SoftState)
+		}
+		isLeader := r.status.IsLeader()
+		if len(rd.ReadStates) != 0 {
+			select {
+			case r.readStateCh <- rd.ReadStates[len(rd.ReadStates)-1]:
+			case <-time.After(time.Second):
+				r.logger.Warningf("groupID[%d] peerID[%d]: timed out sending read state. timeout=%d",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), time.Second)
+			case <-r.closer.CloseCh():
+				return
+			}
+		}
+		r.updateCommittedIndex(rd.CommittedEntries, rd.Snapshot)
+		waitWALSync := shouldWaitWALSync(rd)
+		if waitWALSync {
+			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
+				r.logger.Panicf("groupID[%d] peerID[%d] save hard state, entries and snapshot failed: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+			}
+		}
+
+		emptySnapshot := raft.IsEmptySnap(rd.Snapshot)
+		if len(rd.CommittedEntries) > 0 || !emptySnapshot {
+			applyData := poolGetApplyEntry()
+			applyData.entries = rd.CommittedEntries
+			applyData.snapshot = rd.Snapshot
+			if err := r.applyJobQueue.Put(r.cluster.GroupID(), func() {
+				r.doApplyJob(applyData)
+			}); err != nil {
+				r.logger.Panicf("groupID[%d] peerID[%d]: error putting apply job: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+			}
+		}
+		if isLeader {
+			r.sendRaftMessage(rd.Messages)
+		}
+		if !waitWALSync {
+			if err := r.storage.Save(rd.HardState, rd.Entries, rd.Snapshot); err != nil {
+				r.logger.Panicf("groupID[%d] peerID[%d] save hard state, entries and snapshot failed: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+			}
+		}
+
+		if !emptySnapshot {
+			if err := r.storage.ApplyAndReleaseSnapshot(rd.Snapshot); err != nil {
+				r.logger.Panicf("groupID[%d] peerID[%d]: apply snapshot failed: %v", r.cluster.GroupID(),
+					r.cluster.LocalPeerID(), err)
+			}
+		}
+		if err := r.storage.EntryStorageAppend(rd.Entries); err != nil {
+			r.logger.Panicf("groupID[%d] peerID[%d]: append entries failed: %v", r.cluster.GroupID(),
+				r.cluster.LocalPeerID(), err)
+		}
+		// The applyConfChangeEntry must be handled here to ensure the leader sends out messages (e.g., removing a follower) first.
+		// This guarantees that the follower receives the message before the configuration change is actually applied.
+		if r.applyConfChangeEntry(rd.CommittedEntries) {
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:   ibabuza.RemoveSelf,
+				GroupID: r.cluster.GroupID(),
+				PeerID:  r.cluster.LocalPeerID(),
+			})
+			return
+		}
+		if !isLeader {
+			r.sendRaftMessage(rd.Messages)
+		}
+		r.mu.rawNode.Advance(rd)
+	}
+}
+
+func (r *replica) processStep(requestQueue *replicaRequestQueue) {
+	if requestQueue.step.Len() == 0 {
+		return
+	}
+	items, err := requestQueue.step.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] peerID[%d]: error getting step: %v", r.cluster.GroupID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	for _, msg := range items.Data {
+
+		if err = r.mu.rawNode.Step(msg); err != nil {
+			r.logger.Warningf("groupID[%d] peerID[%d]: error stepping message: %v", r.cluster.GroupID(),
+				r.cluster.LocalPeerID(), err)
+		}
+
+	}
+}
+
+func (r *replica) processProposal(requestQueue *replicaRequestQueue) {
+	if requestQueue.proposal.Len() == 0 {
+		return
+	}
+	items, err := requestQueue.proposal.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] peerID[%d]: error getting proposals: %v", r.cluster.GroupID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	for _, item := range items.Data {
+		if err = r.mu.rawNode.Propose(item.data); err != nil {
+			if errors.Is(err, raft.ErrProposalDropped) {
+				err = babuza.ErrNotLeader
+			} else if errors.Is(err, raft.ErrStopped) {
+				err = babuza.ErrStopped
+			}
+			r.resultReplier.SendResult(item.replyID, ibabuza.ApplyResult{
+				Error: err,
+			})
+			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.GroupID(),
+				r.cluster.LocalPeerID(), err)
+		}
+		poolReleaseProposal(item)
+	}
+}
+
+func (r *replica) ProcessConfigChange(requestQueue *replicaRequestQueue) {
+	if requestQueue.configChange.Len() == 0 {
+		return
+	}
+	items, err := requestQueue.configChange.Get()
+	if err != nil {
+		r.logger.Warningf("groupID[%d] peerID[%d]: error getting config change: %v", r.cluster.GroupID(),
+			r.cluster.LocalPeerID(), err)
+		return
+	}
+	defer items.Release()
+	r.mu.lock.Lock()
+	defer r.mu.lock.Unlock()
+	for _, item := range items.Data {
+		if err = r.mu.rawNode.ProposeConfChange(item.confChange); err != nil {
+			if errors.Is(err, raft.ErrProposalDropped) {
+				err = babuza.ErrNotLeader
+			} else if errors.Is(err, raft.ErrStopped) {
+				err = babuza.ErrStopped
+			}
+			r.resultReplier.SendResult(item.replyID, ibabuza.ApplyResult{
+				Error: err,
+			})
+			r.logger.Warningf("groupID[%d] raft[%d] propose failed, err: %v", r.cluster.GroupID(),
+				r.cluster.LocalPeerID(), err)
+		}
+	}
+}
+
+func (r *replica) applyConfChangeEntry(committedEntries []raftpb.Entry) bool {
+	for _, entry := range committedEntries {
+		if entry.Type == raftpb.EntryConfChange {
+			reqCtx, ar, removeSelf := r.appliedFacade.ApplyConfChangeEntry(entry)
+			if ar.Error == nil {
+				state, ok := ar.Response.(*raftpb.ConfState)
+				if ok && state != nil {
+					r.status.SetConfState(*state)
+				}
+			}
+			r.appliedFacade.SendAppliedResult(reqCtx.ReplyID, ar)
+			if removeSelf {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (r *replica) sendRaftMessage(msgs []raftpb.Message) {
+	appRespIndex := uint64(0)
+	lastAppRespMsgIndex := 0
+	optimiseAppendEntryResp := false //optimise for MsgAppResp
+	for i := 0; i < len(msgs); i++ {
+		m := &msgs[i]
+		switch m.Type {
+		case raftpb.MsgHeartbeat:
+			peerIden, err := r.transport.ResolvePeerAddress(r.cluster.GroupID(), m.To)
+			if err != nil {
+				r.logger.Warningf("groupID[%d] peerID[%d]: error resolving peer address for heartbeat: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+				continue
+			}
+			hq, _ := r.coalescedHeartbeat.heartbeatMsg.LoadOrStore(peerIden,
+				queue.NewSwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage](r.config.CoalescedHeartbeatQueueSize,
+					func(messages []babuzapb.MultiRaftHeartbeatMessage) {
+						for index, _ := range messages {
+							messages[index] = babuzapb.MultiRaftHeartbeatMessage{}
+						}
+					}))
+			if err = hq.Put(babuzapb.MultiRaftHeartbeatMessage{
+				GroupID:    uint64(r.cluster.GroupID()),
+				FromPeerID: m.From,
+				ToPeerID:   m.To,
+				Term:       m.Term,
+				Commit:     m.Commit,
+				Context:    m.Context,
+			}); err != nil {
+				r.logger.Panicf("groupID[%d] peerID[%d]: error putting heartbeat message: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+			}
+			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(peerIden, time.Now().Unix())
+		case raftpb.MsgHeartbeatResp:
+			peerIden, err := r.transport.ResolvePeerAddress(r.cluster.GroupID(), m.To)
+			if err != nil {
+				r.logger.Warningf("groupID[%d] peerID[%d]: error resolving peer address for heartbeat response: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+				continue
+			}
+			hq, _ := r.coalescedHeartbeat.heartbeatRespMsg.LoadOrStore(peerIden,
+				queue.NewSwapBufferQueue[babuzapb.MultiRaftHeartbeatMessage](r.config.CoalescedHeartbeatQueueSize,
+					func(messages []babuzapb.MultiRaftHeartbeatMessage) {
+						for index, _ := range messages {
+							messages[index] = babuzapb.MultiRaftHeartbeatMessage{}
+						}
+					}))
+			if err = hq.Put(babuzapb.MultiRaftHeartbeatMessage{
+				GroupID:    uint64(r.cluster.GroupID()),
+				FromPeerID: m.From,
+				ToPeerID:   m.To,
+				Term:       m.Term,
+				Commit:     m.Commit,
+				Context:    m.Context,
+			}); err != nil {
+				r.logger.Panicf("groupID[%d] peerID[%d]: error putting heartbeat response message: %v",
+					r.cluster.GroupID(), r.cluster.LocalPeerID(), err)
+			}
+			r.coalescedHeartbeat.heartbeatLastActiveUnixSec.Store(peerIden, time.Now().Unix())
+		case raftpb.MsgAppResp:
+			if !m.Reject && m.Index > appRespIndex {
+				appRespIndex = m.Index
+				lastAppRespMsgIndex = i
+				optimiseAppendEntryResp = true
+			} else {
+				r.transport.Send(r.cluster.GroupID(), *m)
+			}
+		case raftpb.MsgSnap:
+			m.Snapshot.Metadata.ConfState = r.status.CloneConfState()
+			r.transport.SendSnapshot(r.cluster.GroupID(), *m)
+		default:
+			r.transport.Send(r.cluster.GroupID(), *m)
+		}
+	}
+	if optimiseAppendEntryResp {
+		r.transport.Send(r.cluster.GroupID(), msgs[lastAppRespMsgIndex])
+	}
+}
+
+func (r *replica) updateCommittedIndex(entries []raftpb.Entry, snap raftpb.Snapshot) {
+	var newCommitIndex uint64
+	if len(entries) != 0 {
+		newCommitIndex = entries[len(entries)-1].Index
+	}
+	if snap.Metadata.Index > newCommitIndex {
+		newCommitIndex = snap.Metadata.Index
+	}
+	if newCommitIndex != 0 && newCommitIndex > r.status.GetCommittedIndex() {
+		r.status.SetCommittedIndex(newCommitIndex)
+	}
+}
+
+func (r *replica) updateLeadership(currentState raft.SoftState) {
+	preState := r.status.CloneSoftState()
+
+	newLeader := currentState.Lead != raft.None && preState.Lead != currentState.Lead
+	r.status.SetSoftState(currentState)
+	if currentState.Lead == r.cluster.LocalPeerID() {
+		r.status.SetLeader(true)
+		r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+			Event:   ibabuza.AcquiredLeader,
+			GroupID: r.cluster.GroupID(),
+			PeerID:  r.cluster.LocalPeerID(),
+		})
+	} else {
+		if r.status.IsLeader() {
+			r.status.SetLeader(false)
+			r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+				Event:   ibabuza.LostLeader,
+				GroupID: r.cluster.GroupID(),
+				PeerID:  r.cluster.LocalPeerID(),
+			})
+		}
+	}
+	if newLeader {
+		r.raftEventPublisher.Publish(ibabuza.RaftEvent{
+			Event:   ibabuza.LeaderChanged,
+			GroupID: r.cluster.GroupID(),
+			PeerID:  currentState.Lead,
+		})
+		r.leaderChangeNotifier.Reset()
+	}
+
+}
+
+// For a cluster with only one member, the raft may send both the
+// unstable entries and committed entries to etcdserver, and there
+// may have overlapped log entries between them.
+//
+// etcd responds to the client once it finishes (actually partially)
+// the applying workflow. But when the client receives the response,
+// it doesn't mean etcd has already successfully saved the data,
+// including BoltDB and WAL, because:
+//  1. etcd commits the boltDB transaction periodically instead of on each request;
+//  2. etcd saves WAL entries in parallel with applying the committed entries.
+//
+// Accordingly, it might run into a situation of data loss when the etcd crashes
+// immediately after responding to the client and before the boltDB and WAL
+// successfully save the data to disk.
+// Note that this issue can only happen for clusters with only one member.
+//
+// For clusters with multiple members, it isn't an issue, because etcd will
+// not commit & apply the data before it being replicated to majority members.
+// When the client receives the response, it means the data must have been applied.
+// It further means the data must have been committed.
+// Note: for clusters with multiple members, the raft will never send identical
+// unstable entries and committed entries to etcdserver.
+//
+// Refer to https://github.com/etcd-io/etcd/issues/14370.
+func shouldWaitWALSync(rd raft.Ready) bool {
+	if len(rd.CommittedEntries) == 0 || len(rd.Entries) == 0 {
+		return false
+	}
+
+	// Check if there is overlap between unstable and committed entries
+	// assuming that their index and term are only incrementing.
+	lastCommittedEntry := rd.CommittedEntries[len(rd.CommittedEntries)-1]
+	firstUnstableEntry := rd.Entries[0]
+	return lastCommittedEntry.Term > firstUnstableEntry.Term ||
+		(lastCommittedEntry.Term == firstUnstableEntry.Term && lastCommittedEntry.Index >= firstUnstableEntry.Index)
+}

@@ -8,6 +8,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
+	"go.etcd.io/etcd/raft/v3/raftpb"
 	"net"
 	"time"
 )
@@ -42,7 +43,7 @@ func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, listener
 
 func (r *RaftMsgServer) Start() error {
 	var err error
-	r.logger.Infof("tcp[raft server] peerId(%d) Start", r.cfg.PeerId)
+	r.logger.Infof("tcp[raft server] peerID(%d) Start", r.cfg.LocalNodeID)
 	r.listener, err = r.tcpListener.Listen(r.cfg.TLSConfig, r.cfg.PeerAddress)
 	if err != nil {
 		return err
@@ -73,12 +74,12 @@ func (r *RaftMsgServer) Start() error {
 				default:
 				}
 			} else {
-				r.logger.Infof("tcp[raft server] peerId(%d) accept conn from %s", r.cfg.PeerId, c.RemoteAddr().String())
+				r.logger.Infof("tcp[raft server] peerID(%d) accept conn from %s", r.cfg.LocalNodeID, c.RemoteAddr().String())
 				s := r.newSession(c)
 				r.closer.Run(func() {
 					if sErr := s.start(); sErr != nil {
-						r.logger.Warningf("tcp[raft server]: failed to decode session. peerId(%d) endpoint(%s) err(%s)",
-							r.cfg.PeerId, r.cfg.PeerAddress, sErr.Error())
+						r.logger.Warningf("tcp[raft server]: failed to decode session. peerID(%d) endpoint(%s) err(%s)",
+							r.cfg.LocalNodeID, r.cfg.PeerAddress, sErr.Error())
 					}
 				})
 			}
@@ -89,8 +90,8 @@ func (r *RaftMsgServer) Start() error {
 
 func (r *RaftMsgServer) Stop() error {
 	if err := r.listener.Close(); err != nil {
-		r.logger.Warningf("tcp[raft server]: failed to close. peerId(%d) endpoint(%s )err(%s)",
-			r.cfg.PeerId, r.cfg.PeerAddress, err.Error())
+		r.logger.Warningf("tcp[raft server]: failed to close. peerID(%d) endpoint(%s )err(%s)",
+			r.cfg.LocalNodeID, r.cfg.PeerAddress, err.Error())
 	}
 	r.closer.Close()
 	return nil
@@ -130,19 +131,23 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 		}
 		s.raft.ProcessBatchMessage(s.batchMsg)
 		s.batchMsg.Messages = nil
-	case frame.SnapshotMsgType:
+	case frame.SnapshotMsgReqType:
 		if err := s.snapshotMsg.Unmarshal(msgBuf); err != nil {
 			return err
 		}
-		s.raft.ProcessSnapshotMessage(s.snapshotMsg)
-		s.snapshotMsg.Metadata = nil
-		s.snapshotMsg.ChunkMessage = nil
-		s.snapshotMsg.FinishMessage = nil
+		res := s.raft.ProcessSnapshotMessage(s.snapshotMsg)
+		s.snapshotMsg.Metadata = babuzapb.SnapshotMetadata{}
+		s.snapshotMsg.ChunkMessage = babuzapb.SnapshotChunkMessage{}
+		s.snapshotMsg.FinishMessage = raftpb.Message{}
+		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
+			return err
+		}
+		return s.frameConn.SendFrame(frame.SnapshotMsgResType, &res)
 	case frame.ClusterPeersReqType:
 		if err := s.getClusterPeersReq.Unmarshal(msgBuf); err != nil {
 			return err
 		}
-		res := s.raft.GetClusterPeersRequest(s.getClusterPeersReq)
+		res := s.raft.GetClusterPeer(s.getClusterPeersReq)
 		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
 			return err
 		}
@@ -151,7 +156,7 @@ func (s *session) messageHandler(msgType frame.MessageType, msgBuf []byte) error
 		if err := s.pubAppServiceReq.Unmarshal(msgBuf); err != nil {
 			return err
 		}
-		res := s.raft.PublishApplicationServiceRequest(s.pubAppServiceReq)
+		res := s.raft.PublishApplicationService(s.pubAppServiceReq)
 		if err := s.conn.SetWriteDeadline(time.Now().Add(s.config.WriteDeadline)); err != nil {
 			return err
 		}

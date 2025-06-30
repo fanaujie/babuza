@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"path/filepath"
 
 	"github.com/fanaujie/babuza/pkg/metrics"
@@ -46,7 +47,7 @@ type BabuzaComponentConfig struct {
 	SessionType   string // builder.NoOpSession, builder.ExpireSession, builder.LRUSession
 	SnapshotType  string // builder.DurableSnapshot, builder.VolatileSnapshot, builder.MinIOSnapshot
 	TransportType string // builder.TcpTransport, builder.TcpMemoryTransport, builder.HttpTransport, builder.GRPCTransport
-	WalType       string // builder.BabuzaWal, builder.ETCDWal, builder.LsmtWalDisk, builder.LsmtWalMemory
+	WalType       string // builder.BabuzaWal, builder.ETCDWal, builder.BadgerWalDisk, builder.BadgerWalMemory
 	MetricType    string // builder.MetricsOtel, builder.MetricsPrometheus, builder.MetricsMock
 
 	CustomLogger        ibabuza.Logger
@@ -87,8 +88,8 @@ func NewBabuzaComponentBuilder(config *BabuzaComponentConfig) *BabuzaComponentBu
 	}
 }
 
-func (b *BabuzaComponentBuilder) SetClusterId(clusterId uint64) *BabuzaComponentBuilder {
-	b.config.ClusterId = clusterId
+func (b *BabuzaComponentBuilder) SetClusterId(clusterID uint64) *BabuzaComponentBuilder {
+	b.config.ClusterId = clusterID
 	return b
 }
 
@@ -283,7 +284,7 @@ func (b *BabuzaComponentBuilder) Build() *BabuzaComponent {
 	component.Transport = b.createTransport(component.Logger)
 
 	component.RaftNode = raftnode.NewEtcdRaftNode()
-	component.Cluster = cluster.NewCluster(component.Logger)
+	component.Cluster = cluster.NewCluster()
 
 	b.built = true
 
@@ -310,13 +311,25 @@ func (b *BabuzaComponentBuilder) createWalManager(logger ibabuza.Logger, zapLogg
 		return babuzawal.NewWalManager(walDir, logger)
 	case ETCDWal:
 		return etcdwal.NewWalManager(walDir, zapLogger)
-	case LsmtWalDisk:
-		return lsmtwal.NewBadgerWalManager(lsmtwal.Config{
-			WalDir: walDir,
+	case BadgerWalDisk:
+		return lsmtwal.NewWalManager(lsmtwal.Config{
+			WalDir:      walDir,
+			ManagerType: lsmtwal.WalManagerTypeBadger,
 		}, logger)
-	case LsmtWalMemory:
-		return lsmtwal.NewBadgerWalManager(lsmtwal.Config{
-			InMemory: true,
+	case BadgerWalMemory:
+		return lsmtwal.NewWalManager(lsmtwal.Config{
+			InMemory:    true,
+			ManagerType: lsmtwal.WalManagerTypeBadger,
+		}, logger)
+	case PebbleWalDisk:
+		return lsmtwal.NewWalManager(lsmtwal.Config{
+			WalDir:      walDir,
+			ManagerType: lsmtwal.WalManagerTypePebble,
+		}, logger)
+	case PebbleWalMemory:
+		return lsmtwal.NewWalManager(lsmtwal.Config{
+			InMemory:    true,
+			ManagerType: lsmtwal.WalManagerTypePebble,
 		}, logger)
 	default:
 		return babuzawal.NewWalManager(walDir, logger)
@@ -342,7 +355,7 @@ func (b *BabuzaComponentBuilder) createSnapshotManager(logger ibabuza.Logger) ib
 }
 
 func (b *BabuzaComponentBuilder) createTransport(logger ibabuza.Logger) ibabuza.Transport {
-	peerManager := transport.NewPeerManager()
+	peerManager := transport.NewPeerManager[peer.Peer]()
 	resourceLimiter := b.config.transportMemoryLimiter
 	rateLimiter := b.config.snapshotChuckRateLimiter
 	circuitBreaker := b.config.peerCircuitBreaker

@@ -12,11 +12,12 @@ var (
 
 const (
 	BatchMsgType         MessageType = 1
-	SnapshotMsgType      MessageType = 2
-	ClusterPeersReqType  MessageType = 3
-	ClusterPeersResType  MessageType = 4
-	PubAppServiceReqType MessageType = 5
-	PubAppServiceResType MessageType = 6
+	SnapshotMsgReqType   MessageType = 2
+	SnapshotMsgResType   MessageType = 3
+	ClusterPeersReqType  MessageType = 4
+	ClusterPeersResType  MessageType = 5
+	PubAppServiceReqType MessageType = 6
+	PubAppServiceResType MessageType = 7
 )
 
 type Message interface {

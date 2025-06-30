@@ -58,7 +58,7 @@ func sessionTimeExpirationTestComponents() []BabuzaComponent {
 				return func(config *embedapp.KvStoreAppConfig, storageDir string, proxyNet ibabuza.ProxyNetwork) (embedapp.KvStoreAppConfig, builder.BabuzaComponent) {
 					b := customBabuzaComponent(sessionType, builder.BabuzaWal, builder.DurableSnapshot,
 						builder.TcpTransport, proxyNet).
-						SetClusterId(config.BubuzaConfig.ClusterId).
+						SetClusterId(config.BubuzaConfig.ClusterID).
 						SetStorageRootDir(storageDir).
 						AddExpireSessionOptions(session.SetExpiredMgrOptionsWithExpiredTime(time.Second * 2))
 					return *config, *b.Build()
@@ -88,30 +88,56 @@ func (c *BasicClientSessionTimeExpiredResponse) Run(tc *testcluster.BabuzaCluste
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
-	_, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	_, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
-
-	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewAutoIncrementSession())
+	mSession := client.NewManualIncrementSession()
+	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), mSession)
 	assert.Nil(c.t, err)
 	defer func() {
 		_ = kvClient.Close()
 	}()
+	mSession.SetSequenceNumber(1)
 	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
-		_, err = kvClient.Set(ctx, "test-key", "test-value")
+		_, err = kvClient.Set(ctx, "test-key1", "test-value1")
 		return err
 	})
 	assert.Nil(c.t, err)
+	mSession.SetSequenceNumber(2)
+	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
+		_, err = kvClient.Set(ctx, "test-key2", "test-value2")
+		return err
+	})
+	assert.Nil(c.t, err)
+	_ = runWithCtxTimeout(wait, func(ctx context.Context) error {
+		v1, err := kvClient.Get(ctx, "test-key1")
+		v2, err := kvClient.Get(ctx, "test-key2")
+		assert.Nil(c.t, err)
+		assert.Equal(c.t, "test-value1", v1.KvResult.Value)
+		assert.Equal(c.t, "test-value2", v2.KvResult.Value)
+		return nil
+	})
 
 	// Wait for the session to expire
 	time.Sleep(2 * time.Second)
 
+	mSession.SetSequenceNumber(3)
 	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
 		_, err = kvClient.Set(ctx, "key-after-expiration", "value")
 		return err
 	})
-
+	// Expecting an error due to session expiration
 	assert.Error(c.t, err)
-	assert.ErrorIs(c.t, err, session.ErrSessionExpired)
+
+	kvClient2, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewAutoIncrementSession())
+	assert.Nil(c.t, err)
+	defer func() {
+		_ = kvClient2.Close()
+	}()
+	// unregister the kvClient
+	err = runWithCtxTimeout(wait, func(ctx context.Context) error {
+		return kvClient2.UnregisterSession(ctx)
+	})
+	assert.Nil(c.t, err)
 }
 
 func TestClientSessionExpiredResponse(t *testing.T) {

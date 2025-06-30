@@ -27,7 +27,7 @@ func (c *LeaderRestartReElectionCluster) Run(tc *testcluster.BabuzaCluster, a an
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
 	// Check initial leader election
-	leader1, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leader1, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	// Shutdown leader 1
@@ -35,8 +35,8 @@ func (c *LeaderRestartReElectionCluster) Run(tc *testcluster.BabuzaCluster, a an
 	time.Sleep(wait) // Wait for election
 
 	// Restart leader 1
-	assert.Nil(c.t, tc.RestartPeer(wait, makeSingleProxyPeer(leader1, false), connectGroup.GetIds()))
-	leader2, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	assert.Nil(c.t, tc.RestartPeer(wait, makeSingleProxyPeer(leader1, false), connectGroup.GetIDs()))
+	leader2, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 	assert.NotEqual(c.t, leader2, leader1)
 
@@ -47,16 +47,16 @@ func (c *LeaderRestartReElectionCluster) Run(tc *testcluster.BabuzaCluster, a an
 	connectGroup.Remove(leader1)
 
 	// Verify no leader exists in the cluster (not enough nodes for quorum)
-	assert.Nil(c.t, tc.CheckNoLeader(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckNoLeader(wait, connectGroup.GetIDs()))
 
 	// Reconnect leader 1 and restart leader 2
 	connectGroup.Add(leader2)
 	connectGroup.Add(leader1)
 	assert.Nil(c.t, tc.ConnectPeer(leader1))
-	assert.Nil(c.t, tc.RestartPeer(wait, makeSingleProxyPeer(leader2, false), connectGroup.GetIds()))
+	assert.Nil(c.t, tc.RestartPeer(wait, makeSingleProxyPeer(leader2, false), connectGroup.GetIDs()))
 
 	// Verify a new leader has been elected
-	_, err = tc.CheckOneLeader(wait, connectGroup.GetIds())
+	_, err = tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 }
 

@@ -30,7 +30,7 @@ func (c *BasicPromoteLearner) Run(tc *testcluster.BabuzaCluster, a any) {
 	peers, connectGroup := makeVotingStandardPeers(3)
 	assert.Nil(c.t, tc.MakeCluster(wait, peers))
 
-	leaderId, err := tc.CheckOneLeader(wait, connectGroup.GetIds())
+	leaderID, err := tc.CheckOneLeader(wait, connectGroup.GetIDs())
 	assert.Nil(c.t, err)
 
 	kvClient, err := embedapp.NewKvStoreClient(tc.GetAllAppServiceAddresses(), client.NewNoOpSession())
@@ -49,16 +49,16 @@ func (c *BasicPromoteLearner) Run(tc *testcluster.BabuzaCluster, a any) {
 
 	learner := makeSingleStandardPeer(4, true)
 	connectGroup.Add(learner.ID())
-	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, learner, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.JoinPeerToCluster(wait, kvClient, learner, connectGroup.GetIDs()))
 
 	// Verify the learner exists and is recognized in the cluster
 	assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId, learner)
+		return tc.CheckPeerExists(ctx, leaderID, learner)
 	}))
 
 	// Wait for replication to complete
 	time.Sleep(time.Second)
-	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIds()))
+	assert.Nil(c.t, tc.CheckPeersConsistency(wait, connectGroup.GetIDs()))
 
 	// Promote the learner to a voting member
 	assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
@@ -67,7 +67,7 @@ func (c *BasicPromoteLearner) Run(tc *testcluster.BabuzaCluster, a any) {
 
 	// Verify the peer is now a voting member (not a learner anymore)
 	assert.Nil(c.t, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return tc.CheckPeerExists(ctx, leaderId, makeSingleStandardPeer(4, false))
+		return tc.CheckPeerExists(ctx, leaderID, makeSingleStandardPeer(4, false))
 	}))
 
 	// Test failure cases
@@ -79,7 +79,7 @@ func (c *BasicPromoteLearner) Run(tc *testcluster.BabuzaCluster, a any) {
 
 	// Try to promote a peer that's already a voting member
 	assert.Equal(c.t, babuza.ErrVotingMemberCanNotPromote, runWithCtxTimeout(wait, func(ctx context.Context) error {
-		return kvClient.PromoteLearner(ctx, leaderId)
+		return kvClient.PromoteLearner(ctx, leaderID)
 	}))
 }
 

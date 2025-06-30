@@ -28,13 +28,13 @@ func NewBadgerStore(db *badger.DB) *BadgerStore {
 	}
 }
 
-func (s *BadgerStore) Apply(e ibabuza.Entry) {
+func (s *BadgerStore) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
 	var req KvCommand
 
-	if err := req.Unmarshal(e.Command()); err != nil {
+	if err := req.Unmarshal(e.Command); err != nil {
 		panic(err)
 	}
-	binary.LittleEndian.PutUint64(s.buf, e.Index())
+	binary.LittleEndian.PutUint64(s.buf, e.Index)
 	switch req.Command {
 	case Set:
 		if err := s.db.Update(func(txn *badger.Txn) error {
@@ -53,7 +53,10 @@ func (s *BadgerStore) Apply(e ibabuza.Entry) {
 				Key:     req.Key,
 				Value:   req.Value,
 			}
-			e.SendResponse(&res, nil)
+			return ibabuza.ApplyResult{
+				LogIndex: e.Index,
+				Response: &res,
+			}
 		}
 	case Append:
 		var result []byte
@@ -82,7 +85,10 @@ func (s *BadgerStore) Apply(e ibabuza.Entry) {
 				Key:     req.Key,
 				Value:   string(result),
 			}
-			e.SendResponse(&res, nil)
+			return ibabuza.ApplyResult{
+				LogIndex: e.Index,
+				Response: &res,
+			}
 		}
 
 	case Delete:
@@ -100,14 +106,24 @@ func (s *BadgerStore) Apply(e ibabuza.Entry) {
 			if err != badger.ErrKeyNotFound {
 				panic(err)
 			}
-			e.SendResponse(nil, kverror.ErrKeyNotFound)
+			return ibabuza.ApplyResult{
+				LogIndex: e.Index,
+				Error:    kverror.ErrKeyNotFound,
+			}
 		} else {
 			res := KvResult{
 				Command: Delete,
 				Key:     req.Key,
 			}
-			e.SendResponse(&res, nil)
+			return ibabuza.ApplyResult{
+				LogIndex: e.Index,
+				Response: &res,
+			}
 		}
+	}
+	return ibabuza.ApplyResult{
+		LogIndex: e.Index,
+		Error:    kverror.ErrUnknownCommand,
 	}
 }
 
@@ -235,12 +251,16 @@ func (s *BadgerStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *BadgerStore) Load(key string) (value string, err error) {
+func (s *BadgerStore) Query(key any) (value any, err error) {
 	var v []byte
+	sKey, ok := key.(string)
+	if !ok {
+		return nil, kverror.ErrInvalidKeyType
+	}
 	if err = s.db.View(func(txn *badger.Txn) error {
-		item, gErr := txn.Get([]byte(key))
+		item, gErr := txn.Get([]byte(sKey))
 		if gErr != nil {
-			if gErr == badger.ErrKeyNotFound {
+			if errors.Is(gErr, badger.ErrKeyNotFound) {
 				return kverror.ErrKeyNotFound
 			}
 			return err

@@ -1,16 +1,21 @@
 package raft
 
 import (
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 )
 
-func encodeRegisterSessionRequest(replyId uint64) ([]byte, error) {
+func EncodeRegisterSessionRequest(replyID uint64, unregisterSessionID uint64) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: replyId,
+			ReplyID: replyID,
 		},
 		Register: &babuzapb.RegisterSessionRequest{},
+	}
+	if unregisterSessionID != 0 {
+		req.Register.Unregister = true
+		req.Register.SessionID = unregisterSessionID
 	}
 	data, err := req.Marshal()
 	if err != nil {
@@ -19,13 +24,13 @@ func encodeRegisterSessionRequest(replyId uint64) ([]byte, error) {
 	return data, nil
 }
 
-func encodePubAppServiceAddressesRequest(replyId, peerId uint64, addresses []string) ([]byte, error) {
+func EncodePubAppServiceAddressesRequest(replyID, peerID uint64, addresses []string) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: replyId,
+			ReplyID: replyID,
 		},
 		PubAppService: &babuzapb.PubAppServiceRequest{
-			PubServicePeerId:    peerId,
+			PubServicePeerID:    peerID,
 			AppServiceAddresses: addresses,
 		},
 	}
@@ -36,12 +41,13 @@ func encodePubAppServiceAddressesRequest(replyId, peerId uint64, addresses []str
 	return data, nil
 }
 
-func encodeClusterConfigurationChange(replyId uint64, session ClientSession, changeType raftpb.ConfChangeType,
-	raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) (raftpb.ConfChange, error) {
+func EncodeClusterConfigurationChange(replyID uint64, session ClientSession, changeType raftpb.ConfChangeType,
+	groupID ibabuza.RaftGroupID, raftPeerAttr babuzapb.RaftPeerAttribute, promoteLearner bool) (raftpb.ConfChange, error) {
 	req := babuzapb.ConfChangeRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: replyId,
+			ReplyID: replyID,
 		},
+		GroupID:        uint64(groupID),
 		RaftPeerAttr:   raftPeerAttr,
 		PromoteLearner: promoteLearner,
 	}
@@ -54,13 +60,13 @@ func encodeClusterConfigurationChange(replyId uint64, session ClientSession, cha
 	if err != nil {
 		return raftpb.ConfChange{}, err
 	}
-	return raftpb.ConfChange{Type: changeType, NodeID: raftPeerAttr.Id, Context: data}, nil
+	return raftpb.ConfChange{Type: changeType, NodeID: raftPeerAttr.PeerID, Context: data}, nil
 }
 
-func encodeProposedLog(replyId uint64, session ClientSession, log []byte) ([]byte, error) {
+func EncodeProposedLog(replyID uint64, session ClientSession, log []byte) ([]byte, error) {
 	req := babuzapb.NormalRequest{
 		Context: babuzapb.RequestContext{
-			ReplyId: replyId,
+			ReplyID: replyID,
 		},
 		StateMachineLog: log,
 	}

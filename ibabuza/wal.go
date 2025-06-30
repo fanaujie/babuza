@@ -5,7 +5,6 @@ import (
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
-	"time"
 )
 
 type Wal interface {
@@ -23,20 +22,17 @@ type ReplayWalResult interface {
 	ForEachConfChangeEntries(func(raftpb.Entry) error) error
 }
 
-type WalPurgeConfig struct {
-	WalDir            string
-	MaxKeepWalFiles   uint
-	PurgeFileInterval time.Duration
-	StopCh            <-chan struct{}
+type WalPurger interface {
+	Start()
 }
 
 type WalManager interface {
 	FindSnapshot() ([]walpb.Snapshot, error)
 	CreateWal(metadata babuzapb.WalMetadata) (EntryStorage, Wal, error)
-	ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (EntryStorage,
-		Wal, ReplayWalResult, error)
+	ReplayWal(snapshot *raftpb.Snapshot, deleteUncommitted bool) (ReplayWalResult, EntryStorage, Wal, error)
 	HasExistingWals() (bool, error)
-	PurgeWals(WalPurgeConfig)
+	Purger() WalPurger
+	Close() error
 }
 
 type EntryStorage interface {

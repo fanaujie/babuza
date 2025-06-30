@@ -7,12 +7,12 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio"
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
 	"github.com/fanaujie/babuza/pkg/utility/limiter"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"io"
@@ -29,7 +29,6 @@ const (
 
 // mockRaftProcessor implements the ibabuza.RaftNodeHandler interface for testing
 type mockRaftProcessor struct {
-	mock.Mock
 	receivedMsg      map[uint64]raftpb.Message
 	receivedSnapMsg  map[uint64]babuzapb.SnapshotMessage
 	unreachable      map[uint64]struct{}
@@ -39,6 +38,10 @@ type mockRaftProcessor struct {
 	snapshotFileData map[string][]byte
 	finishMsg        raftpb.Message
 	mu               sync.Mutex
+}
+
+func (mr *mockRaftProcessor) ProcessMultiRaftMessage(message babuzapb.MultiRaftBatchMessage) {
+	// not implemented
 }
 
 func newMockRaftProcessor() *mockRaftProcessor {
@@ -54,27 +57,25 @@ func newMockRaftProcessor() *mockRaftProcessor {
 func (mr *mockRaftProcessor) ProcessBatchMessage(message babuzapb.BatchMessage) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.Called(message)
 	for _, msg := range message.Messages {
 		mr.receivedMsg[msg.Index] = msg
 	}
 }
 
-func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) {
+func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.Called(message)
 	mr.receivedSnapMsg[message.Index] = message
 
 	// Store snapshot data for validation
-	if message.FinishMessage != nil {
+	if message.Type == babuzapb.SnapshotMessageType_Finish {
 		mr.finishMsg = raftpb.Message{
 			Type:     raftpb.MsgSnap,
 			From:     message.From,
 			To:       message.To,
 			Snapshot: message.FinishMessage.Snapshot,
 		}
-	} else if message.ChunkMessage != nil {
+	} else if message.Type == babuzapb.SnapshotMessageType_Chunk {
 		if _, ok := mr.snapshotFileData[message.ChunkMessage.FileTag]; !ok {
 			mr.snapshotFileData[message.ChunkMessage.FileTag] = make([]byte, 0)
 		}
@@ -82,24 +83,27 @@ func (mr *mockRaftProcessor) ProcessSnapshotMessage(message babuzapb.SnapshotMes
 			mr.snapshotFileData[message.ChunkMessage.FileTag],
 			message.ChunkMessage.Data...,
 		)
-	} else if message.Metadata != nil {
-		mr.metadata = *message.Metadata
+	} else if message.Type == babuzapb.SnapshotMessageType_Metadata {
+		mr.metadata = message.Metadata
+	}
+	return babuzapb.SnapshotMessageResponse{
+		Status:  babuzapb.SUCCESS,
+		Message: "Success",
 	}
 }
 
-func (mr *mockRaftProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
-	mr.Called(req)
+func (mr *mockRaftProcessor) GetClusterPeer(req babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
 	return babuzapb.GetClusterPeersResponse{
 		Peers: []babuzapb.Peer{
 			{
 				RaftPeerAttr: babuzapb.RaftPeerAttribute{
-					Id:             1,
+					PeerID:         1,
 					RaftListenAddr: "localhost:14200",
 				},
 			},
 			{
 				RaftPeerAttr: babuzapb.RaftPeerAttribute{
-					Id:             2,
+					PeerID:         2,
 					RaftListenAddr: "localhost:14201",
 				},
 			},
@@ -107,8 +111,7 @@ func (mr *mockRaftProcessor) GetClusterPeersRequest(req babuzapb.GetClusterPeers
 	}
 }
 
-func (mr *mockRaftProcessor) PublishApplicationServiceRequest(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
-	mr.Called(req)
+func (mr *mockRaftProcessor) PublishApplicationService(req babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
 	return babuzapb.PublishApplicationServiceResponse{
 		Status:  babuzapb.SUCCESS,
 		Message: "Success"}
@@ -117,20 +120,17 @@ func (mr *mockRaftProcessor) PublishApplicationServiceRequest(req babuzapb.Publi
 func (mr *mockRaftProcessor) ReportUnreachable(id uint64) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.Called(id)
 	mr.unreachable[id] = struct{}{}
 }
 
 func (mr *mockRaftProcessor) ReportSnapshot(id uint64, status raft.SnapshotStatus) {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
-	mr.Called(id, status)
 	mr.snapshotStatus[id] = status
 }
 
 func (mr *mockRaftProcessor) CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error) {
-	args := mr.Called(snapshotIndex)
-	return mr.snapshotReader, args.Error(1)
+	return mr.snapshotReader, nil
 }
 
 // mockSnapshotReader implements the ibabuza.SnapshotReader interface for testing
@@ -201,21 +201,21 @@ func (mr *mockSnapshotReader) CreateTarArchiveReader() (io.ReadCloser, error) {
 // Test transport creation with different protocols
 func TestTransport_Create(t *testing.T) {
 	// Test TCP protocol
-	peerManager := NewPeerManager()
+	peerManager := NewPeerManager[peer.Peer, ibabuza.RaftStatusReporter]()
 	tcpProtocol := protocol.NewTcp(networkio.NewTcpPhysicalIO(), &logger.Mock{})
 	tcpTrans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), tcpProtocol, &logger.Mock{})
 	assert.NotNil(t, tcpTrans)
 
 	// Test HTTP protocol
-	peerManager = NewPeerManager()
+	peerManager = NewPeerManager[peer.Peer, ibabuza.RaftStatusReporter]()
 	httpProtocol := protocol.NewHttp(&logger.Mock{})
 	httpTrans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), httpProtocol, &logger.Mock{})
 	assert.NotNil(t, httpTrans)
 
 	// Test GRPC protocol
-	peerManager = NewPeerManager()
+	peerManager = NewPeerManager[peer.Peer, ibabuza.RaftStatusReporter]()
 	grpcProtocol := protocol.NewGrpc(&logger.Mock{})
 	grpcTrans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), grpcProtocol, &logger.Mock{})
@@ -237,15 +237,6 @@ func newTestTransport(t *testing.T, transType int, nodeId uint64, listenAddress 
 			FileSize: 24,
 		},
 	})
-	// Mock expectations for the RaftNodeHandler
-	mockProc.On("CreateSnapshotReader", mock.Anything).Return(
-		mockProc.snapshotReader, nil)
-	mockProc.On("ProcessBatchMessage", mock.Anything).Return()
-	mockProc.On("ProcessSnapshotMessage", mock.Anything).Return()
-	mockProc.On("GetClusterPeersRequest", mock.Anything).Return()
-	mockProc.On("PublishApplicationServiceRequest", mock.Anything).Return()
-	mockProc.On("ReportUnreachable", mock.Anything).Return()
-	mockProc.On("ReportSnapshot", mock.Anything, mock.Anything).Return()
 
 	switch transType {
 	case transportTypeTcp:
@@ -264,12 +255,12 @@ func newTestTransport(t *testing.T, transType int, nodeId uint64, listenAddress 
 		assert.Fail(t, "unknown transport type")
 	}
 
-	peerManager := NewPeerManager()
+	peerManager := NewPeerManager[peer.Peer, ibabuza.RaftStatusReporter]()
 	trans := New(1, peerManager, limiter.NewNoResourceLimiter(), limiter.NewNoOpRateLimiter(),
 		breaker.NewNoOpBreaker(), tranProtocol, &logger.Mock{}, SetTransportOptionsWithPeerSnapshotChunkSize(8))
 
 	err := trans.SetupTransportConfig(ibabuza.TransportConfig{
-		PeerId:      nodeId,
+		LocalNodeID: nodeId,
 		PeerAddress: listenAddress,
 	})
 	assert.NoError(t, err)
@@ -402,7 +393,7 @@ func TestTransport_PeerManagement(t *testing.T) {
 			trans.AddPeer(3, "localhost:14202")
 
 			// Verify peer was added correctly
-			addr, err := trans.peerMgr.ResolvePeerAddress(2)
+			addr, err := trans.peerMgr.ResolvePeerAddress(0, 2)
 			assert.Nil(t, err, "Should be able to get peer address")
 			assert.Equal(t, "localhost:14201", addr)
 
@@ -410,7 +401,7 @@ func TestTransport_PeerManagement(t *testing.T) {
 			trans.UpdatePeer(2, "localhost:14203")
 
 			// Verify peer was updated
-			addr, err = trans.peerMgr.ResolvePeerAddress(2)
+			addr, err = trans.peerMgr.ResolvePeerAddress(0, 2)
 			assert.Nil(t, err)
 			assert.Equal(t, "localhost:14203", addr)
 
@@ -418,14 +409,14 @@ func TestTransport_PeerManagement(t *testing.T) {
 			trans.RemovePeer(3)
 
 			// Verify peer was removed
-			_, err = trans.peerMgr.ResolvePeerAddress(3)
+			_, err = trans.peerMgr.ResolvePeerAddress(0, 3)
 			assert.NotNil(t, err, "Peer should be removed")
 
 			// Test removing all peers
 			trans.RemovePeers()
 
 			// Verify all peers were removed
-			_, err = trans.peerMgr.ResolvePeerAddress(2)
+			_, err = trans.peerMgr.ResolvePeerAddress(0, 2)
 			assert.NotNil(t, err, "All peers should be removed")
 		})
 	}

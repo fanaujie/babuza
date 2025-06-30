@@ -1,0 +1,19 @@
+syntax = "proto3";
+package redispb;
+option go_package = "github.com/fanaujie/babuza/examples/redis-cluster/pkg/pb";
+
+
+enum RedisDataType {
+  None = 0;
+  String = 1;
+}
+
+message RedisCommand {
+    RedisDataType type     = 1;
+    string command         = 2;
+    int64   argsLength     = 3;
+    repeated bytes  args   = 4;
+}
+
+
+

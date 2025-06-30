@@ -9,7 +9,9 @@ require (
 	github.com/fanaujie/babuza/pkg v0.2.0
 	github.com/fanaujie/babuza/raft v0.2.0
 	github.com/stretchr/testify v1.10.0
+    github.com/cheggaaa/pb/v3 v3.0.5
 	github.com/testcontainers/testcontainers-go/modules/minio v0.35.0
+	github.com/puzpuzpuz/xsync/v4 v4.1.0
 )
 
 require (

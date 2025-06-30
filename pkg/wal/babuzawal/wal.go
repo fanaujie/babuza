@@ -1,7 +1,7 @@
 package babuzawal
 
 import (
-	"errors"
+	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
@@ -16,7 +16,7 @@ import (
 type EntryIndexStorage interface {
 	AppendCache([]raftpb.Entry)
 	DeleteCache(uint64)
-	AppendEntryIndex([]walbase.EntryIndex[storage.EntryMetadata]) error
+	AppendEntryIndex([]walbase.EntryIndex[storage.EntryIndexMetadata]) error
 }
 
 var EmptyWalpbSnapshot = walpb.Snapshot{}
@@ -38,10 +38,11 @@ type Wal struct {
 	currentLogFile    iwal.LogFile
 	entryIndexStorage EntryIndexStorage
 	enableNoSync      bool
+	purgerCh          chan walCleanupContext
 	mu                sync.Mutex
 }
 
-func CreateWal(metadata []byte, logMgr iwal.LogFileManager) (*Wal, error) {
+func CreateWal(metadata []byte, logMgr iwal.LogFileManager, purgerCh chan walCleanupContext) (*Wal, error) {
 	startLogId := uint64(0)
 	startLogIndex := uint64(0)
 
@@ -90,10 +91,11 @@ func CreateWal(metadata []byte, logMgr iwal.LogFileManager) (*Wal, error) {
 			metadata: metadata,
 		},
 		currentLogFile: openLogFile,
+		purgerCh:       purgerCh,
 	}, nil
 }
 
-func OpenWal(logMgr iwal.LogFileManager, lastLogMeta iwal.ReplayLastLogFileResult) (*Wal, error) {
+func OpenWal(logMgr iwal.LogFileManager, lastLogMeta iwal.ReplayLastLogFileResult, purgerCh chan walCleanupContext) (*Wal, error) {
 	logWriter, err := logMgr.OpenLogFile(lastLogMeta.LastLogFileDesc().Id, lastLogMeta.LastValidLogOffset(),
 		lastLogMeta.LastValidLogCrc())
 	if err != nil {
@@ -109,6 +111,7 @@ func OpenWal(logMgr iwal.LogFileManager, lastLogMeta iwal.ReplayLastLogFileResul
 		currentLogFile:    logWriter,
 		entryIndexStorage: nil,
 		enableNoSync:      false,
+		purgerCh:          purgerCh,
 	}
 	return w, nil
 }
@@ -165,7 +168,13 @@ func (w *Wal) SaveSnapshot(snapshot raftpb.Snapshot) error {
 }
 
 func (w *Wal) Purge(snap raftpb.Snapshot) error {
-	return w.logMgr.Purge(snap.Metadata.Index)
+	if w.purgerCh != nil {
+		w.purgerCh <- walCleanupContext{
+			snapshot: snap,
+			logMgr:   w.logMgr,
+		}
+	}
+	return nil
 }
 
 func (w *Wal) Sync() error {
@@ -175,20 +184,17 @@ func (w *Wal) Sync() error {
 func (w *Wal) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	var errs []error
+	errs := multierror.New()
 	if err := w.currentLogFile.Sync(!w.enableNoSync); err != nil {
 		return err
 	}
 	if err := w.currentLogFile.Close(); err != nil {
-		errs = append(errs, err)
+		errs.Append(err)
 	}
 	if err := w.logMgr.Close(); err != nil {
-		errs = append(errs, err)
+		errs.Append(err)
 	}
-	if len(errs) == 0 {
-		return nil
-	}
-	return errors.New("")
+	return errs.Get()
 }
 
 func (w *Wal) SetEntryIndexStorage(es EntryIndexStorage) {
@@ -196,9 +202,9 @@ func (w *Wal) SetEntryIndexStorage(es EntryIndexStorage) {
 }
 
 func (w *Wal) saveEntry(entries []raftpb.Entry) error {
-	var entriesIndex []walbase.EntryIndex[storage.EntryMetadata]
+	var entriesIndex []walbase.EntryIndex[storage.EntryIndexMetadata]
 	if w.entryIndexStorage != nil {
-		entriesIndex = make([]walbase.EntryIndex[storage.EntryMetadata], len(entries))
+		entriesIndex = make([]walbase.EntryIndex[storage.EntryIndexMetadata], len(entries))
 	}
 	for i := range entries {
 		e := &entries[i]
@@ -303,9 +309,4 @@ func (w *Wal) tailLogFileDesc() iwal.LogFileDesc {
 		panic(err)
 	}
 	return f
-}
-
-func makeBrokenFile(fm iwal.LogFileDesc) error {
-
-	return nil
 }

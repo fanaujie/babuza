@@ -1,8 +1,9 @@
 package raft
 
 import (
+	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/cluster"
 	"github.com/fanaujie/babuza/pkg/logger"
-	"github.com/fanaujie/babuza/pkg/replier"
 	"github.com/fanaujie/babuza/pkg/status"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3"
@@ -13,11 +14,12 @@ import (
 )
 
 func TestRaft_Ready(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = etcdRaftNode
 	tr.storage = &mockStorageMgr{}
+	tr.status = status.New()
 	tr.closer.Run(func() {
 		tr.processRaftReady()
 	})
@@ -48,120 +50,20 @@ func TestRaft_Ready(t *testing.T) {
 	})
 }
 
-func TestRaft_Ready_FollowerWaitConfigChanged(t *testing.T) {
-	localPeerId := uint64(1)
-	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
-	tr.raftNode = etcdRaftNode
-	trans := &mockTransport{}
-	tr.trans = trans
-	tr.storage = &mockStorageMgr{}
-	tr.status = status.New()
-	tr.completionReplier = replier.NewCompletion()
-	tr.closer.Run(func() {
-		tr.processRaftReady()
-	})
-
-	defer tr.closer.Close()
-
-	t.Run("follower: waiting for votingPeersCfg changed ", func(t *testing.T) {
-		etcdRaftNode.readyCh <- raft.Ready{
-			SoftState: &raft.SoftState{
-				Lead:      localPeerId + 1,
-				RaftState: raft.StateFollower,
-			},
-		}
-
-		etcdRaftNode.readyCh <- raft.Ready{
-			CommittedEntries: []raftpb.Entry{
-				{
-					Term:  1,
-					Index: 5,
-					Type:  raftpb.EntryConfChange,
-					Data:  nil,
-				},
-				{
-					Term:  1,
-					Index: 6,
-					Type:  raftpb.EntryConfChange,
-					Data:  nil,
-				},
-			},
-			Messages: []raftpb.Message{
-				{
-					Type: raftpb.MsgHeartbeatResp,
-				},
-			},
-		}
-
-		go func() {
-			a := <-tr.applyCh
-			lastApplyIndex := uint64(0)
-			for _, e := range a.entries {
-				lastApplyIndex = e.Index
-			}
-			tr.completionReplier.MarkCompleted(lastApplyIndex)
-		}()
-		<-time.After(time.Second)
-		assert.Equal(t, raftpb.MsgHeartbeatResp, trans.send[0].Type)
-	})
-
-	t.Run("follower: no votingPeersCfg changed", func(t *testing.T) {
-		etcdRaftNode.readyCh <- raft.Ready{
-			SoftState: &raft.SoftState{
-				Lead:      localPeerId + 1,
-				RaftState: raft.StateFollower,
-			},
-		}
-
-		etcdRaftNode.readyCh <- raft.Ready{
-			CommittedEntries: []raftpb.Entry{
-				{
-					Term:  1,
-					Index: 5,
-					Type:  raftpb.EntryNormal,
-					Data:  nil,
-				},
-				{
-					Term:  1,
-					Index: 6,
-					Type:  raftpb.EntryNormal,
-					Data:  nil,
-				},
-			},
-			Messages: []raftpb.Message{
-				{
-					Type: raftpb.MsgHeartbeatResp,
-				},
-			},
-		}
-		<-time.After(time.Second)
-		assert.Equal(t, raftpb.MsgHeartbeatResp, trans.send[0].Type)
-	})
-
-}
-
 func TestRaft_SendRaftMessage(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	raftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = raftNode
 	trans := &mockTransport{}
 	tr.trans = trans
 	tr.storage = &mockStorageMgr{}
 	tr.status = status.New()
+	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster.SetLocalPeerID(localPeerID)
 	tr.logger = logger.NewRaftLogger(zap.NewExample().Sugar())
 	tr.closer.Run(func() {
 		tr.processRaftReady()
-	})
-	tr.closer.Run(func() {
-		for {
-			select {
-			case <-tr.closer.CloseCh():
-				return
-			case <-tr.leaderCh:
-			}
-		}
 	})
 	defer tr.closer.Close()
 	for _, tc := range []struct {
@@ -203,7 +105,7 @@ func TestRaft_SendRaftMessage(t *testing.T) {
 		if tc.isLeader {
 			raftNode.readyCh <- raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId,
+					Lead:      localPeerID,
 					RaftState: raft.StateLeader,
 				},
 			}
@@ -211,7 +113,7 @@ func TestRaft_SendRaftMessage(t *testing.T) {
 		} else {
 			raftNode.readyCh <- raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId + 1,
+					Lead:      localPeerID + 1,
 					RaftState: raft.StateFollower,
 				},
 			}
@@ -229,9 +131,9 @@ func TestRaft_SendRaftMessage(t *testing.T) {
 }
 
 func TestRaft_SaveStorage(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	etcdRaftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = etcdRaftNode
 	storage := &mockStorageMgr{}
 	tr.storage = storage
@@ -294,35 +196,46 @@ func TestRaft_SaveStorage(t *testing.T) {
 
 func TestRaft_UpdateLeaderShip(t *testing.T) {
 
-	localPeerId := uint64(1)
-	tr := newTestRaft(localPeerId)
+	localPeerID := uint64(1)
+	tr := newTestRaft(localPeerID)
 	tr.status = status.New()
-
+	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster.SetLocalPeerID(localPeerID)
+	tr.raftListener = &mockRaftListener{
+		leaderIDs: make(map[uint64]uint64),
+	}
+	tr.raftEventPublisher = newRaftEventPublisher()
 	tr.updateLeadership(raft.SoftState{
 		Lead:      raft.None,
 		RaftState: raft.StateFollower,
 	})
-	assert.Equal(t, 0, len(tr.leaderCh))
+	assert.Equal(t, 0, len(tr.raftEventPublisher.ch))
 
 	tr.updateLeadership(raft.SoftState{
 		Lead:      raft.None,
 		RaftState: raft.StatePreCandidate,
 	})
-	assert.Equal(t, 0, len(tr.leaderCh))
+	assert.Equal(t, 0, len(tr.raftEventPublisher.ch))
 
 	tr.updateLeadership(raft.SoftState{
 		Lead:      raft.None,
 		RaftState: raft.StateCandidate,
 	})
-	assert.Equal(t, 0, len(tr.leaderCh))
+	assert.Equal(t, 0, len(tr.raftEventPublisher.ch))
 
 	//acquire leadership
 	tr.updateLeadership(raft.SoftState{
 		Lead:      1,
 		RaftState: raft.StateLeader,
 	})
-	assert.Equal(t, 1, len(tr.leaderCh))
-	assert.Equal(t, true, <-tr.leaderCh)
+	assert.Equal(t, 2, len(tr.raftEventPublisher.ch))
+	event := <-tr.raftEventPublisher.ch
+	assert.Equal(t, ibabuza.AcquiredLeader, event.Event)
+	assert.Equal(t, uint64(1), event.PeerID)
+	assert.Equal(t, uint64(1), tr.getLeaderId())
+	event = <-tr.raftEventPublisher.ch
+	assert.Equal(t, ibabuza.LeaderChanged, event.Event)
+	assert.Equal(t, uint64(1), event.PeerID)
 	assert.Equal(t, uint64(1), tr.getLeaderId())
 
 	//lose leadership
@@ -330,70 +243,78 @@ func TestRaft_UpdateLeaderShip(t *testing.T) {
 		Lead:      2,
 		RaftState: raft.StateFollower,
 	})
-	assert.Equal(t, 1, len(tr.leaderCh))
-	assert.Equal(t, false, <-tr.leaderCh)
-	assert.Equal(t, uint64(2), tr.getLeaderId())
+	assert.Equal(t, 2, len(tr.raftEventPublisher.ch))
+	event = <-tr.raftEventPublisher.ch
+	assert.Equal(t, ibabuza.LostLeader, event.Event)
+	assert.Equal(t, uint64(1), event.PeerID)
+
+	event = <-tr.raftEventPublisher.ch
+	assert.Equal(t, ibabuza.LeaderChanged, event.Event)
+	assert.Equal(t, uint64(2), event.PeerID)
 
 	tr.updateLeadership(raft.SoftState{
 		Lead:      raft.None,
 		RaftState: raft.StateCandidate,
 	})
-	assert.Equal(t, 0, len(tr.leaderCh))
+	assert.Equal(t, 0, len(tr.raftEventPublisher.ch))
 
 	tr.updateLeadership(raft.SoftState{
 		Lead:      1,
 		RaftState: raft.StateLeader,
 	})
-	assert.Equal(t, 1, len(tr.leaderCh))
-	assert.Equal(t, true, <-tr.leaderCh)
+	assert.Equal(t, 2, len(tr.raftEventPublisher.ch))
+	event = <-tr.raftEventPublisher.ch
+	assert.Equal(t, ibabuza.AcquiredLeader, event.Event)
+	assert.Equal(t, uint64(1), event.PeerID)
+	assert.Equal(t, uint64(1), tr.getLeaderId())
+	event = <-tr.raftEventPublisher.ch
+	assert.Equal(t, ibabuza.LeaderChanged, event.Event)
+	assert.Equal(t, uint64(1), event.PeerID)
 	assert.Equal(t, uint64(1), tr.getLeaderId())
 }
 
 func TestRaft_LeadershipNotify(t *testing.T) {
-	localPeerId := uint64(1)
+	localPeerID := uint64(1)
 	raftNode := &mockRaftNode{readyCh: make(chan raft.Ready)}
-	tr := newTestRaft(localPeerId)
+	tr := newTestRaft(localPeerID)
 	tr.raftNode = raftNode
 	tr.storage = &mockStorageMgr{}
 	tr.status = status.New()
+	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster.SetLocalPeerID(localPeerID)
 	tr.closer.Run(func() {
 		tr.processRaftReady()
+	})
+	mockListener := &mockRaftListener{
+		leaderIDs: make(map[uint64]uint64),
+	}
+	tr.raftListener = mockListener
+	tr.raftEventPublisher = newRaftEventPublisher()
+	tr.closer.Run(func() {
+		tr.handleListenerEvent()
 	})
 	defer tr.closer.Close()
 	for _, tc := range []struct {
 		ready    raft.Ready
 		isLeader bool
-		timeout  bool
 	}{
 		{
 			ready: raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId,
+					Lead:      localPeerID,
 					RaftState: raft.StateLeader,
 				},
 			},
 			isLeader: true,
-			timeout:  false,
 		},
 		{
 			ready: raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      localPeerId + 1,
+					Lead:      localPeerID + 1,
 					RaftState: raft.StateFollower,
 				},
 			},
 			isLeader: false,
-			timeout:  false,
-		},
-		{
-			ready: raft.Ready{
-				SoftState: &raft.SoftState{
-					Lead:      localPeerId,
-					RaftState: raft.StateLeader,
-				},
-			},
-			isLeader: true,
-			timeout:  false,
 		},
 		{
 			ready: raft.Ready{
@@ -403,46 +324,19 @@ func TestRaft_LeadershipNotify(t *testing.T) {
 				},
 			},
 			isLeader: false,
-			timeout:  false,
 		},
 		{
 			ready: raft.Ready{
 				SoftState: &raft.SoftState{
-					Lead:      raft.None,
-					RaftState: raft.StateCandidate,
-				},
-			},
-			isLeader: false,
-			timeout:  true,
-		},
-		{
-			ready: raft.Ready{
-				SoftState: &raft.SoftState{
-					Lead:      localPeerId,
+					Lead:      localPeerID,
 					RaftState: raft.StateLeader,
 				},
 			},
 			isLeader: true,
-			timeout:  false,
 		},
 	} {
 		raftNode.readyCh <- tc.ready
-		if tc.timeout == false {
-			select {
-			case <-time.After(time.Second):
-				assert.Fail(t, "wait time limit exceeded")
-			case l := <-tr.LeaderCh():
-				if l {
-					assert.Equal(t, localPeerId, tr.getLeaderId())
-				}
-				assert.Equal(t, tc.isLeader, l)
-			}
-		} else {
-			select {
-			case <-time.After(time.Second):
-			case <-tr.LeaderCh():
-				assert.Fail(t, "expected timeout")
-			}
-		}
+		<-time.After(time.Second)
+		assert.Equal(t, tc.isLeader, mockListener.leaderIDs[0] == localPeerID)
 	}
 }

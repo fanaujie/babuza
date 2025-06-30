@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
@@ -10,40 +11,62 @@ import (
 	"time"
 )
 
-type ProposedResult interface {
+type Result interface {
 	Wait() error
-	Response() any
-	LogIndex() uint64
+}
+
+type ProposedResult interface {
+	WaitForApplyResult() ibabuza.ApplyResult
 	Release()
 }
 
 type ShutdownResult interface {
-	Wait() error
+	Result
 }
 
 type TransferLeaderResult interface {
-	Wait() error
+	Result
 }
 
 type ManualSnapshotResult interface {
-	Wait() error
-	SnapshotMetadata() babuzapb.SnapshotMetadata
+	Result
+	SnapshotMetadata() (babuzapb.SnapshotMetadata, error)
 	SnapshotFileReader() (ibabuza.SnapshotReader, error)
 }
 
 type PublishApplicationServiceResult interface {
-	Wait() error
+	Result
+}
+
+type ErrorResult interface {
+	ProposedResult
+	ShutdownResult
+	TransferLeaderResult
+	ManualSnapshotResult
+	PublishApplicationServiceResult
 }
 
 var (
 	proposalResPool sync.Pool
 )
 
+type SnapshotResult struct {
+	metadata babuzapb.SnapshotMetadata
+	err      error
+}
+
+func NewSnapshotResult(metadata babuzapb.SnapshotMetadata, err error) SnapshotResult {
+	return SnapshotResult{
+		metadata: metadata,
+		err:      err,
+	}
+}
+
 type errorResult struct {
 	e error
 }
 
-func newErrorResult(err error) *errorResult {
+func NewErrorResult(err error) ErrorResult {
 	return &errorResult{e: err}
 }
 
@@ -51,20 +74,18 @@ func (er *errorResult) Wait() error {
 	return er.e
 }
 
-func (er *errorResult) Response() any {
-	return nil
-}
-
-func (er *errorResult) LogIndex() uint64 {
-	return 0
+func (er *errorResult) WaitForApplyResult() ibabuza.ApplyResult {
+	return ibabuza.ApplyResult{
+		Error: er.e,
+	}
 }
 
 func (er *errorResult) Release() {
 	er.e = nil
 }
 
-func (er *errorResult) SnapshotMetadata() babuzapb.SnapshotMetadata {
-	return babuzapb.SnapshotMetadata{}
+func (er *errorResult) SnapshotMetadata() (babuzapb.SnapshotMetadata, error) {
+	return babuzapb.SnapshotMetadata{}, er.e
 }
 
 func (er *errorResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
@@ -72,88 +93,83 @@ func (er *errorResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
 }
 
 type proposalResult struct {
-	ctx     context.Context
-	closer  *syncutil.Closer
-	resulCh chan ibabuza.ApplyResult
-	ar      ibabuza.ApplyResult
+	ctx      context.Context
+	closer   *syncutil.Closer
+	resultCh chan ibabuza.ApplyResult
+	ar       ibabuza.ApplyResult
 }
 
-func newProposalResult(ctx context.Context, closer *syncutil.Closer, resultCh chan ibabuza.ApplyResult) *proposalResult {
+func NewProposalResult(ctx context.Context, closer *syncutil.Closer, resultCh chan ibabuza.ApplyResult) ProposedResult {
 	res := proposalResPool.Get()
 	if res == nil {
 		return &proposalResult{
-			ctx:     ctx,
-			closer:  closer,
-			resulCh: resultCh,
+			ctx:      ctx,
+			closer:   closer,
+			resultCh: resultCh,
 		}
 	}
 	pr := res.(*proposalResult)
 	pr.ctx = ctx
 	pr.closer = closer
-	pr.resulCh = resultCh
+	pr.resultCh = resultCh
 	return pr
 }
 
-func (p *proposalResult) Wait() error {
-	if p.resulCh == nil {
+func (p *proposalResult) WaitForApplyResult() ibabuza.ApplyResult {
+	if p.resultCh == nil {
 		panic("proposalResult already released")
 	}
-	if p.ar.LogIndex != 0 {
-		return p.ar.Error
+	if !p.ar.IsEmpty() {
+		return p.ar
 	}
 	select {
 	case <-p.closer.CloseCh():
-		return ErrStopped
-	case <-p.ctx.Done():
-		return p.ctx.Err()
-	case result := <-p.resulCh:
-		p.ar = result
-		if result.Error != nil {
-			return result.Error
+		return ibabuza.ApplyResult{
+			Error: ErrStopped,
 		}
-		return nil
+	case <-p.ctx.Done():
+		return ibabuza.ApplyResult{
+			Error: p.ctx.Err(),
+		}
+	case result := <-p.resultCh:
+		p.ar = result
+		return result
 	}
-}
-
-func (p *proposalResult) Response() any {
-	if p.resulCh == nil {
-		panic("proposalResult already released")
-	}
-	if p.ar.LogIndex == 0 {
-		panic("proposalResult not ready")
-	}
-	return p.ar.Response
-}
-
-func (p *proposalResult) LogIndex() uint64 {
-	if p.resulCh == nil {
-		panic("proposalResult already released")
-	}
-	if p.ar.LogIndex == 0 {
-		panic("proposalResult not ready")
-	}
-	return p.ar.LogIndex
 }
 
 func (p *proposalResult) Release() {
-	p.resulCh = nil
-	p.ctx = nil
-	p.closer = nil
-	p.ar = ibabuza.ApplyResult{}
+	*p = proposalResult{}
 	proposalResPool.Put(p)
+}
+
+type SnapshotReader interface {
+	CreateSnapshotReader(snapshotIndex uint64) (ibabuza.SnapshotReader, error)
 }
 
 type manualSnapshotResult struct {
 	ctx     context.Context
 	closer  *syncutil.Closer
-	storage InternalStorage
-	result  snapshotResult
+	reader  SnapshotReader
+	result  SnapshotResult
 	done    bool
-	resulCh chan snapshotResult
-	babuza  *Raft
+	resulCh chan SnapshotResult
+}
+
+func NewManualSnapshotResult(ctx context.Context, closer *syncutil.Closer, reader SnapshotReader,
+	resultCh chan SnapshotResult) ManualSnapshotResult {
+	return &manualSnapshotResult{
+		ctx:     ctx,
+		closer:  closer,
+		reader:  reader,
+		resulCh: resultCh,
+	}
 }
 
 func (m *manualSnapshotResult) Wait() error {
+	return m.WaitForCompletion()
+}
+
+func (m *manualSnapshotResult) WaitForCompletion() error {
 	if m.result.err != nil || m.done {
 		return m.result.err
 	}
@@ -170,19 +186,31 @@ func (m *manualSnapshotResult) Wait() error {
 	}
 }
 
-func (m *manualSnapshotResult) SnapshotMetadata() babuzapb.SnapshotMetadata {
-	return m.result.metadata
+func (m *manualSnapshotResult) SnapshotMetadata() (babuzapb.SnapshotMetadata, error) {
+	if m.done {
+		if m.result.err == nil {
+			return m.result.metadata, nil
+		}
+		return babuzapb.SnapshotMetadata{}, m.result.err
+	}
+	return babuzapb.SnapshotMetadata{}, errors.New("manualSnapshotResult not completed")
 }
 
 func (m *manualSnapshotResult) SnapshotFileReader() (ibabuza.SnapshotReader, error) {
-	return m.babuza.storage.CreateSnapshotReader(m.result.metadata.Snapshot.Metadata.Index)
+	if m.done {
+		if m.result.err == nil {
+			return m.reader.CreateSnapshotReader(m.result.metadata.Snapshot.Metadata.Index)
+		}
+		return nil, m.result.err
+	}
+	return nil, errors.New("manualSnapshotResult not completed")
 }
 
 type shutdownResult struct {
 	resulCh chan struct{}
 }
 
-func newShutdownResult(raftStop func()) *shutdownResult {
+func NewShutdownResult(raftStop func()) ShutdownResult {
 	r := &shutdownResult{
 		resulCh: make(chan struct{}),
 	}
@@ -209,8 +237,9 @@ type transferLeaderResult struct {
 	resulCh               chan error
 }
 
-func newTransferLeaderResult(ctx context.Context, transferee uint64, closer *syncutil.Closer, checkNewLeaderTimeout time.Duration,
-	getLeaderId func() uint64) *transferLeaderResult {
+func NewTransferLeaderResult(ctx context.Context, transferee uint64, closer *syncutil.Closer,
+	checkNewLeaderTimeout time.Duration,
+	getLeaderId func() uint64) TransferLeaderResult {
 	r := &transferLeaderResult{
 		transferee:            transferee,
 		ctx:                   ctx,
@@ -250,5 +279,4 @@ func (r *transferLeaderResult) Wait() error {
 	r.err = <-r.resulCh
 	r.done = true
 	return r.err
-
 }
