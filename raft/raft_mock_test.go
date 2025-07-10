@@ -72,7 +72,7 @@ func (m *mockWalManager) HasExistingWals() (bool, error) {
 	return false, nil
 }
 
-func (m *mockWalManager) PurgeWals(config ibabuza.WalPurgeConfig) {
+func (m *mockWalManager) PurgeWals() {
 }
 
 type mockSnapshotManager struct{}

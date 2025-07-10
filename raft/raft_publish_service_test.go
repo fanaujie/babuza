@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package raft
 
 import (
@@ -100,7 +99,7 @@ func TestRaft_PubAppService_ProposalPubAppService(t *testing.T) {
 		m := newMockRaftNode()
 		m.errorPropose = ErrNotLeader
 		log := &logger.Mock{}
-		cl := cluster.NewCluster(log)
+		cl := cluster.NewCluster()
 		cl.SetClusterID(1)
 		r := &Raft{
 			raftNode:         m,
@@ -144,7 +143,7 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 			mockClient: &mockPubTransClient{},
 		}
 		log := &logger.Mock{}
-		cl := cluster.NewCluster(log)
+		cl := cluster.NewCluster()
 		cl.SetClusterID(1)
 		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
@@ -177,7 +176,7 @@ func TestRaft_PubAppService_SendPubAppServiceMsgToLeader(t *testing.T) {
 			},
 		}
 		log := &logger.Mock{}
-		cl := cluster.NewCluster(log)
+		cl := cluster.NewCluster()
 		cl.SetClusterID(1)
 		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{
@@ -229,7 +228,7 @@ func TestRaft_ApplicationServiceStart_DisableProposalForwarding(t *testing.T) {
 			mockClient: &mockPubTransClient{},
 		}
 		log := &logger.Mock{}
-		cl := cluster.NewCluster(log)
+		cl := cluster.NewCluster()
 		cl.SetClusterID(1)
 		mockMetric := metrics.NewMockMetricsCollector()
 		r := &Raft{

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package raft
 
 import (
@@ -74,7 +73,7 @@ func TestRaft_SendRaftMessage(t *testing.T) {
 	tr.trans = trans
 	tr.storage = &mockStorageMgr{}
 	tr.status = status.New()
-	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster = cluster.NewCluster()
 	tr.cluster.SetLocalPeerID(localPeerID)
 	tr.logger = logger.NewRaftLogger(zap.NewExample().Sugar())
 	tr.closer.Run(func() {
@@ -214,7 +213,7 @@ func TestRaft_UpdateLeaderShip(t *testing.T) {
 	localPeerID := uint64(1)
 	tr := newTestRaft(localPeerID)
 	tr.status = status.New()
-	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster = cluster.NewCluster()
 	tr.cluster.SetLocalPeerID(localPeerID)
 	tr.raftListener = &mockRaftListener{
 		leaderIDs: make(map[uint64]uint64),
@@ -295,7 +294,7 @@ func TestRaft_LeadershipNotify(t *testing.T) {
 	tr.raftNode = raftNode
 	tr.storage = &mockStorageMgr{}
 	tr.status = status.New()
-	tr.cluster = cluster.NewCluster(&logger.Mock{})
+	tr.cluster = cluster.NewCluster()
 	tr.cluster.SetLocalPeerID(localPeerID)
 	tr.closer.Run(func() {
 		tr.processRaftReady()
