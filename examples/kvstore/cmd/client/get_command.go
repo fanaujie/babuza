@@ -33,15 +33,23 @@ func NewGetCommand(kvClient *client.KvStoreClient) *GetCommand {
 
 func (gc *GetCommand) Execute(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("error: get command requires 1 argument: key")
+		return fmt.Errorf("get command requires exactly 1 argument: <key>")
 	}
+	if len(args) > 1 {
+		return fmt.Errorf("get command accepts only 1 argument, got %d", len(args))
+	}
+	
 	key := args[0]
+	if key == "" {
+		return fmt.Errorf("key cannot be empty")
+	}
+	
 	res, err := gc.kvClient.Get(context.Background(), key)
 	if err != nil {
-		return err
-	} else {
-		fmt.Println("Value:", res.Value)
+		return fmt.Errorf("failed to get value for key '%s': %w", key, err)
 	}
+	
+	fmt.Printf("Key: %s\nValue: %s\n", key, res.Value)
 	return nil
 }
 

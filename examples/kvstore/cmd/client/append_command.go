@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package client
 
 import (
@@ -21,22 +20,22 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/client"
 )
 
-type SetCommand struct {
+type AppendCommand struct {
 	kvClient *client.KvStoreClient
 }
 
-func NewSetCommand(kvClient *client.KvStoreClient) *SetCommand {
-	return &SetCommand{
+func NewAppendCommand(kvClient *client.KvStoreClient) *AppendCommand {
+	return &AppendCommand{
 		kvClient: kvClient,
 	}
 }
 
-func (sc *SetCommand) Execute(args []string) error {
+func (ac *AppendCommand) Execute(args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("set command requires exactly 2 arguments: <key> <value>")
+		return fmt.Errorf("append command requires exactly 2 arguments: <key> <value>")
 	}
 	if len(args) > 2 {
-		return fmt.Errorf("set command accepts only 2 arguments, got %d", len(args))
+		return fmt.Errorf("append command accepts only 2 arguments, got %d", len(args))
 	}
 	
 	key := args[0]
@@ -46,15 +45,17 @@ func (sc *SetCommand) Execute(args []string) error {
 		return fmt.Errorf("key cannot be empty")
 	}
 	
-	_, err := sc.kvClient.Set(context.Background(), key, value)
+	res, err := ac.kvClient.Append(context.Background(), key, value)
 	if err != nil {
-		return fmt.Errorf("failed to set key '%s' with value '%s': %w", key, value, err)
+		return fmt.Errorf("failed to append value to key '%s': %w", key, err)
 	}
 	
-	fmt.Printf("Successfully set key '%s' to value '%s'\n", key, value)
+	fmt.Printf("Value appended to key '%s' successfully\n", key)
+	fmt.Printf("New value: %s\n", res.Value)
+	fmt.Printf("Session ID: %d, Sequence Number: %d\n", res.SessionID, res.SequenceNumber)
 	return nil
 }
 
-func (sc *SetCommand) Help() string {
-	return "set <key> <value> - Set a new key-value pair"
+func (ac *AppendCommand) Help() string {
+	return "append <key> <value> - Append value to a key (creates key if it doesn't exist)"
 }

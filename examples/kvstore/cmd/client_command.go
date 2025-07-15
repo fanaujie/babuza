@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package cmd
 
 import (
@@ -45,15 +44,13 @@ func NewClientCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command 
 				return err
 			}
 			processor := cmdClient.NewCommandProcessor()
-			processor.AddCommand("exit", cmdClient.NewExitCommand())
-			processor.AddCommand("join", cmdClient.NewJoinCommand(kvClient))
-			processor.AddCommand("set", cmdClient.NewSetCommand(kvClient))
-			processor.AddCommand("get", cmdClient.NewGetCommand(kvClient))
+			registry := cmdClient.NewDefaultCommandRegistry()
+			registry.RegisterCommands(processor, kvClient)
 			return processor.StartCommandLoop()
 		},
 	}
 	cliCommand.Flags().BoolVar(&clientConfig.EnableTLS, "enable-tls", false, "Enable TLS for the client.")
-	cliCommand.Flags().StringVar(&clusterMembers, "cluster-members", "1=localhost:24200", "Define the members of the key-value store server cluster for the client. The format should be: id1=address1,id2=address2")
+	cliCommand.Flags().StringVar(&clusterMembers, "cluster-members", "1=localhost:24201", "Define the members of the key-value store server cluster for the client. The format should be: id1=address1,id2=address2")
 	cliCommand.Flags().DurationVar(&clientConfig.AutoSyncInterval, "auto-sync-interval", time.Second*5, "Specify the auto sync interval for the client.")
 	return cliCommand
 }

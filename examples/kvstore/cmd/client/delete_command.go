@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package client
 
 import (
@@ -21,40 +20,39 @@ import (
 	"github.com/fanaujie/babuza/examples/kvstore/client"
 )
 
-type SetCommand struct {
+type DeleteCommand struct {
 	kvClient *client.KvStoreClient
 }
 
-func NewSetCommand(kvClient *client.KvStoreClient) *SetCommand {
-	return &SetCommand{
+func NewDeleteCommand(kvClient *client.KvStoreClient) *DeleteCommand {
+	return &DeleteCommand{
 		kvClient: kvClient,
 	}
 }
 
-func (sc *SetCommand) Execute(args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("set command requires exactly 2 arguments: <key> <value>")
+func (dc *DeleteCommand) Execute(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("delete command requires exactly 1 argument: <key>")
 	}
-	if len(args) > 2 {
-		return fmt.Errorf("set command accepts only 2 arguments, got %d", len(args))
+	if len(args) > 1 {
+		return fmt.Errorf("delete command accepts only 1 argument, got %d", len(args))
 	}
 	
 	key := args[0]
-	value := args[1]
-	
 	if key == "" {
 		return fmt.Errorf("key cannot be empty")
 	}
 	
-	_, err := sc.kvClient.Set(context.Background(), key, value)
+	res, err := dc.kvClient.Delete(context.Background(), key)
 	if err != nil {
-		return fmt.Errorf("failed to set key '%s' with value '%s': %w", key, value, err)
+		return fmt.Errorf("failed to delete key '%s': %w", key, err)
 	}
 	
-	fmt.Printf("Successfully set key '%s' to value '%s'\n", key, value)
+	fmt.Printf("Key '%s' deleted successfully\n", key)
+	fmt.Printf("Session ID: %d, Sequence Number: %d\n", res.SessionID, res.SequenceNumber)
 	return nil
 }
 
-func (sc *SetCommand) Help() string {
-	return "set <key> <value> - Set a new key-value pair"
+func (dc *DeleteCommand) Help() string {
+	return "delete <key> - Delete a key from the store"
 }

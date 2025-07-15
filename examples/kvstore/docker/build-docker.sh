@@ -22,9 +22,6 @@ mkdir -p "$BUILD_DIR"
 # Copy the kvstore application files
 echo "- Copying KVStore application files..."
 cp -r "$KVSTORE_DIR"/* "$BUILD_DIR"
-# Ensure the docker directory exists in the build directory
-mkdir -p "$BUILD_DIR/docker"
-cp "$SCRIPT_DIR/Dockerfile" "$BUILD_DIR/docker/"
 
 # Create directories for local babuza modules
 mkdir -p "$BUILD_DIR/babuza_modules/ibabuza"
@@ -54,7 +51,7 @@ EOF
 
 # Create a modified Dockerfile in the build directory
 echo "- Creating modified Dockerfile for the build..."
-cat > "$BUILD_DIR/docker/Dockerfile" << EOF
+cat > "$BUILD_DIR/Dockerfile" << EOF
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
@@ -82,13 +79,12 @@ VOLUME /data
 EXPOSE 14200 24200
 
 ENTRYPOINT ["/app/kvstore"]
-CMD ["server"]
 EOF
 
 # Build the Docker image
 echo "- Building Docker image..."
 cd "$BUILD_DIR"
-docker build -t babuza-kvstore:latest -f docker/Dockerfile .
+docker build -t babuza-kvstore:latest .
 
 # Clean up
 echo "- Cleaning up temporary build directory..."

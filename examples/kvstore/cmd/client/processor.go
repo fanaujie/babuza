@@ -12,14 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package client
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"os"
-	"strings"
 )
 
 type Command interface {
@@ -28,51 +26,94 @@ type Command interface {
 }
 
 type CommandProcessor struct {
-	commands map[string]Command
+	commands      map[string]Command
+	inputHandler  InputHandler
+	outputHandler OutputHandler
+	parser        CommandParser
 }
 
 func NewCommandProcessor() *CommandProcessor {
-	cp := &CommandProcessor{}
-	cp.commands = make(map[string]Command)
-	return cp
+	return NewCommandProcessorWithHandlers(
+		NewStdinInputHandler(os.Stdin),
+		NewStandardOutputHandler(os.Stdout, os.Stderr),
+		NewDefaultCommandParser(),
+	)
+}
+
+func NewCommandProcessorWithHandlers(
+	inputHandler InputHandler,
+	outputHandler OutputHandler,
+	parser CommandParser,
+) *CommandProcessor {
+	return &CommandProcessor{
+		commands:      make(map[string]Command),
+		inputHandler:  inputHandler,
+		outputHandler: outputHandler,
+		parser:        parser,
+	}
 }
 
 func (cp *CommandProcessor) AddCommand(cmdName string, cmd Command) {
 	cp.commands[cmdName] = cmd
 }
 
-func (cp *CommandProcessor) StartCommandLoop() error {
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Print("KvStore> ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-		// Parse command and arguments
-		parts := strings.Split(input, " ")
-		command := parts[0]
-		args := parts[1:]
+func (cp *CommandProcessor) showWelcomeMessage() error {
+	if err := cp.outputHandler.WriteOutput("Welcome to KvStore CLI!"); err != nil {
+		return err
+	}
+	if err := cp.outputHandler.WriteOutput("Type 'help' to see all available commands."); err != nil {
+		return err
+	}
+	if err := cp.outputHandler.WriteOutput(""); err != nil {
+		return err
+	}
+	return nil
+}
 
-		// Execute command
-		if cmd, ok := cp.commands[command]; ok {
-			err := cmd.Execute(args)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			} else {
-				if command == "exit" {
-					return nil
-				}
+func (cp *CommandProcessor) StartCommandLoop() error {
+	// Show welcome message and available commands
+	if err := cp.showWelcomeMessage(); err != nil {
+		return fmt.Errorf("failed to show welcome message: %w", err)
+	}
+	
+	for {
+		if err := cp.outputHandler.WritePrompt(); err != nil {
+			return fmt.Errorf("failed to write prompt: %w", err)
+		}
+
+		input, err := cp.inputHandler.ReadInput()
+		if err != nil {
+			if err == io.EOF {
+				return nil
 			}
-		} else {
-			fmt.Println("Error: unknown command")
-			cp.ListCommands()
+			return fmt.Errorf("failed to read input: %w", err)
+		}
+
+		parsed, err := cp.parser.Parse(input)
+		if err != nil {
+			continue
+		}
+
+		if err = cp.executeCommand(parsed); err != nil {
+			if writeErr := cp.outputHandler.WriteError(err); writeErr != nil {
+				return fmt.Errorf("failed to write error: %w", writeErr)
+			}
+		}
+
+		if parsed.Name == "exit" {
+			return nil
 		}
 	}
 }
 
-func (cp *CommandProcessor) ListCommands() {
-	fmt.Println("Supported commands:")
-	for _, command := range cp.commands {
-		fmt.Println(command.Help())
+func (cp *CommandProcessor) executeCommand(parsed *ParsedCommand) error {
+	cmd, exists := cp.commands[parsed.Name]
+	if !exists {
+		if err := cp.outputHandler.WriteError(fmt.Errorf("unknown command: %s", parsed.Name)); err != nil {
+			return err
+		}
+		return cp.outputHandler.WriteCommandList(cp.commands)
 	}
+
+	return cmd.Execute(parsed.Args)
 }

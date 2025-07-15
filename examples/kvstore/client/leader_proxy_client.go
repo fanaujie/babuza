@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package client
 
 import (
@@ -93,18 +92,12 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 		if err = res.Body.Close(); err != nil {
 			return err
 		}
-		if res.StatusCode == http.StatusServiceUnavailable {
+		if res.StatusCode == http.StatusServiceUnavailable || res.StatusCode == http.StatusGatewayTimeout {
 			if err = p.moveNextLeader(); err != nil {
 				return err
 			}
 			continue
-		} else if res.StatusCode == http.StatusGatewayTimeout {
-			if err = p.moveNextLeader(); err != nil {
-				return err
-			}
-			continue
-		}
-		if res.StatusCode != http.StatusOK {
+		} else if res.StatusCode != http.StatusOK {
 			return convertError(strings.TrimSuffix(string(b), "\n"))
 		}
 		return json.Unmarshal(b, result)

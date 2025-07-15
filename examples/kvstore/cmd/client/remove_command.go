@@ -22,32 +22,27 @@ import (
 	"strconv"
 )
 
-type JoinCommand struct {
+type RemoveCommand struct {
 	kvClient *client.KvStoreClient
 }
 
-func NewJoinCommand(kvClient *client.KvStoreClient) *JoinCommand {
-	return &JoinCommand{
+func NewRemoveCommand(kvClient *client.KvStoreClient) *RemoveCommand {
+	return &RemoveCommand{
 		kvClient: kvClient,
 	}
 }
 
-func (jc *JoinCommand) Execute(args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("join command requires exactly 2 arguments: <peerID> <raftListenAddr>")
+func (rc *RemoveCommand) Execute(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("remove command requires exactly 1 argument: <peerID>")
 	}
-	if len(args) > 2 {
-		return fmt.Errorf("join command accepts only 2 arguments, got %d", len(args))
+	if len(args) > 1 {
+		return fmt.Errorf("remove command accepts only 1 argument, got %d", len(args))
 	}
 	
 	peerIDStr := args[0]
-	raftListenAddr := args[1]
-	
 	if peerIDStr == "" {
 		return fmt.Errorf("peerID cannot be empty")
-	}
-	if raftListenAddr == "" {
-		return fmt.Errorf("raftListenAddr cannot be empty")
 	}
 	
 	peerID, err := strconv.ParseUint(peerIDStr, 10, 64)
@@ -55,15 +50,15 @@ func (jc *JoinCommand) Execute(args []string) error {
 		return fmt.Errorf("invalid peerID '%s': must be a valid positive integer", peerIDStr)
 	}
 	
-	err = jc.kvClient.Join(context.Background(), peerID, raftListenAddr, false)
+	err = rc.kvClient.Remove(context.Background(), peerID)
 	if err != nil {
-		return fmt.Errorf("failed to join peer %d with address '%s' to cluster: %w", peerID, raftListenAddr, err)
+		return fmt.Errorf("failed to remove peer %d from cluster: %w", peerID, err)
 	}
 	
-	fmt.Printf("Successfully joined peer %d with address '%s' to cluster\n", peerID, raftListenAddr)
+	fmt.Printf("Successfully removed peer %d from cluster\n", peerID)
 	return nil
 }
 
-func (jc *JoinCommand) Help() string {
-	return "join <peerID> <raftListenAddr> - Join a new peer to the cluster"
+func (rc *RemoveCommand) Help() string {
+	return "remove <peerID> - Remove a peer from the cluster"
 }
