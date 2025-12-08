@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package raft
 
 import (
+	"io/ioutil"
+	"os"
+	"testing"
+
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
-	"io/ioutil"
-	"os"
-	"testing"
 )
 
 //type mockRemoteCluster struct {
@@ -357,8 +357,7 @@ func genConfChangeEntry(index, nodeId uint64, confChangeType raftpb.ConfChangeTy
 
 func TestBootstrap_ListRaftConfChangeAddNodeIds(t *testing.T) {
 
-	walDir, err := ioutil.TempDir("", "bootstrap-wal")
-	assert.Nil(t, err)
+	walDir := os.TempDir()
 	defer os.RemoveAll(walDir)
 
 	ws := babuzawal.NewWalManager(walDir, &logger.Mock{})
@@ -413,8 +412,7 @@ func TestBootstrap_CreateRaftConfigChangeEntries(t *testing.T) {
 	//TODO: live node is LearnerNode. learner node to voting node
 
 	t.Run("live node in configuration", func(t *testing.T) {
-		walDir, err := ioutil.TempDir("", "bootstrap-wal")
-		assert.Nil(t, err)
+		walDir := os.TempDir()
 		defer os.RemoveAll(walDir)
 
 		ws := babuzawal.NewWalManager(walDir, &logger.Mock{})

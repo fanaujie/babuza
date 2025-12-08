@@ -27,9 +27,10 @@ import (
 )
 
 type KvStoreAppConfig struct {
-	BubuzaConfig   babuza.BabuzaConfig
-	VotingPeersCfg *babuza.PeersConfiguration
-	ServiceAddress string
+	BubuzaConfig        babuza.BabuzaConfig
+	VotingPeersCfg      *babuza.PeersConfiguration
+	ServiceAddress      string
+	RecoverAsStandalone bool
 }
 
 type KvStoreApp struct {
@@ -76,10 +77,26 @@ func NewKvStoreApp(appConfig KvStoreAppConfig, stateMachine ibabuza.BaseStateMac
 	app := &KvStoreApp{}
 	app.logger = customBuilder.Logger
 	app.stateMachine = stateMachine
-	bootstrap, err := babuza.NewBootstrapRaftCluster(
-		appConfig.BubuzaConfig, *appConfig.VotingPeersCfg, stateMachine, customBuilder.Cluster,
-		customBuilder.RaftNode, customBuilder.SessionManager, customBuilder.SnapshotManager, customBuilder.WalManager,
-		customBuilder.Transport, customBuilder.Logger, customBuilder.MetricsController)
+
+	var bootstrap *babuza.BootstrapRaftCluster
+	var err error
+
+	if appConfig.RecoverAsStandalone {
+		// Disaster recovery mode: force standalone recovery
+		customBuilder.Logger.Infof("KvStoreApp: starting in disaster recovery mode (RecoverAsStandalone)")
+		bootstrap, err = babuza.RecoverAsStandalone(
+			appConfig.BubuzaConfig, stateMachine, customBuilder.Cluster,
+			customBuilder.RaftNode, customBuilder.SessionManager, customBuilder.SnapshotManager,
+			customBuilder.WalManager, customBuilder.Transport, customBuilder.Logger,
+			customBuilder.MetricsController)
+	} else {
+		// Normal mode: auto-detect restart based on WAL existence
+		bootstrap, err = babuza.NewBootstrapRaftCluster(
+			appConfig.BubuzaConfig, *appConfig.VotingPeersCfg, stateMachine, customBuilder.Cluster,
+			customBuilder.RaftNode, customBuilder.SessionManager, customBuilder.SnapshotManager, customBuilder.WalManager,
+			customBuilder.Transport, customBuilder.Logger, customBuilder.MetricsController)
+	}
+
 	if err != nil {
 		return nil, err
 	}

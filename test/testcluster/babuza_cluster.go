@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package testcluster
 
 import (
 	"context"
 	"fmt"
-	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/pkg/utility/multierror"
-	babuza "github.com/fanaujie/babuza/raft"
 	"math/rand"
 	"path/filepath"
 	"time"
+
+	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/utility/multierror"
+	babuza "github.com/fanaujie/babuza/raft"
 )
 
 type EmbeddedApp interface {
@@ -42,8 +42,9 @@ type EmbeddedClient interface {
 	TransferLeader(ctx context.Context, transferee uint64) error
 }
 
-type CreateEmbeddedApp func(votingPeersCfg *babuza.PeersConfiguration, config babuza.BabuzaConfig, restart bool,
-	testNetwork ibabuza.ProxyNetwork, peerRootDir string, appServiceAddresses []string) (EmbeddedApp, error)
+type CreateEmbeddedApp func(votingPeersCfg *babuza.PeersConfiguration, config babuza.BabuzaConfig,
+	restart bool, recoverAsStandalone bool, testNetwork ibabuza.ProxyNetwork,
+	peerRootDir string, appServiceAddresses []string) (EmbeddedApp, error)
 
 type appController struct {
 	app                  EmbeddedApp
@@ -125,7 +126,7 @@ func (c *BabuzaCluster) MakeCluster(wait time.Duration, votingPeers []Peer) erro
 	for _, peer := range votingPeers {
 		cfg, peerRootDir, err := c.genPeerConfig(peer, false)
 		connectedGroup = append(connectedGroup, peer.ID())
-		app, err := c.createEmbeddedApp(c.peersConfiguration.Clone(), cfg, false, c.proxyNetwork, peerRootDir, peer.ApplicationServiceAddresses())
+		app, err := c.createEmbeddedApp(c.peersConfiguration.Clone(), cfg, false, false, c.proxyNetwork, peerRootDir, peer.ApplicationServiceAddresses())
 		if err != nil {
 			return fmt.Errorf("test cluster: failed to create embedded app. peer(%v) restart(false) join(false). err=%s", peer, err)
 		}
@@ -245,7 +246,7 @@ func (c *BabuzaCluster) JoinPeerToCluster(wait time.Duration, client EmbeddedCli
 		}
 	}
 
-	app, err := c.createEmbeddedApp(c.peersConfiguration.Clone(), cfg, false, c.proxyNetwork, appStorageDir, peer.ApplicationServiceAddresses())
+	app, err := c.createEmbeddedApp(c.peersConfiguration.Clone(), cfg, false, false, c.proxyNetwork, appStorageDir, peer.ApplicationServiceAddresses())
 	if err != nil {
 		return fmt.Errorf("test cluster: failed to create embedded app. peer(%v) restart(false) join(true). err=%s", peer, err)
 	}
@@ -315,7 +316,7 @@ func (c *BabuzaCluster) RestartPeer(wait time.Duration, peer Peer, connectedGrou
 	}
 
 	cfg, storageDir, err := c.genPeerConfig(peer, false)
-	app, err := c.createEmbeddedApp(c.peersConfiguration, cfg, true, c.proxyNetwork, storageDir, peer.ApplicationServiceAddresses())
+	app, err := c.createEmbeddedApp(c.peersConfiguration, cfg, true, false, c.proxyNetwork, storageDir, peer.ApplicationServiceAddresses())
 	if err != nil {
 		return fmt.Errorf("test cluster: failed to create embedded app. peer(%v) restart(true) join(false). err=%s", peer, err)
 	}
@@ -344,6 +345,67 @@ func (c *BabuzaCluster) RestartPeer(wait time.Duration, peer Peer, connectedGrou
 		appStopCh:            make(chan error, 1),
 	}
 	c.appControllers[peer.ID()] = controller
+	if err = <-controller.app.PublishService(ctx); err != nil {
+		return err
+	}
+	go controller.startService()
+	return nil
+}
+
+func (c *BabuzaCluster) RecoverPeerAsStandalone(wait time.Duration, peer Peer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+
+	// Verify peer doesn't exist in appControllers (must be shut down first)
+	if _, ok := c.appControllers[peer.ID()]; ok {
+		return fmt.Errorf("test cluster: peer is still running (id=%d), shutdown first", peer.ID())
+	}
+
+	// Generate peer config
+	cfg, storageDir, err := c.genPeerConfig(peer, false)
+	if err != nil {
+		return err
+	}
+
+	// Reset peersConfiguration to only contain this peer (standalone mode)
+	c.peersConfiguration = babuza.NewPeersConfiguration()
+	raftListenAddr := peer.RaftListenAddress(c.useProxyNetwork)
+	if err = c.peersConfiguration.AddPeer(peer.ID(), raftListenAddr, false); err != nil {
+		return fmt.Errorf("test cluster: failed to add peer to peersConfiguration (peerID=%d). err=%s", peer.ID(), err)
+	}
+
+	// Setup proxy network if needed
+	if c.useProxyNetwork {
+		proxyPeer, ok := peer.(ProxyPeer)
+		if !ok {
+			return fmt.Errorf("test cluster: failed to cast peer to ProxyPeer. peer(%v)", peer)
+		}
+		if err = c.proxyNetwork.AddProxy(proxyPeer.ProxyConfig()); err != nil {
+			return err
+		}
+		if err = c.proxyNetwork.ConnectProxy(peer.ID()); err != nil {
+			return err
+		}
+		if err = c.proxyNetwork.SetPartition([]uint64{peer.ID()}); err != nil {
+			return err
+		}
+	}
+
+	// Create embedded app with recoverAsStandalone=true
+	app, err := c.createEmbeddedApp(c.peersConfiguration, cfg, false, true,
+		c.proxyNetwork, storageDir, peer.ApplicationServiceAddresses())
+	if err != nil {
+		return fmt.Errorf("test cluster: failed to create embedded app for recovery. peer(%v) err=%s", peer, err)
+	}
+
+	// Register controller and start service
+	controller := &appController{
+		app:                  app,
+		appsServiceAddresses: peer.ApplicationServiceAddresses(),
+		appStopCh:            make(chan error, 1),
+	}
+	c.appControllers[peer.ID()] = controller
+
 	if err = <-controller.app.PublishService(ctx); err != nil {
 		return err
 	}

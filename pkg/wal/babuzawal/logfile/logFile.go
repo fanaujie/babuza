@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package logfile
 
 import (
-	codec2 "github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
+	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/logfile/page"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -25,10 +24,10 @@ import (
 
 type LogFile struct {
 	pw  *page.Writer
-	enc *codec2.Encoder
+	enc *codec.Encoder
 }
 
-func New(pw *page.Writer, enc *codec2.Encoder) *LogFile {
+func New(pw *page.Writer, enc *codec.Encoder) *LogFile {
 	return &LogFile{
 		pw:  pw,
 		enc: enc,
@@ -60,28 +59,28 @@ func (l *LogFile) DoCycle() bool {
 }
 
 func (l *LogFile) Crc(crc uint32) error {
-	return codec2.Encode(l.enc, pb.LogTypeCrc, 4, codec2.CrcLog(crc))
+	return codec.Encode(l.enc, pb.LogTypeCrc, 4, codec.CrcLog(crc))
 }
 
 func (l *LogFile) Metadata(metadata []byte) error {
-	return codec2.Encode(l.enc, pb.LogTypeMetadata, len(metadata), codec2.SliceBytes(metadata))
+	return codec.Encode(l.enc, pb.LogTypeMetadata, len(metadata), codec.SliceBytes(metadata))
 }
 
 func (l *LogFile) HardState(state raftpb.HardState) error {
-	return codec2.Encode(l.enc, pb.LogTypeHardState, state.Size(), (codec2.HardStateLog)(state))
+	return codec.Encode(l.enc, pb.LogTypeHardState, state.Size(), (codec.HardStateLog)(state))
 }
 
 func (l *LogFile) Snapshot(snap walpb.Snapshot) error {
 	if err := walpb.ValidateSnapshotForWrite(&snap); err != nil {
 		return err
 	}
-	return codec2.Encode(l.enc, pb.LogTypeSnapshot, snap.Size(), (codec2.WalSnapshotLog)(snap))
+	return codec.Encode(l.enc, pb.LogTypeSnapshot, snap.Size(), (codec.WalSnapshotLog)(snap))
 }
 
 func (l *LogFile) NextEntry(nextEntry pb.WalNextEntry) error {
-	return codec2.Encode(l.enc, pb.LogTypeNextEntry, nextEntry.Size(), (codec2.WalNextEntryLog)(nextEntry))
+	return codec.Encode(l.enc, pb.LogTypeNextEntry, nextEntry.Size(), (codec.WalNextEntryLog)(nextEntry))
 }
 
 func (l *LogFile) Entry(entryType pb.LogType, entryData []byte) error {
-	return codec2.Encode(l.enc, entryType, len(entryData), codec2.SliceBytes(entryData))
+	return codec.Encode(l.enc, entryType, len(entryData), codec.SliceBytes(entryData))
 }

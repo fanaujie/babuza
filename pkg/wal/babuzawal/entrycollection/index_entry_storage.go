@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package entrycollection
 
 import (
 	"errors"
+
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/codec"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/iwal"
 	"github.com/fanaujie/babuza/pkg/wal/babuzawal/pb"
@@ -94,7 +94,9 @@ func (ei *IndexedEntryStore) VisitEntry(entryType raftpb.EntryType, visitor func
 			entriesIndex = append(entriesIndex, *e)
 		}
 	}
-
+	if len(confEntries) == 0 {
+		return nil
+	}
 	if err := ei.reader.ReadEntriesData(entriesIndex, confEntries); err != nil {
 		return err
 	}
