@@ -1,17 +1,4 @@
 services:
-  # UI Service
-  kvstore-ui:
-    image: nginx:alpine
-    container_name: kvstore-ui
-    volumes:
-      - ../ui:/usr/share/nginx/html
-    ports:
-      - "8080:80"
-    depends_on:
-      - kvstore-node1
-      - kvstore-node2
-      - kvstore-node3
-
   # Node 1
   kvstore-node1:
     image: babuza-kvstore:latest
@@ -99,6 +86,10 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
     ports:
       - "3000:3000"
     depends_on:

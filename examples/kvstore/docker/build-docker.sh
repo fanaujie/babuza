@@ -19,9 +19,13 @@ echo "- Creating temporary build directory: $BUILD_DIR"
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-# Copy the kvstore application files
+# Copy the kvstore application files (excluding docker directory to avoid recursive copy)
 echo "- Copying KVStore application files..."
-cp -r "$KVSTORE_DIR"/* "$BUILD_DIR"
+for item in "$KVSTORE_DIR"/*; do
+    if [ "$(basename "$item")" != "docker" ]; then
+        cp -r "$item" "$BUILD_DIR/"
+    fi
+done
 
 # Create directories for local babuza modules
 mkdir -p "$BUILD_DIR/babuza_modules/ibabuza"
