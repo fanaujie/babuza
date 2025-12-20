@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package grpc
 
 import (
 	"fmt"
+	"math/rand"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/connpool"
@@ -25,16 +29,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"google.golang.org/grpc"
-	"math/rand"
-	"sync"
-	"testing"
-	"time"
 )
 
 var (
 	defaultPoolCfg = connpool.Config{
 		MaxConnectionsPerHost: 1024,
-		DialTimeout:           2 * time.Second,
 		IdleTimeout:           5 * time.Minute,
 	}
 	defaultGrpcCfg = ClientConfig{
@@ -161,7 +160,7 @@ func NewConnectionCreator(dialer Dialer, tlsConfig ibabuza.TLSConfig, options co
 }
 
 func (c *ConnectionCreator) Dial(address string) (*grpc.ClientConn, error) {
-	grpcConn, err := c.dialer.DialWithTimeout(c.tlsConfig, 0, address, c.options.DialTimeout)
+	grpcConn, err := c.dialer.Dial(c.tlsConfig, 0, address)
 	if err != nil {
 		return nil, err
 	}

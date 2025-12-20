@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package lsmtwal
 
 import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/dgraph-io/badger/v4"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
@@ -27,8 +29,6 @@ import (
 	"github.com/fanaujie/babuza/pkg/wal/walbase"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
-	"sync"
-	"time"
 )
 
 type BadgerWalManager struct {
@@ -44,7 +44,7 @@ var _ ibabuza.WalManager = (*BadgerWalManager)(nil)
 
 func NewBadgerWalManager(config Config, logger ibabuza.Logger) *BadgerWalManager {
 	stopCh := make(chan struct{})
-	if !fileutil.Exist(config.WalDir) {
+	if !config.InMemory && !fileutil.Exist(config.WalDir) {
 		err := fileutil.CreateDirAndTouch(config.WalDir)
 		if err != nil {
 			logger.Panicf("failed to create wal dir %s: %v", config.WalDir, err)

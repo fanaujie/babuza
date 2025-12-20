@@ -106,8 +106,8 @@ You can configure various aspects of the KV store server including:
 		`Write-Ahead Log (WAL) Implementation:
   "babuza-wal": Babuza WAL - Default, Babuza native implementation
   "etcd-wal": ETCD WAL - Uses etcd's WAL implementation
-  "lsmt-wal-disk": LSMT WAL Disk - Disk-based WAL implementation with LSMT
-  "lsmt-wal-memory": LSMT WAL Memory - Memory-based WAL implementation with LSMT (for testing only)`)
+  "badger-wal": Badger WAL - Disk-based WAL implementation using Badger LSM-tree
+  "badger-wal-memory": Badger WAL Memory - Memory-based WAL implementation using Badger (for testing only)`)
 
 	serverCommand.Flags().StringVar(&kvStoreConfig.BabuzaSnapshot, "snapshot-type", builder.DurableSnapshot,
 		`Snapshot Implementation:

@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666"/>
+    </marker>
+    <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc3545"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="500" fill="#f8f9fa"/>
+
+  <!-- Title -->
+  <text x="400" y="35" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#333">TCP Proxy Network Architecture</text>
+
+  <!-- Nodes Layer -->
+  <g transform="translate(0, 60)">
+    <!-- Node 1 -->
+    <rect x="80" y="20" width="120" height="50" rx="8" fill="#e3f2fd" stroke="#1976d2" stroke-width="2" filter="url(#shadow)"/>
+    <text x="140" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1976d2">Node 1</text>
+
+    <!-- Node 2 -->
+    <rect x="340" y="20" width="120" height="50" rx="8" fill="#e3f2fd" stroke="#1976d2" stroke-width="2" filter="url(#shadow)"/>
+    <text x="400" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1976d2">Node 2</text>
+
+    <!-- Node 3 -->
+    <rect x="600" y="20" width="120" height="50" rx="8" fill="#e3f2fd" stroke="#1976d2" stroke-width="2" filter="url(#shadow)"/>
+    <text x="660" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1976d2">Node 3</text>
+
+    <!-- Arrows from nodes to proxies -->
+    <line x1="140" y1="70" x2="140" y2="110" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <line x1="400" y1="70" x2="400" y2="110" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+    <line x1="660" y1="70" x2="660" y2="110" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  </g>
+
+  <!-- Proxy Layer -->
+  <g transform="translate(0, 180)">
+    <!-- Proxy 1 -->
+    <rect x="60" y="0" width="160" height="80" rx="8" fill="#c8e6c9" stroke="#388e3c" stroke-width="2" filter="url(#shadow)"/>
+    <text x="140" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#388e3c">Proxy 1</text>
+    <text x="140" y="45" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#555">In: 127.0.0.1:8001</text>
+    <text x="140" y="62" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#555">Out: 127.0.0.1:9001</text>
+
+    <!-- Proxy 2 -->
+    <rect x="320" y="0" width="160" height="80" rx="8" fill="#c8e6c9" stroke="#388e3c" stroke-width="2" filter="url(#shadow)"/>
+    <text x="400" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#388e3c">Proxy 2</text>
+    <text x="400" y="45" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#555">In: 127.0.0.1:8002</text>
+    <text x="400" y="62" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#555">Out: 127.0.0.1:9002</text>
+
+    <!-- Proxy 3 -->
+    <rect x="580" y="0" width="160" height="80" rx="8" fill="#ffcdd2" stroke="#d32f2f" stroke-width="2" filter="url(#shadow)"/>
+    <text x="660" y="25" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#d32f2f">Proxy 3</text>
+    <text x="660" y="45" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#555">In: 127.0.0.1:8003</text>
+    <text x="660" y="62" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#555">Out: 127.0.0.1:9003</text>
+
+    <!-- Connection between Proxy 1 and Proxy 2 (Connected) -->
+    <line x1="220" y1="40" x2="320" y2="40" stroke="#388e3c" stroke-width="3"/>
+    <circle cx="270" cy="40" r="8" fill="#388e3c"/>
+    <text x="270" y="44" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">&#10003;</text>
+
+    <!-- Connection between Proxy 2 and Proxy 3 (Disconnected) -->
+    <line x1="480" y1="40" x2="580" y2="40" stroke="#dc3545" stroke-width="3" stroke-dasharray="8,4"/>
+    <circle cx="530" cy="40" r="8" fill="#dc3545"/>
+    <text x="530" y="44" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">&#10007;</text>
+
+    <!-- Connection between Proxy 1 and Proxy 3 (Disconnected) - curved -->
+    <path d="M 140 80 Q 140 130 400 130 Q 660 130 660 80" fill="none" stroke="#dc3545" stroke-width="3" stroke-dasharray="8,4"/>
+    <circle cx="400" cy="130" r="8" fill="#dc3545"/>
+    <text x="400" y="134" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="white">&#10007;</text>
+  </g>
+
+  <!-- Partition Labels -->
+  <g transform="translate(0, 330)">
+    <!-- Partition A box -->
+    <rect x="40" y="0" width="460" height="70" rx="10" fill="none" stroke="#388e3c" stroke-width="2" stroke-dasharray="5,5"/>
+    <rect x="50" y="-12" width="100" height="24" fill="#f8f9fa"/>
+    <text x="100" y="5" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#388e3c">Partition A</text>
+
+    <!-- Partition B box -->
+    <rect x="560" y="0" width="200" height="70" rx="10" fill="none" stroke="#d32f2f" stroke-width="2" stroke-dasharray="5,5"/>
+    <rect x="570" y="-12" width="100" height="24" fill="#f8f9fa"/>
+    <text x="620" y="5" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#d32f2f">Partition B</text>
+
+    <!-- Partition content -->
+    <text x="270" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#555">Nodes 1, 2 can communicate</text>
+    <text x="660" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#555">Node 3 isolated</text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(50, 430)">
+    <rect x="0" y="0" width="700" height="55" rx="8" fill="white" stroke="#ddd" stroke-width="1" filter="url(#shadow)"/>
+    <text x="20" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#333">Legend:</text>
+
+    <!-- Connected -->
+    <line x1="100" y1="15" x2="140" y2="15" stroke="#388e3c" stroke-width="3"/>
+    <circle cx="120" cy="15" r="6" fill="#388e3c"/>
+    <text x="120" y="18" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">&#10003;</text>
+    <text x="150" y="20" font-family="Arial, sans-serif" font-size="11" fill="#555">Connected</text>
+
+    <!-- Disconnected -->
+    <line x1="250" y1="15" x2="290" y2="15" stroke="#dc3545" stroke-width="3" stroke-dasharray="8,4"/>
+    <circle cx="270" cy="15" r="6" fill="#dc3545"/>
+    <text x="270" y="18" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">&#10007;</text>
+    <text x="300" y="20" font-family="Arial, sans-serif" font-size="11" fill="#555">Disconnected</text>
+
+    <!-- Enabled Proxy -->
+    <rect x="410" y="5" width="20" height="20" rx="3" fill="#c8e6c9" stroke="#388e3c" stroke-width="1"/>
+    <text x="440" y="20" font-family="Arial, sans-serif" font-size="11" fill="#555">Enabled Proxy</text>
+
+    <!-- Disabled Proxy -->
+    <rect x="550" y="5" width="20" height="20" rx="3" fill="#ffcdd2" stroke="#d32f2f" stroke-width="1"/>
+    <text x="580" y="20" font-family="Arial, sans-serif" font-size="11" fill="#555">Disabled/Isolated Proxy</text>
+
+    <!-- SetPartition hint -->
+    <text x="350" y="45" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-style="italic" fill="#888">Use SetPartition([]uint64{1, 2}) to create network partitions for testing</text>
+  </g>
+</svg>

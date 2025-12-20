@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 550">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+      <feOffset dx="2" dy="2" result="offsetblur" />
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.2" />
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+    </marker>
+    <marker id="arrowhead-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#e53935" />
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect x="10" y="10" width="780" height="530" rx="15" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" />
+
+  <!-- Title -->
+  <text x="400" y="45" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#1e293b" text-anchor="middle">Redis Cluster Architecture</text>
+
+  <!-- Redis Client -->
+  <g filter="url(#shadow)">
+    <rect x="280" y="70" width="240" height="50" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="2" />
+    <text x="400" y="102" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#92400e" text-anchor="middle">Redis Client</text>
+  </g>
+
+  <!-- Arrow: Client to Protocol Layer -->
+  <path d="M400 120 L400 150" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)" />
+
+  <!-- Redis Protocol Layer -->
+  <g filter="url(#shadow)">
+    <rect x="150" y="155" width="500" height="70" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="2" />
+    <text x="400" y="185" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#0c4a6e" text-anchor="middle">Redis Protocol Layer</text>
+    <text x="400" y="210" font-family="Arial, sans-serif" font-size="13" fill="#0369a1" text-anchor="middle">Parse commands, CRC32 hash routing</text>
+  </g>
+
+  <!-- Arrows: Protocol Layer to Shards -->
+  <path d="M280 225 L180 270" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <path d="M400 225 L400 270" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <path d="M520 225 L620 270" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)" />
+
+  <!-- Shard 0 -->
+  <g filter="url(#shadow)">
+    <rect x="80" y="275" width="160" height="90" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2" />
+    <text x="160" y="305" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#166534" text-anchor="middle">Shard 0</text>
+    <rect x="100" y="320" width="120" height="35" rx="5" fill="#ffffff" stroke="#22c55e" stroke-width="1" />
+    <text x="160" y="343" font-family="Arial, sans-serif" font-size="12" fill="#166534" text-anchor="middle">Raft Group</text>
+  </g>
+
+  <!-- Shard 1 -->
+  <g filter="url(#shadow)">
+    <rect x="320" y="275" width="160" height="90" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2" />
+    <text x="400" y="305" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#166534" text-anchor="middle">Shard 1</text>
+    <rect x="340" y="320" width="120" height="35" rx="5" fill="#ffffff" stroke="#22c55e" stroke-width="1" />
+    <text x="400" y="343" font-family="Arial, sans-serif" font-size="12" fill="#166534" text-anchor="middle">Raft Group</text>
+  </g>
+
+  <!-- Shard N -->
+  <g filter="url(#shadow)">
+    <rect x="560" y="275" width="160" height="90" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="2" />
+    <text x="640" y="305" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#166534" text-anchor="middle">Shard N</text>
+    <rect x="580" y="320" width="120" height="35" rx="5" fill="#ffffff" stroke="#22c55e" stroke-width="1" />
+    <text x="640" y="343" font-family="Arial, sans-serif" font-size="12" fill="#166534" text-anchor="middle">Raft Group</text>
+  </g>
+
+  <!-- Dots between shards -->
+  <text x="270" y="330" font-family="Arial, sans-serif" font-size="24" fill="#94a3b8" text-anchor="middle">...</text>
+  <text x="510" y="330" font-family="Arial, sans-serif" font-size="24" fill="#94a3b8" text-anchor="middle">...</text>
+
+  <!-- Arrows: Shards to PD Server (Heartbeat) -->
+  <path d="M160 365 L160 410 L310 450" stroke="#e53935" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arrowhead-red)" />
+  <path d="M400 365 L400 450" stroke="#e53935" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arrowhead-red)" />
+  <path d="M640 365 L640 410 L490 450" stroke="#e53935" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arrowhead-red)" />
+
+  <!-- Heartbeat Label -->
+  <text x="250" y="405" font-family="Arial, sans-serif" font-size="11" fill="#e53935" text-anchor="middle">Heartbeat</text>
+  <text x="550" y="405" font-family="Arial, sans-serif" font-size="11" fill="#e53935" text-anchor="middle">Heartbeat</text>
+
+  <!-- PD Server -->
+  <g filter="url(#shadow)">
+    <rect x="280" y="455" width="240" height="80" rx="10" fill="#fce7f3" stroke="#db2777" stroke-width="2" />
+    <text x="400" y="485" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#9d174d" text-anchor="middle">PD Server</text>
+    <text x="400" y="510" font-family="Arial, sans-serif" font-size="12" fill="#be185d" text-anchor="middle">Coordinator &amp; Leader Balancer</text>
+    <text x="400" y="525" font-family="Arial, sans-serif" font-size="11" fill="#be185d" text-anchor="middle">Transfer Leader Scheduling</text>
+  </g>
+
+</svg>

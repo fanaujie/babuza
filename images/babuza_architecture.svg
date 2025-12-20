@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+      <feOffset dx="2" dy="2" result="offsetblur" />
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.2" />
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="10" y="10" width="780" height="480" rx="15" fill="#ffffff" stroke="#2c3e50" stroke-width="2" />
+  <rect x="10" y="10" width="780" height="40" rx="15" fill="#2c3e50" />
+  <rect x="10" y="30" width="780" height="20" fill="#2c3e50" />
+  <text x="400" y="35" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#ffffff" text-anchor="middle">Your Application</text>
+
+  <!-- Raft Layer (Application Logic) -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="70" width="720" height="110" rx="10" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5" />
+    <text x="55" y="95" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#1565c0">Babuza Raft</text>
+    
+    <rect x="60" y="110" width="180" height="50" rx="5" fill="#ffffff" stroke="#1976d2" />
+    <text x="150" y="140" font-family="Arial, sans-serif" font-size="14" fill="#0d47a1" text-anchor="middle">Propose</text>
+    
+    <rect x="270" y="110" width="230" height="50" rx="5" fill="#ffffff" stroke="#1976d2" />
+    <text x="385" y="140" font-family="Arial, sans-serif" font-size="14" fill="#0d47a1" text-anchor="middle">Cluster Operation</text>
+    
+    <rect x="530" y="110" width="210" height="50" rx="5" fill="#ffffff" stroke="#1976d2" />
+    <text x="635" y="140" font-family="Arial, sans-serif" font-size="14" fill="#0d47a1" text-anchor="middle">Linearizable Read</text>
+  </g>
+
+  <!-- Pkg Layer (Infrastructure) -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="210" width="720" height="130" rx="10" fill="#fff3e0" stroke="#fb8c00" stroke-width="1.5" />
+    <text x="55" y="235" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#e65100">Babuza Components</text>
+    
+    <rect x="60" y="260" width="120" height="60" rx="5" fill="#ffffff" stroke="#fb8c00" />
+    <text x="120" y="295" font-family="Arial, sans-serif" font-size="13" fill="#bf360c" text-anchor="middle">Transport</text>
+    
+    <rect x="200" y="260" width="120" height="60" rx="5" fill="#ffffff" stroke="#fb8c00" />
+    <text x="260" y="295" font-family="Arial, sans-serif" font-size="13" fill="#bf360c" text-anchor="middle">WAL</text>
+    
+    <rect x="340" y="260" width="120" height="60" rx="5" fill="#ffffff" stroke="#fb8c00" />
+    <text x="400" y="295" font-family="Arial, sans-serif" font-size="13" fill="#bf360c" text-anchor="middle">Snapshot</text>
+    
+    <rect x="480" y="260" width="120" height="60" rx="5" fill="#ffffff" stroke="#fb8c00" />
+    <text x="540" y="295" font-family="Arial, sans-serif" font-size="13" fill="#bf360c" text-anchor="middle">Session</text>
+    
+    <rect x="620" y="260" width="120" height="60" rx="5" fill="#ffffff" stroke="#fb8c00" />
+    <text x="680" y="295" font-family="Arial, sans-serif" font-size="13" fill="#bf360c" text-anchor="middle">Cluster</text>
+  </g>
+
+  <!-- Core Layer (Consensus Engine) -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="370" width="720" height="80" rx="10" fill="#e8f5e9" stroke="#43a047" stroke-width="1.5" />
+    <text x="400" y="415" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#1b5e20" text-anchor="middle">etcd Raft Library</text>
+  </g>
+
+  <path d="M400 180 L400 210" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)" />
+  <path d="M400 340 L400 370" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowhead)" />
+
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
+    </marker>
+  </defs>
+</svg>

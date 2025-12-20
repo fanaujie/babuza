@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package raft
 
 import (
 	"fmt"
+	"reflect"
+	"time"
+
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
-	"time"
 )
 
 type AppliedStatus interface {
@@ -119,7 +120,16 @@ func NewAppliedFacade(firstCommitNotifier AppliedFirstCommitInTermNotifier,
 }
 
 func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
-
+	var memberEvent AppliedPublishMemberEvent
+	if r.raftEventPublisher != nil {
+		rv := reflect.ValueOf(r.raftEventPublisher)
+		if rv.Kind() == reflect.Ptr && rv.IsNil() {
+			// typed nil -> treat as nil interface
+			memberEvent = nil
+		} else {
+			memberEvent = r.raftEventPublisher
+		}
+	}
 	return &appliedFacadeImpl{
 		firstCommitNotifier: r.firstCommitInTermNotifier,
 		sessionManager:      r.sessionManager,
@@ -129,7 +139,7 @@ func newAppliedFacadeFromRaft(r *Raft) *appliedFacadeImpl {
 		trans: &appliedTransportAdaptor{
 			r.trans,
 		},
-		memberEvent:      r.raftEventPublisher,
+		memberEvent:      memberEvent,
 		log:              r.logger,
 		metricsCollector: r.metricsCollector,
 	}

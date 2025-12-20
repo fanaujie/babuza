@@ -172,40 +172,6 @@ func RecoverAsStandalone(
 	logger.Infof("RecoverAsStandalone: found existing node IDs: %v, forcing standalone mode for node %d",
 		nodeIds, cfg.LocalPeerID)
 
-	//// Build the ConfState from WAL replay result by examining config change entries
-	//confState := raftpb.ConfState{}
-	//if snap != nil {
-	//	confState = snap.Metadata.ConfState
-	//}
-	//// Apply config changes from WAL replay to get the final ConfState
-	//if err = walReplayResult.ForEachConfChangeEntries(func(e raftpb.Entry) error {
-	//	var cc raftpb.ConfChange
-	//	if unmarshalErr := cc.Unmarshal(e.Data); unmarshalErr != nil {
-	//		return unmarshalErr
-	//	}
-	//	confState = applyConfChange(confState, cc)
-	//	return nil
-	//}); err != nil {
-	//	return nil, fmt.Errorf("bootstrap: failed to compute ConfState: %w", err)
-	//}
-	//
-	//// Create a snapshot at the current commit index to preserve all existing state
-	//// This ensures that when Raft restarts, it won't try to reapply old entries
-	//compactIndex := hardState.Commit
-	//recoverySnapshot, err := entryStorage.CreateSnapshot(compactIndex, &confState, nil)
-	//if err != nil {
-	//	return nil, fmt.Errorf("bootstrap: failed to create recovery snapshot: %w", err)
-	//}
-	//logger.Infof("RecoverAsStandalone: created snapshot at index %d to preserve existing state", compactIndex)
-	//
-	//// Compact all entries up to the snapshot index
-	//// This removes old config change entries that should not be replayed
-	//if err = entryStorage.Compact(compactIndex); err != nil {
-	//	return nil, fmt.Errorf("bootstrap: failed to compact entries: %w", err)
-	//}
-	//logger.Infof("RecoverAsStandalone: compacted entries up to index %d", compactIndex)
-
-	// Now create standalone config entries starting from commit+1
 	standaloneEntries, err := createRaftConfigChangeEntries(
 		cfg.LocalPeerID,
 		cfg.RaftListenAddress,
@@ -236,9 +202,6 @@ func RecoverAsStandalone(
 	}
 
 	storage := createRaftStorage(snapshotManager, wal, entryStorage, stateMachine, bsmInfo)
-
-	// Restore state machine from the original snapshot (if it exists)
-	// This ensures the state machine has all data up to the commit point
 	if snap != nil {
 		if bsmInfo.diskType {
 			if err = handleDiskStateMachine(stateMachine, bsmInfo, snap, snapshotManager); err != nil {

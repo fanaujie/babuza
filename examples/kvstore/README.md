@@ -1,47 +1,231 @@
-
 # KvStore
 
-KvStore is built using Babuza. Babuza is a framework constructed on the etcd-developed raft library, aimed at reducing the difficulty of using the etcd raft library and adding customized features. KvStore provides a simple REST API for a key-value store cluster.
+A distributed key-value store built with the Babuza Raft framework, demonstrating how to build production-ready distributed systems.
 
 ## Overview
 
-KvStore offers a simplistic yet powerful interface for storing and retrieving data. It's designed with performance and ease of use in mind, making it an ideal choice for various applications.
+KvStore provides a simple REST API for storing and retrieving key-value pairs across a distributed cluster. It showcases all major Babuza components including configurable transport protocols, WAL implementations, session management, and snapshot storage.
 
-## Getting Started
+## Features
 
-### Building KvStore
+- Distributed key-value storage with strong consistency
+- REST API for CRUD operations
+- Interactive CLI client
+- Configurable transport (TCP, HTTP, gRPC)
+- Multiple WAL backends (Babuza, etcd, Badger)
+- Multiple snapshot backends (local disk, MinIO)
+- TLS/mTLS support for both HTTP API and Raft communication
+- Docker support for easy deployment
 
-To build KvStore, follow these steps:
+## Quick Start
 
-```sh
-# Instructions for building KvStore
-# These would be specific commands or steps
+### Build
+
+```bash
+cd examples/kvstore
+go build -o kvstore .
 ```
 
-### Running KvStore
+### Start a 3-Node Cluster
 
-To get KvStore up and running, follow these instructions:
+```bash
+# Terminal 1 - Node 1
+./kvstore server \
+  --raft-cluster-id=100 \
+  --raft-local-peer-id=1 \
+  --raft-local-peer-address=localhost:14201 \
+  --raft-cluster-peers-address=1=localhost:14201,2=localhost:14202,3=localhost:14203 \
+  --kv-http-address=localhost:24201 \
+  --raft-storage-dir=./data/node1
 
-```sh
-# Start command for KvStore
-# Example: ./KvStore --config /path/to/config
+# Terminal 2 - Node 2
+./kvstore server \
+  --raft-cluster-id=100 \
+  --raft-local-peer-id=2 \
+  --raft-local-peer-address=localhost:14202 \
+  --raft-cluster-peers-address=1=localhost:14201,2=localhost:14202,3=localhost:14203 \
+  --kv-http-address=localhost:24202 \
+  --raft-storage-dir=./data/node2
+
+# Terminal 3 - Node 3
+./kvstore server \
+  --raft-cluster-id=100 \
+  --raft-local-peer-id=3 \
+  --raft-local-peer-address=localhost:14203 \
+  --raft-cluster-peers-address=1=localhost:14201,2=localhost:14202,3=localhost:14203 \
+  --kv-http-address=localhost:24203 \
+  --raft-storage-dir=./data/node3
 ```
 
-## Basic Usage
+### Use the CLI Client
 
-Here's how you can start using KvStore:
+```bash
+./kvstore client --cluster-members=1=localhost:24201,2=localhost:24202,3=localhost:24203
 
-```sh
-# Example commands to use KvStore
-# Like setting a key-value pair, retrieving data, etc.
+# Interactive commands:
+> set mykey myvalue
+Successfully set key 'mykey' to value 'myvalue'
+> get mykey
+myvalue
+> delete mykey
+Successfully deleted key 'mykey'
+> help
+Available commands: exit, join, set, get, delete, append, remove, cluster, help
 ```
 
-## Advanced Features
+### Use the REST API
 
-KvStore comes with a range of advanced features:
+The KV Store uses JSON for request/response bodies. All write operations require session information for idempotency support.
 
-- Feature 1
-- Feature 2
-- Feature 3
+```bash
+# Set a key (POST)
+curl -X POST http://localhost:24201/kv \
+  -H "Content-Type: application/json" \
+  -d '{"key":"mykey","value":"myvalue","sessionID":1,"sequenceNumber":1}'
 
-(Description of features)
+# Get a key (GET with query parameter)
+curl "http://localhost:24201/kv?key=mykey"
+
+# Get a key with linearizable read (strongly consistent)
+curl "http://localhost:24201/kv?key=mykey" -H "X-Linearizable: true"
+
+# Append to a key (PUT)
+curl -X PUT http://localhost:24201/kv \
+  -H "Content-Type: application/json" \
+  -d '{"key":"mykey","value":"_appended","sessionID":1,"sequenceNumber":2}'
+
+# Delete a key (DELETE)
+curl -X DELETE http://localhost:24201/kv \
+  -H "Content-Type: application/json" \
+  -d '{"key":"mykey","sessionID":1,"sequenceNumber":3}'
+
+# Get cluster peers
+curl http://localhost:24201/peers
+```
+
+## Server Configuration
+
+### Basic Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--kv-http-address` | `localhost:24200` | HTTP API listen address |
+| `--raft-cluster-id` | `100` | Cluster ID (same for all nodes) |
+| `--raft-local-peer-id` | `1` | Unique node ID |
+| `--raft-local-peer-address` | `localhost:14200` | Raft communication address |
+| `--raft-cluster-peers-address` | `1=localhost:14200` | All cluster peers (ID=address format) |
+| `--raft-storage-dir` | `./raft_storage` | Data storage directory |
+| `--raft-join-cluster` | `false` | Join existing cluster |
+| `--raft-voter` | `true` | Start as voter (false = learner) |
+
+### Component Selection
+
+| Flag | Options | Default |
+|------|---------|---------|
+| `--transport-protocol` | `tcp`, `http`, `grpc` | `tcp` |
+| `--wal-type` | `babuza-wal`, `etcd-wal`, `badger-wal`, `badger-wal-memory` | `babuza-wal` |
+| `--snapshot-type` | `durable`, `volatile`, `minio` | `durable` |
+| `--session-type` | `noop`, `expire`, `lru` | `noop` |
+| `--state-machine` | `memory`, `memory-concurrent`, `disk` | `memory` |
+
+### TLS Configuration
+
+```bash
+# Enable Raft TLS
+./kvstore server \
+  --raft-encrypt \
+  --raft-peer-cert=/path/to/cert.pem \
+  --raft-peer-key=/path/to/key.pem \
+  --raft-peer-root-ca=/path/to/ca.pem
+
+# Enable HTTP TLS
+./kvstore server \
+  --http-cert=/path/to/cert.pem \
+  --http-key=/path/to/key.pem
+```
+
+### MinIO Snapshot Storage
+
+```bash
+./kvstore server \
+  --snapshot-type=minio \
+  --minio-endpoint=play.min.io:9000 \
+  --minio-access-key=YOUR_ACCESS_KEY \
+  --minio-secret-key=YOUR_SECRET_KEY \
+  --minio-bucket=raft-snapshots \
+  --minio-use-ssl=true
+```
+
+## Client Configuration
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--cluster-members` | `1=localhost:24201` | Cluster members (ID=address format) |
+| `--enable-tls` | `false` | Enable TLS for client connections |
+| `--auto-sync-interval` | `5s` | Cluster membership sync interval |
+
+## REST API Reference
+
+### KV Store Endpoints (`/kv`)
+
+| Method | Description | Request Body |
+|--------|-------------|--------------|
+| `GET` | Get value by key | Query: `?key=<key>` |
+| `POST` | Set key-value pair | `{"key":"...", "value":"...", "sessionID":..., "sequenceNumber":...}` |
+| `PUT` | Append to existing key | `{"key":"...", "value":"...", "sessionID":..., "sequenceNumber":...}` |
+| `DELETE` | Delete key | `{"key":"...", "sessionID":..., "sequenceNumber":...}` |
+
+**Headers:**
+- `X-Linearizable: true` - Enable linearizable read (GET only, must be sent to leader)
+
+### Cluster Management Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/peers` | `GET` | Get all cluster peers |
+| `/peers` | `POST` | Add a new peer (voter or learner) |
+| `/peers` | `PUT` | Update peer configuration |
+| `/peers` | `DELETE` | Remove a peer from cluster |
+| `/promote-learner` | `POST` | Promote learner to voter |
+| `/transfer-leader` | `POST` | Transfer leadership to another node |
+| `/sessions` | `GET/POST/DELETE` | Session management |
+| `/metrics` | `GET` | Prometheus metrics |
+
+## Advanced Server Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--disable-forwarding` | `false` | Disable automatic proposal forwarding from followers to leader |
+| `--wal-no-sync` | `false` | Disable fsync on WAL writes (faster but less durable) |
+| `--minio-prefix` | `""` | Object prefix (folder path) for MinIO snapshots |
+
+## Docker Deployment
+
+The Docker setup includes a 3-node KVStore cluster with Prometheus and Grafana for monitoring.
+
+### Build the Docker Image
+
+```bash
+cd examples/kvstore/docker
+./build-docker.sh
+```
+
+This script builds the `babuza-kvstore:latest` image with all required dependencies.
+
+### Start the Cluster
+
+```bash
+docker-compose up -d
+```
+
+### Services
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| KVStore Node 1 | http://localhost:24201 | HTTP API |
+| KVStore Node 2 | http://localhost:24202 | HTTP API |
+| KVStore Node 3 | http://localhost:24203 | HTTP API |
+| Prometheus | http://localhost:9090 | Metrics collection |
+| Grafana | http://localhost:3000 | Metrics dashboard (admin/admin) |
+
+Grafana comes pre-configured with a Babuza Raft dashboard for monitoring cluster health and performance.

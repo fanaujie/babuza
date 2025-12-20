@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+      <feOffset dx="2" dy="2" result="offsetblur" />
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.2" />
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="400" y="30" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#1e293b" text-anchor="middle">Sharded Scheduler Architecture</text>
+
+  <!-- Raft Groups Container -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="50" width="720" height="70" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" />
+    <text x="70" y="75" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#475569">Raft Groups</text>
+  </g>
+
+  <!-- Raft Group boxes -->
+  <rect x="60" y="85" width="40" height="25" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1" />
+  <text x="80" y="102" font-family="Arial, sans-serif" font-size="10" fill="#1565c0" text-anchor="middle">1</text>
+
+  <rect x="110" y="85" width="40" height="25" rx="4" fill="#fff3e0" stroke="#fb8c00" stroke-width="1" />
+  <text x="130" y="102" font-family="Arial, sans-serif" font-size="10" fill="#e65100" text-anchor="middle">2</text>
+
+  <rect x="160" y="85" width="40" height="25" rx="4" fill="#e8f5e9" stroke="#43a047" stroke-width="1" />
+  <text x="180" y="102" font-family="Arial, sans-serif" font-size="10" fill="#2e7d32" text-anchor="middle">3</text>
+
+  <rect x="210" y="85" width="40" height="25" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1" />
+  <text x="230" y="102" font-family="Arial, sans-serif" font-size="10" fill="#1565c0" text-anchor="middle">4</text>
+
+  <rect x="260" y="85" width="40" height="25" rx="4" fill="#fff3e0" stroke="#fb8c00" stroke-width="1" />
+  <text x="280" y="102" font-family="Arial, sans-serif" font-size="10" fill="#e65100" text-anchor="middle">5</text>
+
+  <rect x="310" y="85" width="40" height="25" rx="4" fill="#e8f5e9" stroke="#43a047" stroke-width="1" />
+  <text x="330" y="102" font-family="Arial, sans-serif" font-size="10" fill="#2e7d32" text-anchor="middle">6</text>
+
+  <rect x="360" y="85" width="40" height="25" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1" />
+  <text x="380" y="102" font-family="Arial, sans-serif" font-size="10" fill="#1565c0" text-anchor="middle">7</text>
+
+  <rect x="410" y="85" width="40" height="25" rx="4" fill="#fff3e0" stroke="#fb8c00" stroke-width="1" />
+  <text x="430" y="102" font-family="Arial, sans-serif" font-size="10" fill="#e65100" text-anchor="middle">8</text>
+
+  <rect x="460" y="85" width="40" height="25" rx="4" fill="#e8f5e9" stroke="#43a047" stroke-width="1" />
+  <text x="480" y="102" font-family="Arial, sans-serif" font-size="10" fill="#2e7d32" text-anchor="middle">9</text>
+
+  <rect x="510" y="85" width="40" height="25" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="1" />
+  <text x="530" y="102" font-family="Arial, sans-serif" font-size="10" fill="#1565c0" text-anchor="middle">10</text>
+
+  <rect x="560" y="85" width="40" height="25" rx="4" fill="#fff3e0" stroke="#fb8c00" stroke-width="1" />
+  <text x="580" y="102" font-family="Arial, sans-serif" font-size="10" fill="#e65100" text-anchor="middle">11</text>
+
+  <rect x="610" y="85" width="40" height="25" rx="4" fill="#e8f5e9" stroke="#43a047" stroke-width="1" />
+  <text x="630" y="102" font-family="Arial, sans-serif" font-size="10" fill="#2e7d32" text-anchor="middle">12</text>
+
+  <text x="680" y="102" font-family="Arial, sans-serif" font-size="12" fill="#64748b" text-anchor="middle">...</text>
+
+  <!-- Distribution arrows -->
+  <text x="400" y="145" font-family="Arial, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">groupID % shardNum</text>
+  <line x1="150" y1="155" x2="150" y2="175" stroke="#1976d2" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  <line x1="400" y1="155" x2="400" y2="175" stroke="#fb8c00" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  <line x1="650" y1="155" x2="650" y2="175" stroke="#43a047" stroke-width="1.5" marker-end="url(#arrowhead)" />
+
+  <!-- Shard 0 -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="185" width="220" height="180" rx="10" fill="#e3f2fd" stroke="#1976d2" stroke-width="1.5" />
+    <text x="150" y="210" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1565c0" text-anchor="middle">Shard 0</text>
+  </g>
+
+  <!-- Groups in Shard 0 -->
+  <rect x="60" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#1976d2" stroke-width="1" />
+  <text x="77" y="240" font-family="Arial, sans-serif" font-size="9" fill="#1976d2" text-anchor="middle">1</text>
+  <rect x="105" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#1976d2" stroke-width="1" />
+  <text x="122" y="240" font-family="Arial, sans-serif" font-size="9" fill="#1976d2" text-anchor="middle">4</text>
+  <rect x="150" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#1976d2" stroke-width="1" />
+  <text x="167" y="240" font-family="Arial, sans-serif" font-size="9" fill="#1976d2" text-anchor="middle">7</text>
+  <rect x="195" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#1976d2" stroke-width="1" />
+  <text x="212" y="240" font-family="Arial, sans-serif" font-size="9" fill="#1976d2" text-anchor="middle">10</text>
+
+  <!-- Worker Pool 0 -->
+  <rect x="60" y="265" width="180" height="85" rx="6" fill="#bbdefb" stroke="#1976d2" stroke-width="1" />
+  <text x="150" y="285" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#1565c0" text-anchor="middle">Worker Pool</text>
+  <rect x="75" y="300" width="40" height="35" rx="4" fill="#ffffff" stroke="#1976d2" stroke-width="1" />
+  <text x="95" y="322" font-family="Arial, sans-serif" font-size="9" fill="#1976d2" text-anchor="middle">W</text>
+  <rect x="130" y="300" width="40" height="35" rx="4" fill="#ffffff" stroke="#1976d2" stroke-width="1" />
+  <text x="150" y="322" font-family="Arial, sans-serif" font-size="9" fill="#1976d2" text-anchor="middle">W</text>
+  <rect x="185" y="300" width="40" height="35" rx="4" fill="#ffffff" stroke="#1976d2" stroke-width="1" />
+  <text x="205" y="322" font-family="Arial, sans-serif" font-size="9" fill="#1976d2" text-anchor="middle">W</text>
+
+  <!-- Shard 1 -->
+  <g filter="url(#shadow)">
+    <rect x="290" y="185" width="220" height="180" rx="10" fill="#fff3e0" stroke="#fb8c00" stroke-width="1.5" />
+    <text x="400" y="210" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#e65100" text-anchor="middle">Shard 1</text>
+  </g>
+
+  <!-- Groups in Shard 1 -->
+  <rect x="310" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#fb8c00" stroke-width="1" />
+  <text x="327" y="240" font-family="Arial, sans-serif" font-size="9" fill="#fb8c00" text-anchor="middle">2</text>
+  <rect x="355" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#fb8c00" stroke-width="1" />
+  <text x="372" y="240" font-family="Arial, sans-serif" font-size="9" fill="#fb8c00" text-anchor="middle">5</text>
+  <rect x="400" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#fb8c00" stroke-width="1" />
+  <text x="417" y="240" font-family="Arial, sans-serif" font-size="9" fill="#fb8c00" text-anchor="middle">8</text>
+  <rect x="445" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#fb8c00" stroke-width="1" />
+  <text x="462" y="240" font-family="Arial, sans-serif" font-size="9" fill="#fb8c00" text-anchor="middle">11</text>
+
+  <!-- Worker Pool 1 -->
+  <rect x="310" y="265" width="180" height="85" rx="6" fill="#ffe0b2" stroke="#fb8c00" stroke-width="1" />
+  <text x="400" y="285" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#e65100" text-anchor="middle">Worker Pool</text>
+  <rect x="325" y="300" width="40" height="35" rx="4" fill="#ffffff" stroke="#fb8c00" stroke-width="1" />
+  <text x="345" y="322" font-family="Arial, sans-serif" font-size="9" fill="#fb8c00" text-anchor="middle">W</text>
+  <rect x="380" y="300" width="40" height="35" rx="4" fill="#ffffff" stroke="#fb8c00" stroke-width="1" />
+  <text x="400" y="322" font-family="Arial, sans-serif" font-size="9" fill="#fb8c00" text-anchor="middle">W</text>
+  <rect x="435" y="300" width="40" height="35" rx="4" fill="#ffffff" stroke="#fb8c00" stroke-width="1" />
+  <text x="455" y="322" font-family="Arial, sans-serif" font-size="9" fill="#fb8c00" text-anchor="middle">W</text>
+
+  <!-- Shard 2 -->
+  <g filter="url(#shadow)">
+    <rect x="540" y="185" width="220" height="180" rx="10" fill="#e8f5e9" stroke="#43a047" stroke-width="1.5" />
+    <text x="650" y="210" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2e7d32" text-anchor="middle">Shard 2</text>
+  </g>
+
+  <!-- Groups in Shard 2 -->
+  <rect x="560" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#43a047" stroke-width="1" />
+  <text x="577" y="240" font-family="Arial, sans-serif" font-size="9" fill="#43a047" text-anchor="middle">3</text>
+  <rect x="605" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#43a047" stroke-width="1" />
+  <text x="622" y="240" font-family="Arial, sans-serif" font-size="9" fill="#43a047" text-anchor="middle">6</text>
+  <rect x="650" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#43a047" stroke-width="1" />
+  <text x="667" y="240" font-family="Arial, sans-serif" font-size="9" fill="#43a047" text-anchor="middle">9</text>
+  <rect x="695" y="225" width="35" height="22" rx="3" fill="#ffffff" stroke="#43a047" stroke-width="1" />
+  <text x="712" y="240" font-family="Arial, sans-serif" font-size="9" fill="#43a047" text-anchor="middle">12</text>
+
+  <!-- Worker Pool 2 -->
+  <rect x="560" y="265" width="180" height="85" rx="6" fill="#c8e6c9" stroke="#43a047" stroke-width="1" />
+  <text x="650" y="285" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#2e7d32" text-anchor="middle">Worker Pool</text>
+  <rect x="575" y="300" width="40" height="35" rx="4" fill="#ffffff" stroke="#43a047" stroke-width="1" />
+  <text x="595" y="322" font-family="Arial, sans-serif" font-size="9" fill="#43a047" text-anchor="middle">W</text>
+  <rect x="630" y="300" width="40" height="35" rx="4" fill="#ffffff" stroke="#43a047" stroke-width="1" />
+  <text x="650" y="322" font-family="Arial, sans-serif" font-size="9" fill="#43a047" text-anchor="middle">W</text>
+  <rect x="685" y="300" width="40" height="35" rx="4" fill="#ffffff" stroke="#43a047" stroke-width="1" />
+  <text x="705" y="322" font-family="Arial, sans-serif" font-size="9" fill="#43a047" text-anchor="middle">W</text>
+
+  <!-- Benefits Section -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="385" width="720" height="100" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.5" />
+  </g>
+
+  <text x="150" y="415" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#475569" text-anchor="middle">Parallel Processing</text>
+  <text x="150" y="435" font-family="Arial, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Each shard processes</text>
+  <text x="150" y="450" font-family="Arial, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">groups independently</text>
+
+  <text x="400" y="415" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#475569" text-anchor="middle">No Lock Contention</text>
+  <text x="400" y="435" font-family="Arial, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Groups on same shard</text>
+  <text x="400" y="450" font-family="Arial, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">share worker pool</text>
+
+  <text x="650" y="415" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#475569" text-anchor="middle">Scalability</text>
+  <text x="650" y="435" font-family="Arial, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">Add shards for</text>
+  <text x="650" y="450" font-family="Arial, sans-serif" font-size="10" fill="#64748b" text-anchor="middle">more parallelism</text>
+
+  <!-- Config hint -->
+  <text x="400" y="475" font-family="Arial, sans-serif" font-size="10" fill="#94a3b8" text-anchor="middle">Config: SchedulerShardNum (default: 2) | SchedulerShardWorkerNum (default: 3) | SchedulerQueueSize (default: 64)</text>
+</svg>

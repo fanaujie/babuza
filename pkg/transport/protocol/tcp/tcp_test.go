@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package tcp
 
 import (
 	"fmt"
+	"math/rand"
+	"net"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/connpool"
@@ -28,17 +33,11 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
-	"math/rand"
-	"net"
-	"sync"
-	"testing"
-	"time"
 )
 
 var (
 	defaultPoolCfg = connpool.Config{
 		MaxConnectionsPerHost: 5,
-		DialTimeout:           1 * time.Second,
 		IdleTimeout:           5 * time.Minute,
 	}
 	defaultCfg = conn.Config{
@@ -190,7 +189,7 @@ func NewConnectionCreator(dialer Dialer, tlsConfig ibabuza.TLSConfig, cfg conn.C
 }
 
 func (c *ConnectionCreator) Dial(address string) (*conn.FrameConnection, error) {
-	netConn, err := c.dialer.DialWithTimeout(c.tlsConfig, 0, address, defaultPoolCfg.DialTimeout)
+	netConn, err := c.dialer.Dial(c.tlsConfig, 0, address)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +270,6 @@ func TestNewServerClient(t *testing.T) {
 		creator := NewConnectionCreator(c.NetworkIO, c.clientTls, defaultCfg)
 		pool := connpool.NewConnectionPool(creator, connpool.Config{
 			MaxConnectionsPerHost: defaultPoolCfg.MaxConnectionsPerHost,
-			DialTimeout:           defaultPoolCfg.DialTimeout,
 			IdleTimeout:           defaultPoolCfg.IdleTimeout,
 		})
 		client := NewRaftMsgClient(pool, peerAddressResolver(c.PeerAddress))
@@ -293,7 +291,7 @@ func TestServer_StartAndStop(t *testing.T) {
 	assert.Nil(t, srv.Start())
 	conns := make(map[int]net.Conn)
 	for i := 0; i < 8; i++ {
-		conn, err := n.DialWithTimeout(ibabuza.TLSConfig{}, 0, local, defaultPoolCfg.DialTimeout)
+		conn, err := n.Dial(ibabuza.TLSConfig{}, 0, local)
 		assert.Nil(t, err)
 		conns[i] = conn
 	}
@@ -448,7 +446,6 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 		creator := NewConnectionCreator(c.NetworkIO, c.clientTls, defaultCfg)
 		pool := connpool.NewConnectionPool(creator, connpool.Config{
 			MaxConnectionsPerHost: defaultPoolCfg.MaxConnectionsPerHost,
-			DialTimeout:           defaultPoolCfg.DialTimeout,
 			IdleTimeout:           defaultPoolCfg.IdleTimeout,
 		})
 		client := NewRaftMsgClient(pool, peerAddressResolver(c.PeerAddress))
@@ -592,7 +589,6 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 				creator := NewConnectionCreator(c.NetworkIO, c.clientTls, defaultCfg)
 				pool := connpool.NewConnectionPool(creator, connpool.Config{
 					MaxConnectionsPerHost: defaultPoolCfg.MaxConnectionsPerHost,
-					DialTimeout:           defaultPoolCfg.DialTimeout,
 					IdleTimeout:           defaultPoolCfg.IdleTimeout,
 				})
 				client := NewRaftMsgClient(pool, peerAddressResolver(c.PeerAddress))

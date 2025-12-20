@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package proxynetwork
 
 import (
 	"fmt"
-	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/stretchr/testify/assert"
 	"net"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/stretchr/testify/assert"
 )
 
 type mockAddr struct {
@@ -465,7 +465,9 @@ func TestProxyNetwork_DisconnectProxiesIds(t *testing.T) {
 
 func TestSaveTopologyAsSVG(t *testing.T) {
 	// Setup test file name
-	testFile := os.TempDir() + "test_topology.svg"
+	testFile, err := os.MkdirTemp("", "topology")
+	assert.Nil(t, err)
+	testFile = testFile + "/topology.svg"
 	t.Log(testFile)
 	// Clean up after test
 	defer os.Remove(testFile)
@@ -535,7 +537,7 @@ func TestSaveTopologyAsSVG(t *testing.T) {
 	}
 
 	// Set up some test partitions
-	err := network.SetPartition([]uint64{1, 2})
+	err = network.SetPartition([]uint64{1, 2})
 	if err != nil {
 		t.Fatalf("Failed to set partition 1,2: %v", err)
 	}

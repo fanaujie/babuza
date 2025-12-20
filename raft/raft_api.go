@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package raft
 
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
+
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/idgenerator"
@@ -25,8 +27,6 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/syncutil"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
-	"sync"
-	"time"
 )
 
 type ClientSession struct {

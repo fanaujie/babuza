@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300">
+  <!-- Background -->
+  <rect width="500" height="300" fill="#fafafa"/>
+
+  <!-- Title -->
+  <text x="250" y="30" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#2c3e50">Session Persistence in Snapshot</text>
+
+  <!-- Outer snapshot box -->
+  <rect x="30" y="50" width="440" height="230" rx="8" fill="#ecf0f1" stroke="#95a5a6" stroke-width="2"/>
+  <text x="50" y="75" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2c3e50">Snapshot</text>
+
+  <!-- State Machine Data -->
+  <rect x="50" y="90" width="400" height="35" rx="5" fill="#3498db" stroke="#2980b9" stroke-width="1"/>
+  <text x="250" y="113" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="white">State Machine Data</text>
+
+  <!-- Cluster Metadata -->
+  <rect x="50" y="135" width="400" height="35" rx="5" fill="#9b59b6" stroke="#8e44ad" stroke-width="1"/>
+  <text x="250" y="158" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="white">Cluster Metadata</text>
+
+  <!-- Session Data outer box -->
+  <rect x="50" y="180" width="400" height="85" rx="5" fill="#e8f6f3" stroke="#1abc9c" stroke-width="2"/>
+  <text x="70" y="200" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#16a085">Session Data (SessionID → {SeqNum → Result})</text>
+
+  <!-- Session entries -->
+  <rect x="70" y="210" width="360" height="45" rx="4" fill="white" stroke="#bdc3c7" stroke-width="1"/>
+
+  <!-- Session 42 -->
+  <text x="85" y="230" font-family="monospace" font-size="11" fill="#2c3e50">Session 42:</text>
+  <rect x="170" y="218" width="40" height="18" rx="2" fill="#d5f5e3"/>
+  <text x="190" y="231" text-anchor="middle" font-family="monospace" font-size="10" fill="#27ae60">seq 1</text>
+  <rect x="215" y="218" width="40" height="18" rx="2" fill="#d5f5e3"/>
+  <text x="235" y="231" text-anchor="middle" font-family="monospace" font-size="10" fill="#27ae60">seq 2</text>
+  <rect x="260" y="218" width="40" height="18" rx="2" fill="#fadbd8"/>
+  <text x="280" y="231" text-anchor="middle" font-family="monospace" font-size="10" fill="#e74c3c">seq 3</text>
+
+  <!-- Session 99 -->
+  <text x="85" y="248" font-family="monospace" font-size="11" fill="#2c3e50">Session 99:</text>
+  <rect x="170" y="236" width="40" height="18" rx="2" fill="#d5f5e3"/>
+  <text x="190" y="249" text-anchor="middle" font-family="monospace" font-size="10" fill="#27ae60">seq 1</text>
+  <rect x="215" y="236" width="40" height="18" rx="2" fill="#d5f5e3"/>
+  <text x="235" y="249" text-anchor="middle" font-family="monospace" font-size="10" fill="#27ae60">seq 2</text>
+
+  <!-- Legend -->
+  <rect x="330" y="220" width="15" height="15" rx="2" fill="#d5f5e3" stroke="#27ae60" stroke-width="1"/>
+  <text x="350" y="232" font-family="Arial, sans-serif" font-size="10" fill="#2c3e50">OK</text>
+  <rect x="380" y="220" width="15" height="15" rx="2" fill="#fadbd8" stroke="#e74c3c" stroke-width="1"/>
+  <text x="400" y="232" font-family="Arial, sans-serif" font-size="10" fill="#2c3e50">Error</text>
+</svg>
