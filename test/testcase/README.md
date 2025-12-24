@@ -68,6 +68,12 @@ go test -race ./...
 | `proxy_two_partition_test.go` | `TestTwoPartition` | Network split |
 | `proxy_linearizability_test.go` | `TestLinearizability` | Read consistency |
 
+### Fault Injection (Proxy Tests)
+
+| File | Test | Description |
+|------|------|-------------|
+| `proxy_fault_injection_test.go` | `TestFaultInjection` | Cluster resilience under network faults (delay, loss, reorder) |
+
 ### Disaster Recovery
 
 | File | Test | Description |
@@ -130,6 +136,60 @@ func TestPartition(t *testing.T) {
 
     // Verify recovery
     // ...
+}
+```
+
+### Fault Injection Test
+
+```go
+func TestFaultInjection(t *testing.T) {
+    proxyNetwork := proxynetwork.New()
+    cluster := testcluster.CreateTestCluster(1, t.TempDir(), proxyNetwork, createApp)
+    defer cluster.Teardown()
+
+    // ... setup cluster ...
+
+    // Test delay fault
+    cluster.SetPeerFault(1, proxynetwork.FaultConfig{
+        DelayMin: 30 * time.Millisecond,
+        DelayMax: 50 * time.Millisecond,
+    })
+    // Execute operations...
+    cluster.ClearPeerFault(1)
+
+    // Test packet loss
+    cluster.SetPeerFault(2, proxynetwork.FaultConfig{
+        LossRate: 0.3,
+    })
+    // Execute operations...
+    cluster.ClearPeerFault(2)
+
+    // Test reordering
+    cluster.SetPeerFault(3, proxynetwork.FaultConfig{
+        ReorderBufferSize:    5,
+        ReorderFlushInterval: 100 * time.Millisecond,
+    })
+    // Execute operations...
+    cluster.ClearPeerFault(3)
+
+    // Test combined faults on all peers
+    combinedConfig := proxynetwork.FaultConfig{
+        LossRate:             0.2,
+        DelayMin:             20 * time.Millisecond,
+        DelayMax:             40 * time.Millisecond,
+        ReorderBufferSize:    3,
+        ReorderFlushInterval: 80 * time.Millisecond,
+    }
+    cluster.SetPeerFault(1, combinedConfig)
+    cluster.SetPeerFault(2, combinedConfig)
+    cluster.SetPeerFault(3, combinedConfig)
+    // Execute operations...
+    cluster.ClearPeerFault(1)
+    cluster.ClearPeerFault(2)
+    cluster.ClearPeerFault(3)
+
+    // Verify cluster consistency
+    cluster.CheckPeersConsistency(wait, connectedGroup.GetIDs())
 }
 ```
 

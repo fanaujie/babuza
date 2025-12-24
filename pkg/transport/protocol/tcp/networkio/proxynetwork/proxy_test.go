@@ -306,3 +306,96 @@ func TestProxy_Disable(t *testing.T) {
 		}(tc)
 	}
 }
+
+func TestProxy_FaultInjection(t *testing.T) {
+	pc := ibabuza.ProxyConfig{
+		InAddr:  "127.0.0.1:14201",
+		OutAddr: "127.0.0.1:24201",
+	}
+
+	t.Run("SetFault and ClearFault", func(t *testing.T) {
+		p := NewProxy(pc)
+		assert.False(t, p.IsFaultEnabled())
+
+		p.SetFault(FaultConfig{
+			LossRate: 0.5,
+			DelayMin: 10 * time.Millisecond,
+			DelayMax: 20 * time.Millisecond,
+		})
+		assert.True(t, p.IsFaultEnabled())
+
+		p.ClearFault()
+		assert.False(t, p.IsFaultEnabled())
+	})
+
+	t.Run("FaultInjection with delay", func(t *testing.T) {
+		p := NewProxy(pc)
+		// Set fault before enabling
+		p.SetFault(FaultConfig{
+			DelayMin: 50 * time.Millisecond,
+			DelayMax: 50 * time.Millisecond,
+		})
+		assert.Nil(t, p.Enable())
+		defer p.Disable()
+
+		server := newPeerEchoServer(ibabuza.TLSConfig{}, pc.OutAddr)
+		assert.Nil(t, server.start())
+		defer server.stop()
+
+		conn, err := netutil.TcpDial(ibabuza.TLSConfig{}, pc.InAddr)
+		assert.Nil(t, err)
+		defer conn.Close()
+
+		wData := []byte{1, 2, 3, 4}
+		rData := make([]byte, len(wData))
+
+		start := time.Now()
+		_, err = conn.Write(wData)
+		assert.Nil(t, err)
+		_, err = conn.Read(rData)
+		assert.Nil(t, err)
+		elapsed := time.Since(start)
+
+		assert.Equal(t, wData, rData)
+		// Should have at least the configured delay
+		assert.GreaterOrEqual(t, elapsed, 45*time.Millisecond)
+	})
+
+	t.Run("ClearFault restores normal operation", func(t *testing.T) {
+		p := NewProxy(ibabuza.ProxyConfig{
+			InAddr:  "127.0.0.1:14202",
+			OutAddr: "127.0.0.1:24202",
+		})
+		// First set a long delay
+		p.SetFault(FaultConfig{
+			DelayMin: 500 * time.Millisecond,
+			DelayMax: 500 * time.Millisecond,
+		})
+		// Then clear it
+		p.ClearFault()
+		assert.Nil(t, p.Enable())
+		defer p.Disable()
+
+		server := newPeerEchoServer(ibabuza.TLSConfig{}, "127.0.0.1:24202")
+		assert.Nil(t, server.start())
+		defer server.stop()
+
+		conn, err := netutil.TcpDial(ibabuza.TLSConfig{}, "127.0.0.1:14202")
+		assert.Nil(t, err)
+		defer conn.Close()
+
+		wData := []byte{1, 2, 3, 4}
+		rData := make([]byte, len(wData))
+
+		start := time.Now()
+		_, err = conn.Write(wData)
+		assert.Nil(t, err)
+		_, err = conn.Read(rData)
+		assert.Nil(t, err)
+		elapsed := time.Since(start)
+
+		assert.Equal(t, wData, rData)
+		// Should be fast (no delay)
+		assert.Less(t, elapsed, 100*time.Millisecond)
+	})
+}

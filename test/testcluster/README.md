@@ -224,6 +224,48 @@ cluster.SetPartition([]uint64{1, 2, 3})
 connectedGroup.Add(3)
 ```
 
+### Fault Injection
+
+Inject network faults (delay, packet loss, reordering) to test cluster resilience:
+
+```go
+import "github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
+
+// Inject delay fault on peer 1
+cluster.SetPeerFault(1, proxynetwork.FaultConfig{
+    DelayMin: 30 * time.Millisecond,
+    DelayMax: 50 * time.Millisecond,
+})
+
+// Inject packet loss on peer 2
+cluster.SetPeerFault(2, proxynetwork.FaultConfig{
+    LossRate: 0.3, // 30% packet loss
+})
+
+// Inject packet reordering on peer 3
+cluster.SetPeerFault(3, proxynetwork.FaultConfig{
+    ReorderBufferSize:    5,
+    ReorderFlushInterval: 100 * time.Millisecond,
+})
+
+// Combined faults on all peers
+combinedConfig := proxynetwork.FaultConfig{
+    LossRate:             0.2,
+    DelayMin:             20 * time.Millisecond,
+    DelayMax:             40 * time.Millisecond,
+    ReorderBufferSize:    3,
+    ReorderFlushInterval: 80 * time.Millisecond,
+}
+cluster.SetPeerFault(1, combinedConfig)
+cluster.SetPeerFault(2, combinedConfig)
+cluster.SetPeerFault(3, combinedConfig)
+
+// Clear faults to restore normal operation
+cluster.ClearPeerFault(1)
+cluster.ClearPeerFault(2)
+cluster.ClearPeerFault(3)
+```
+
 ## BabuzaCluster Methods
 
 ### Cluster Lifecycle
@@ -252,6 +294,13 @@ connectedGroup.Add(3)
 | `ConnectPeer(peerID)` | Reconnect a peer to the network |
 | `SetPartition(peerIDs)` | Define which peers can communicate |
 | `IsUseProxyNetwork()` | Check if proxy network is enabled |
+
+### Fault Injection (Proxy Network Only)
+
+| Method | Description |
+|--------|-------------|
+| `SetPeerFault(peerID, config)` | Enable fault injection on a peer |
+| `ClearPeerFault(peerID)` | Disable fault injection on a peer |
 
 ### Cluster Verification
 

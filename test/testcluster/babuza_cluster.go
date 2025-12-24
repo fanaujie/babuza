@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
 	"github.com/fanaujie/babuza/pkg/utility/multierror"
 	babuza "github.com/fanaujie/babuza/raft"
 )
@@ -438,6 +439,24 @@ func (c *BabuzaCluster) ConnectPeer(peerID uint64) error {
 func (c *BabuzaCluster) SetPartition(peerIDs []uint64) error {
 	if c.useProxyNetwork {
 		return c.proxyNetwork.SetPartition(peerIDs)
+	}
+	return nil // No operation needed in direct connection mode
+}
+
+// SetPeerFault enables fault injection on the specified peer's proxy.
+func (c *BabuzaCluster) SetPeerFault(peerID uint64, config proxynetwork.FaultConfig) error {
+	if c.useProxyNetwork {
+		pn := c.proxyNetwork.(*proxynetwork.ProxyNetwork)
+		return pn.SetProxyFault(peerID, config)
+	}
+	return nil // No operation needed in direct connection mode
+}
+
+// ClearPeerFault disables fault injection and restores normal operation.
+func (c *BabuzaCluster) ClearPeerFault(peerID uint64) error {
+	if c.useProxyNetwork {
+		pn := c.proxyNetwork.(*proxynetwork.ProxyNetwork)
+		return pn.ClearProxyFault(peerID)
 	}
 	return nil // No operation needed in direct connection mode
 }

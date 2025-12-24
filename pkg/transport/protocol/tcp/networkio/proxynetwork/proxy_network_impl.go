@@ -12,20 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package proxynetwork
 
 import (
 	"errors"
 	"fmt"
-	"github.com/fanaujie/babuza/ibabuza"
-	"github.com/fanaujie/babuza/pkg/utility/multierror"
-	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	"net"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/utility/multierror"
+	"github.com/fanaujie/babuza/pkg/utility/netutil"
 )
 
 var (
@@ -316,6 +316,28 @@ func (n *ProxyNetwork) DisconnectProxiesIds() []uint64 {
 		}
 	}
 	return result
+}
+
+func (n *ProxyNetwork) SetProxyFault(proxyId uint64, config FaultConfig) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	p, ok := n.proxy[proxyId]
+	if !ok {
+		return ErrNotExistProxy
+	}
+	p.SetFault(config)
+	return nil
+}
+
+func (n *ProxyNetwork) ClearProxyFault(proxyId uint64) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	p, ok := n.proxy[proxyId]
+	if !ok {
+		return ErrNotExistProxy
+	}
+	p.ClearFault()
+	return nil
 }
 
 func (n *ProxyNetwork) SaveTopologyAsSVG(filename string) error {

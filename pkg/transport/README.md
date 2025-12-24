@@ -445,22 +445,6 @@ TCP uses a custom frame protocol with CRC32 checksums:
 | `PubAppServiceReqType` | 6 | Publish app service request |
 | `PubAppServiceResType` | 7 | Publish app service response |
 
-**TCP Connection Flow:**
-```
-Client                                Server
-  │                                      │
-  │─────── Connect (TLS handshake) ─────►│
-  │                                      │
-  │─────── Frame: BatchMessage ─────────►│
-  │                                      │ ProcessBatchMessage()
-  │                                      │
-  │─────── Frame: SnapshotMsgReq ───────►│
-  │◄────── Frame: SnapshotMsgRes ────────│ ProcessSnapshotMessage()
-  │                                      │
-  │─────── Frame: ClusterPeersReq ──────►│
-  │◄────── Frame: ClusterPeersRes ───────│ GetClusterPeer()
-  │                                      │
-```
 
 ### HTTP Protocol
 
@@ -604,6 +588,8 @@ network.SetPartition([]uint64{1, 2, 3})
 | `DisconnectProxy(proxyId)` | Disable a proxy (stop listening, close connections) |
 | `IsProxyConnected(proxyId)` | Check if a proxy is enabled |
 | `SetPartition(proxyIds)` | Define which proxies can communicate |
+| `SetProxyFault(proxyId, config)` | Enable fault injection on a proxy |
+| `ClearProxyFault(proxyId)` | Disable fault injection on a proxy |
 | `Dial(cfg, fromId, toEndpoint)` | Create a connection through the proxy network |
 | `DialWithTimeout(cfg, fromId, toEndpoint, timeout)` | Dial with connection timeout |
 | `Listen(cfg, endpoint)` | Create a listener for incoming connections |
@@ -660,3 +646,106 @@ This generates a visual representation showing:
 - All proxy nodes with their addresses
 - Enabled (green) vs disabled (red) status
 - Partition groupings
+
+### Fault Injection
+
+The proxy network supports **fault injection** to simulate real-world network conditions. Each proxy can inject faults on writes to backend connections, enabling testing of cluster resilience under adverse conditions.
+
+#### Fault Types
+
+| Fault Type | Description |
+|------------|-------------|
+| **Packet Loss** | Randomly drops packets based on a configurable loss rate (0.0-1.0) |
+| **Delay/Latency** | Adds random delay between min and max duration before forwarding |
+| **Reorder** | Buffers packets and flushes them in random order |
+
+#### FaultConfig
+
+```go
+import "github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
+
+type FaultConfig struct {
+    // LossRate is the probability of dropping a packet (0.0-1.0)
+    LossRate float64
+
+    // DelayMin is the minimum delay to add before forwarding
+    DelayMin time.Duration
+
+    // DelayMax is the maximum delay to add before forwarding
+    DelayMax time.Duration
+
+    // ReorderBufferSize is the buffer size for out-of-order delivery
+    // Set to 0 to disable reordering
+    ReorderBufferSize int
+
+    // ReorderFlushInterval is the interval to flush the reorder buffer
+    // Set to 0 to disable time-based flushing (only flush when buffer is full)
+    ReorderFlushInterval time.Duration
+}
+```
+
+#### Fault Injection API
+
+| Method | Description |
+|--------|-------------|
+| `SetFault(config FaultConfig)` | Enable fault injection on the proxy |
+| `ClearFault()` | Disable fault injection and restore normal operation |
+| `IsFaultEnabled()` | Check if fault injection is enabled |
+
+#### Usage Examples
+
+**Delay Injection:**
+```go
+// Add 30-50ms delay to peer 1
+proxy.SetFault(proxynetwork.FaultConfig{
+    DelayMin: 30 * time.Millisecond,
+    DelayMax: 50 * time.Millisecond,
+})
+```
+
+**Packet Loss:**
+```go
+// 30% packet loss on peer 2
+proxy.SetFault(proxynetwork.FaultConfig{
+    LossRate: 0.3,
+})
+```
+
+**Packet Reordering:**
+```go
+// Reorder packets with buffer size 5, flush every 100ms
+proxy.SetFault(proxynetwork.FaultConfig{
+    ReorderBufferSize:    5,
+    ReorderFlushInterval: 100 * time.Millisecond,
+})
+```
+
+**Combined Faults:**
+```go
+// All fault types combined - randomly selects one per write
+proxy.SetFault(proxynetwork.FaultConfig{
+    LossRate:             0.2,
+    DelayMin:             20 * time.Millisecond,
+    DelayMax:             40 * time.Millisecond,
+    ReorderBufferSize:    3,
+    ReorderFlushInterval: 80 * time.Millisecond,
+})
+```
+
+**Clear Faults:**
+```go
+// Restore normal operation
+proxy.ClearFault()
+```
+
+#### Fault Selection Behavior
+
+When multiple fault types are enabled, **one fault type is randomly selected per write**:
+- If delay is selected: packet is delayed then forwarded
+- If loss is selected: packet may be dropped based on loss rate
+- If reorder is selected: packet is buffered for later out-of-order delivery
+
+The reorder buffer is flushed:
+- When buffer reaches capacity (shuffled randomly)
+- When `ReorderFlushInterval` timer fires (if configured)
+- When `ClearFault()` or `Close()` is called

@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package proxynetwork
 
 import (
+	"net"
+	"sync"
+
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/netutil"
-	"net"
-	"sync"
 )
 
 const (
@@ -35,6 +35,9 @@ type Proxy struct {
 	disableCh   chan struct{}
 	wg          sync.WaitGroup
 	mu          sync.Mutex
+
+	faultConfig  *FaultConfig // nil means no fault
+	faultWriters []*faultWriter
 }
 
 func NewProxy(config ibabuza.ProxyConfig) *Proxy {
@@ -72,11 +75,23 @@ func (p *Proxy) Enable() error {
 						conn.Close()
 						continue
 					}
+					// Wrap backend connection with faultWriter
+					fw := newFaultWriter(remoteConn)
+					p.mu.Lock()
 					p.monitorConn = append(p.monitorConn, remoteConn)
+					p.faultWriters = append(p.faultWriters, fw)
+					// Apply current fault config to new connection
+					if p.faultConfig != nil {
+						fw.SetFault(*p.faultConfig)
+					}
+					p.mu.Unlock()
+
 					p.wg.Add(2)
-					//directional copy
-					go p.handleConn(remoteConn, conn)
+					// Directional copy (handleConn(wConn, rConn) reads from rConn, writes to wConn)
+					// Backend to client: read from backend, write to client (no fault)
 					go p.handleConn(conn, remoteConn)
+					// Client to backend: read from client, write to backend via faultWriter
+					go p.handleConn(fw, conn)
 				}
 			}
 		}()
@@ -95,6 +110,7 @@ func (p *Proxy) Disable() error {
 		for _, conn := range p.monitorConn {
 			conn.Close()
 		}
+		p.faultWriters = nil
 		p.wg.Wait()
 	}
 	return nil
@@ -125,4 +141,28 @@ func (p *Proxy) IsEnable() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.enable
+}
+
+func (p *Proxy) SetFault(config FaultConfig) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.faultConfig = &config
+	for _, fw := range p.faultWriters {
+		fw.SetFault(config)
+	}
+}
+
+func (p *Proxy) ClearFault() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.faultConfig = nil
+	for _, fw := range p.faultWriters {
+		fw.ClearFault()
+	}
+}
+
+func (p *Proxy) IsFaultEnabled() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.faultConfig != nil
 }
