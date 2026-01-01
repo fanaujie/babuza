@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package testcase
 
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	"github.com/fanaujie/babuza/examples/kvstore/client"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kvstore"
@@ -28,7 +29,6 @@ import (
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func snapshotManualTriggerTestComponents() []BabuzaComponent {
@@ -60,24 +60,24 @@ func snapshotManualTriggerTestComponents() []BabuzaComponent {
 
 	// Create a BabuzaComponent for each test case
 	for _, tc := range testCases {
-		for _, snapshotType := range []string{builder.DurableSnapshot, builder.MinIOSnapshot} {
+		for _, snapshotType := range []string{builder.DurableSnapshot, builder.S3Snapshot} {
 			for _, transport := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
-				var mc *minioContainer
-				if snapshotType == builder.MinIOSnapshot {
-					mc = &minioContainer{}
+				var sc *s3Container
+				if snapshotType == builder.S3Snapshot {
+					sc = &s3Container{}
 				}
 				components = append(components, BabuzaComponent{
 					InitFunc: func() error {
-						if mc == nil {
+						if sc == nil {
 							return nil
 						}
-						return mc.Setup()
+						return sc.Setup()
 					},
 					DeferFunc: func() error {
-						if mc == nil {
+						if sc == nil {
 							return nil
 						}
-						return mc.Defer()
+						return sc.Defer()
 					},
 					CaseName:           "SnapshotManualTrigger: 3nodes-" + transport + "-BabuzaWal-" + snapshotType + "-" + tc.caseName,
 					ClusterId:          1,
@@ -88,16 +88,13 @@ func snapshotManualTriggerTestComponents() []BabuzaComponent {
 								transport, proxyNet).
 								SetClusterId(config.BubuzaConfig.ClusterID).
 								SetStorageRootDir(storageDir)
-							if snapshotType == builder.MinIOSnapshot {
-								endpoint, err := mc.minioContainer.ConnectionString(context.Background())
-								if err != nil {
-									panic(err)
-								}
-								b.SetMinIOConfig(&cloudstorage.Config{
-									Endpoint:        endpoint,
-									AccessKeyID:     mc.minioContainer.Username,
-									SecretAccessKey: mc.minioContainer.Password,
-									UseSSL:          false,
+							if snapshotType == builder.S3Snapshot {
+								b.SetS3Config(&cloudstorage.S3Config{
+									Endpoint:        sc.endpoint,
+									Region:          "us-east-1",
+									AccessKeyID:     rustfsUsername,
+									SecretAccessKey: rustfsPassword,
+									UsePathStyle:    true,
 									Bucket:          "test-bucket",
 									Prefix:          "snapshot",
 								})

@@ -62,14 +62,14 @@ func (md *Metadata) Decode(srcR io.Reader) (babuzapb.SnapshotMetadata, error) {
 	byteSlice := allocator.Acquire(metadataFileSizeFieldLength)
 	defer allocator.Release(byteSlice)
 	buf := byteSlice.Buffer[:metadataFileSizeFieldLength]
-	_, err := srcR.Read(buf)
+	_, err := io.ReadFull(srcR, buf)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
 	dataSize := binary.LittleEndian.Uint64(buf)
 
 	//read crc
-	_, err = srcR.Read(buf)
+	_, err = io.ReadFull(srcR, buf)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
@@ -79,7 +79,7 @@ func (md *Metadata) Decode(srcR io.Reader) (babuzapb.SnapshotMetadata, error) {
 	dataByteSlice := allocator.Acquire(int(dataSize))
 	defer allocator.Release(dataByteSlice)
 	dataBuf := dataByteSlice.Buffer[:dataSize]
-	_, err = te.Read(dataBuf)
+	_, err = io.ReadFull(te, dataBuf)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}

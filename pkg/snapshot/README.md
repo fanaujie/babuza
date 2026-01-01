@@ -22,7 +22,7 @@ The `snapshot` package handles creating, storing, loading, and purging snapshots
 |---------|----------|----------|
 | Durable | `builder.DurableSnapshot` | Production: persistent filesystem storage |
 | Volatile | `builder.VolatileSnapshot` | Testing: in-memory, non-persistent |
-| MinIO | `builder.MinIOSnapshot` | Cloud: S3-compatible object storage |
+| S3 | `builder.S3Snapshot` | Cloud: AWS S3 or S3-compatible object storage |
 
 ## Usage
 
@@ -40,21 +40,22 @@ component := builder.NewBabuzaComponentBuilder(&builder.BabuzaComponentConfig{
 snapshotMgr := component.SnapshotManager
 ```
 
-### MinIO Configuration
+### S3 Configuration
 
 ```go
 import "github.com/fanaujie/babuza/pkg/snapshot/fs/cloudstorage"
 
 component := builder.NewBabuzaComponentBuilder(&builder.BabuzaComponentConfig{
     StorageRootDir: "/var/lib/babuza",
-    SnapshotType:   builder.MinIOSnapshot,
-}).SetMinIOConfig(&cloudstorage.Config{
-    Endpoint:        "minio.example.com:9000",
+    SnapshotType:   builder.S3Snapshot,
+}).SetS3Config(&cloudstorage.S3Config{
+    Endpoint:        "http://s3.amazonaws.com",  // or S3-compatible endpoint
+    Region:          "us-east-1",
     AccessKeyID:     "access-key",
     SecretAccessKey: "secret-key",
+    UsePathStyle:    false,                      // true for S3-compatible services
     Bucket:          "babuza-snapshots",
-    Prefix:          "snapshots/",  // optional: object key prefix
-    UseSSL:          true,
+    Prefix:          "snapshots/",               // optional: object key prefix
 }).Build()
 ```
 
@@ -69,8 +70,8 @@ durableMgr := snapshot.NewDurableSnapshotManager("/var/lib/babuza/snap", logger)
 // Volatile manager (in-memory, for testing)
 volatileMgr := snapshot.NewVolatileSnapshotManager("/tmp/snap", logger)
 
-// MinIO manager (S3-compatible cloud storage)
-minioMgr := snapshot.NewMinIOSnapshotManager("/var/lib/babuza/snap", minioConfig, logger)
+// S3 manager (AWS S3 or S3-compatible cloud storage)
+s3Mgr := snapshot.NewS3SnapshotManager("/var/lib/babuza/snap", s3Config, logger)
 
 // With options
 durableMgr := snapshot.NewDurableSnapshotManager("/var/lib/babuza/snap", logger,

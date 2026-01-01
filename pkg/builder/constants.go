@@ -39,7 +39,7 @@ const (
 	// Snapshot implementations
 	DurableSnapshot  = "durable"
 	VolatileSnapshot = "volatile"
-	MinIOSnapshot    = "minio"
+	S3Snapshot       = "s3"
 
 	// State machine types
 	StateMachineMemory                           = "memory"

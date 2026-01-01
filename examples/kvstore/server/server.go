@@ -55,13 +55,14 @@ type Config struct {
 	RaftDisableForwarding    bool
 	RaftWalNoSync            bool
 
-	// MinIO Configuration
-	MinIOEndpoint        string
-	MinIOAccessKeyID     string
-	MinIOSecretAccessKey string
-	MinIOUseSSL          bool
-	MinIOBucket          string
-	MinIOPrefix          string
+	// S3 Configuration
+	S3Endpoint        string
+	S3Region          string
+	S3AccessKeyID     string
+	S3SecretAccessKey string
+	S3UsePathStyle    bool
+	S3Bucket          string
+	S3Prefix          string
 }
 
 type Server struct {
@@ -158,13 +159,14 @@ func (s *Server) Start() error {
 		WalType:        s.cfg.BabuzaWal,
 		SnapshotType:   s.cfg.BabuzaSnapshot,
 		MetricType:     builder.MetricsPrometheus,
-		MinIOConfig: &cloudstorage.Config{
-			Endpoint:        s.cfg.MinIOEndpoint,
-			AccessKeyID:     s.cfg.MinIOAccessKeyID,
-			SecretAccessKey: s.cfg.MinIOSecretAccessKey,
-			UseSSL:          s.cfg.MinIOUseSSL,
-			Bucket:          s.cfg.MinIOBucket,
-			Prefix:          s.cfg.MinIOPrefix,
+		S3Config: &cloudstorage.S3Config{
+			Endpoint:        s.cfg.S3Endpoint,
+			Region:          s.cfg.S3Region,
+			AccessKeyID:     s.cfg.S3AccessKeyID,
+			SecretAccessKey: s.cfg.S3SecretAccessKey,
+			UsePathStyle:    s.cfg.S3UsePathStyle,
+			Bucket:          s.cfg.S3Bucket,
+			Prefix:          s.cfg.S3Prefix,
 		},
 	}).Build()
 

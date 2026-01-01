@@ -13,7 +13,7 @@ KvStore provides a simple REST API for storing and retrieving key-value pairs ac
 - Interactive CLI client
 - Configurable transport (TCP, HTTP, gRPC)
 - Multiple WAL backends (Babuza, etcd, Badger)
-- Multiple snapshot backends (local disk, MinIO)
+- Multiple snapshot backends (local disk, S3)
 - TLS/mTLS support for both HTTP API and Raft communication
 - Docker support for easy deployment
 
@@ -124,7 +124,7 @@ curl http://localhost:24201/peers
 |------|---------|---------|
 | `--transport-protocol` | `tcp`, `http`, `grpc` | `tcp` |
 | `--wal-type` | `babuza-wal`, `etcd-wal`, `badger-wal`, `badger-wal-memory` | `babuza-wal` |
-| `--snapshot-type` | `durable`, `volatile`, `minio` | `durable` |
+| `--snapshot-type` | `durable`, `volatile`, `s3` | `durable` |
 | `--session-type` | `noop`, `expire`, `lru` | `noop` |
 | `--state-machine` | `memory`, `memory-concurrent`, `disk` | `memory` |
 
@@ -144,16 +144,30 @@ curl http://localhost:24201/peers
   --http-key=/path/to/key.pem
 ```
 
-### MinIO Snapshot Storage
+### S3 Snapshot Storage
 
 ```bash
 ./kvstore server \
-  --snapshot-type=minio \
-  --minio-endpoint=play.min.io:9000 \
-  --minio-access-key=YOUR_ACCESS_KEY \
-  --minio-secret-key=YOUR_SECRET_KEY \
-  --minio-bucket=raft-snapshots \
-  --minio-use-ssl=true
+  --snapshot-type=s3 \
+  --s3-endpoint=http://s3.amazonaws.com \
+  --s3-region=us-east-1 \
+  --s3-access-key=YOUR_ACCESS_KEY \
+  --s3-secret-key=YOUR_SECRET_KEY \
+  --s3-bucket=raft-snapshots \
+  --s3-path-style=false
+```
+
+For S3-compatible services (RustFS, MinIO, etc.), use path-style addressing:
+
+```bash
+./kvstore server \
+  --snapshot-type=s3 \
+  --s3-endpoint=http://localhost:9000 \
+  --s3-region=us-east-1 \
+  --s3-access-key=YOUR_ACCESS_KEY \
+  --s3-secret-key=YOUR_SECRET_KEY \
+  --s3-bucket=raft-snapshots \
+  --s3-path-style=true
 ```
 
 ## Client Configuration
@@ -197,7 +211,7 @@ curl http://localhost:24201/peers
 |------|---------|-------------|
 | `--disable-forwarding` | `false` | Disable automatic proposal forwarding from followers to leader |
 | `--wal-no-sync` | `false` | Disable fsync on WAL writes (faster but less durable) |
-| `--minio-prefix` | `""` | Object prefix (folder path) for MinIO snapshots |
+| `--s3-prefix` | `""` | Object prefix (folder path) for S3 snapshots |
 
 ## Docker Deployment
 

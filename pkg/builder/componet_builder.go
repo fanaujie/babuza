@@ -60,7 +60,7 @@ type BabuzaComponentConfig struct {
 
 	// available types from constants
 	SessionType   string // builder.NoOpSession, builder.ExpireSession, builder.LRUSession
-	SnapshotType  string // builder.DurableSnapshot, builder.VolatileSnapshot, builder.MinIOSnapshot
+	SnapshotType  string // builder.DurableSnapshot, builder.VolatileSnapshot, builder.S3Snapshot
 	TransportType string // builder.TcpTransport, builder.TcpMemoryTransport, builder.HttpTransport, builder.GRPCTransport
 	WalType       string // builder.BabuzaWal, builder.ETCDWal, builder.BadgerWalDisk, builder.BadgerWalMemory
 	MetricType    string // builder.MetricsOtel, builder.MetricsPrometheus, builder.MetricsMock
@@ -68,8 +68,8 @@ type BabuzaComponentConfig struct {
 	CustomLogger        ibabuza.Logger
 	CustomEtcdZapLogger *zap.Logger // used for etcd wal
 	MetricController    ibabuza.MetricsCollector
-	// MinIO configuration
-	MinIOConfig *cloudstorage.Config
+	// S3 configuration
+	S3Config *cloudstorage.S3Config
 
 	// Transport configurations
 	transportOptions         []transport.SetTransportOptions
@@ -226,11 +226,11 @@ func (b *BabuzaComponentBuilder) AddExpireSessionOptions(options ...session.SetE
 	return b
 }
 
-func (b *BabuzaComponentBuilder) SetMinIOConfig(config *cloudstorage.Config) *BabuzaComponentBuilder {
+func (b *BabuzaComponentBuilder) SetS3Config(config *cloudstorage.S3Config) *BabuzaComponentBuilder {
 	if b.built {
 		panic("Builder has already been used to build a component, cannot modify configuration")
 	}
-	b.config.MinIOConfig = config
+	b.config.S3Config = config
 	return b
 }
 
@@ -359,11 +359,11 @@ func (b *BabuzaComponentBuilder) createSnapshotManager(logger ibabuza.Logger) ib
 		return snapshot.NewDurableSnapshotManager(snapDir, logger)
 	case VolatileSnapshot:
 		return snapshot.NewVolatileSnapshotManager(snapDir, logger)
-	case MinIOSnapshot:
-		if b.config.MinIOConfig == nil {
-			panic("MinIOConfig cannot be nil when using MinIOSnapshot")
+	case S3Snapshot:
+		if b.config.S3Config == nil {
+			panic("S3Config cannot be nil when using S3Snapshot")
 		}
-		return snapshot.NewMinIOSnapshotManager(snapDir, *b.config.MinIOConfig, logger)
+		return snapshot.NewS3SnapshotManager(snapDir, *b.config.S3Config, logger)
 	default:
 		return snapshot.NewDurableSnapshotManager(snapDir, logger)
 	}

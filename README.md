@@ -10,7 +10,7 @@ A Go framework built on [etcd Raft](https://github.com/etcd-io/raft) for buildin
 - **Dynamic Cluster Management** - Add/remove peers, learner nodes, and leader transfer
 - **Production Ready** - TLS/mTLS support, linearizable reads, configurable snapshots
 - **Disaster Recovery** - Standalone node restoration from existing WAL/snapshots
-- **Cloud-Native Snapshots** - MinIO/S3-compatible storage for snapshots
+- **Cloud-Native Snapshots** - AWS S3 and S3-compatible storage for snapshots
 - **Observable** - Built-in Prometheus and OpenTelemetry metrics support
 
 ## Key Innovations vs etcd
@@ -99,7 +99,7 @@ See [examples/simple](./examples/simple/README.md) for simple example code.
 | **Session** | `noop`, `expire`, `lru` |
 | **Transport** | `tcp`, `tcp-memory`, `http`, `grpc` |
 | **WAL** | `babuza-wal`, `etcd-wal`, `badger-wal`, `badger-wal-memory`, `pebble-wal`, `pebble-wal-memory` |
-| **Snapshot** | `durable`, `volatile`, `minio` |
+| **Snapshot** | `durable`, `volatile`, `s3` |
 | **Metrics** | `otel`, `prometheus` |
 
 

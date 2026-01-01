@@ -18,7 +18,7 @@ The `builder` package provides a fluent API for constructing all the components 
 ## Important Notes
 
 - **Single-use builder**: Each `BabuzaComponentBuilder` can only call `Build()` once. Attempting to modify or build again will panic.
-- **MinIO requirement**: When using `MinIOSnapshot`, you must provide `MinIOConfig` via `SetMinIOConfig()`, otherwise `Build()` will panic.
+- **S3 requirement**: When using `S3Snapshot`, you must provide `S3Config` via `SetS3Config()`, otherwise `Build()` will panic.
 
 ## Default Behaviors
 
@@ -57,22 +57,22 @@ fmt.Printf("Snapshot: %v\n", component.SnapshotManager)
 fmt.Printf("Session: %v\n", component.SessionManager)
 ```
 
-### Fluent Configuration
+### Fluent Configuration with S3 Cloud Storage
 
 ```go
 component := builder.NewBabuzaComponentBuilder(&builder.BabuzaComponentConfig{
     StorageRootDir: "/var/lib/babuza",
 }).
     SetClusterId(1).
-    SetSessionType(builder.ExpireSession).
-    SetSnapshotType(builder.MinIOSnapshot).
-    SetTransportType(builder.GRPCTransport).
-    SetWalType(builder.PebbleWalDisk).
-    SetMinIOConfig(&cloudstorage.Config{
-        Endpoint:  "minio.example.com:9000",
-        AccessKey: "access",
-        SecretKey: "secret",
-        Bucket:    "snapshots",
+    SetSnapshotType(builder.S3Snapshot).
+    SetS3Config(&cloudstorage.S3Config{
+        Endpoint:        "http://localhost:9000",  // S3-compatible endpoint
+        Region:          "us-east-1",              // Required for signature calculation
+        AccessKeyID:     "access",
+        SecretAccessKey: "secret",
+        UsePathStyle:    true,                     // Required for S3-compatible services
+        Bucket:          "snapshots",
+        Prefix:          "babuza/",
     }).
     Build()
 ```
@@ -176,7 +176,7 @@ component := builder.NewBabuzaComponentBuilder(&builder.BabuzaComponentConfig{
 | `SetCustomLogger(ibabuza.Logger)` | Use a custom logger |
 | `SetCustomEtcdZapLogger(*zap.Logger)` | Set zap logger for etcd WAL |
 | `SetMetricsCollector(ibabuza.MetricsCollector)` | Use a custom metrics collector |
-| `SetMinIOConfig(*cloudstorage.Config)` | Configure MinIO for cloud snapshots |
+| `SetS3Config(*cloudstorage.S3Config)` | Configure S3/S3-compatible storage for snapshots |
 | `SetTransportAssets(TransportAssets)` | Set transport limiters and breakers |
 | `SetTransportTcpNetwork(tcp.NetworkIO)` | Set custom TCP network implementation |
 | `AddTransportOptions(...transport.SetTransportOptions)` | Add transport configuration options |
@@ -223,7 +223,7 @@ component := builder.NewBabuzaComponentBuilder(&builder.BabuzaComponentConfig{
 |----------|-------|-------------|
 | `DurableSnapshot` | `durable` | Filesystem-based snapshots |
 | `VolatileSnapshot` | `volatile` | In-memory snapshots (testing) |
-| `MinIOSnapshot` | `minio` | MinIO/S3 cloud storage |
+| `S3Snapshot` | `s3` | AWS S3/S3-compatible storage (uses aws-sdk-go-v2) |
 
 ### Metrics Types
 

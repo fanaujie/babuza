@@ -30,7 +30,8 @@ import (
 	sanpshotio "github.com/fanaujie/babuza/pkg/snapshot/io"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/minio"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"hash/crc32"
@@ -115,54 +116,75 @@ func genSnapFiles(t *testing.T, snap *Snapshotor, snapshotTerm, snapshotIndex ui
 	assert.Nil(t, err)
 }
 
-func setupMinioContainer(t *testing.T) (*minio.MinioContainer, string, string, string) {
-	// Start MinIO container
-	minioContainer, err := minio.Run(context.Background(), "minio/minio:latest",
-		minio.WithUsername("minioroot"), minio.WithPassword("miniopassword"))
+const (
+	rustfsImage    = "rustfs/rustfs:latest"
+	rustfsUsername = "rustfsadmin"
+	rustfsPassword = "rustfsadmin"
+)
+
+func setupS3Container(t *testing.T) (testcontainers.Container, string) {
+	ctx := context.Background()
+	req := testcontainers.ContainerRequest{
+		Image:        rustfsImage,
+		ExposedPorts: []string{"9000/tcp", "9001/tcp"},
+		Env: map[string]string{
+			"RUSTFS_ACCESS_KEY": rustfsUsername,
+			"RUSTFS_SECRET_KEY": rustfsPassword,
+		},
+		WaitingFor: wait.ForListeningPort("9000/tcp"),
+	}
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
 	require.NoError(t, err)
 
-	// Get connection details
-	endpoint, err := minioContainer.ConnectionString(context.Background())
+	host, err := container.Host(ctx)
 	require.NoError(t, err)
 
-	return minioContainer, endpoint, minioContainer.Username, minioContainer.Password
+	mappedPort, err := container.MappedPort(ctx, "9000")
+	require.NoError(t, err)
+
+	endpoint := "http://" + host + ":" + mappedPort.Port()
+	return container, endpoint
 }
 
-func setupMinioFS(t *testing.T, prefix string) (api.SnapshotFileSystem, func()) {
-	// Setup MinIO container
-	minioContainer, endpoint, accessKey, secretKey := setupMinioContainer(t)
+func setupS3FS(t *testing.T, prefix string) (api.SnapshotFileSystem, func()) {
+	// Setup S3-compatible container (RustFS)
+	container, endpoint := setupS3Container(t)
 
 	// Create cleanup function
 	cleanup := func() {
-		if err := minioContainer.Terminate(context.Background()); err != nil {
+		if err := container.Terminate(context.Background()); err != nil {
 			t.Fatalf("failed to terminate container: %s", err)
 		}
 	}
 
-	// Create MinIO FS
-	minioConfig := cloudstorage.Config{
+	// Create S3 FS
+	s3Config := cloudstorage.S3Config{
 		Endpoint:        endpoint,
-		AccessKeyID:     accessKey,
-		SecretAccessKey: secretKey,
-		UseSSL:          false,
+		Region:          "us-east-1",
+		AccessKeyID:     rustfsUsername,
+		SecretAccessKey: rustfsPassword,
+		UsePathStyle:    true,
 		Bucket:          "test-bucket",
 		Prefix:          prefix,
 	}
 
-	minioFS, err := cloudstorage.NewMinioSnapshotFS(minioConfig)
+	s3FS, err := cloudstorage.NewS3SnapshotFS(s3Config)
 	require.NoError(t, err)
 
-	return minioFS, cleanup
+	return s3FS, cleanup
 }
 
 func TestSnapshotor_CreateFileWriterAndReader(t *testing.T) {
 	p := t.TempDir()
 
-	// Setup MinIO FS
-	minioFS, cleanup := setupMinioFS(t, "test-writerreader")
+	// Setup S3 FS (RustFS)
+	s3FS, cleanup := setupS3FS(t, "test-writerreader")
 	defer cleanup()
 
-	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), s3FS} {
 		fds := []snapFileDesc{
 			{
 				fileType:        babuzapb.SnapshotFileType_StateMachine,
@@ -201,11 +223,11 @@ func TestSnapshotor_CreateFileWriterAndReader(t *testing.T) {
 func TestSnapshotor_ValidateFileReceiverAndInstall(t *testing.T) {
 	p := t.TempDir()
 
-	// Setup MinIO FS
-	minioFS, cleanup := setupMinioFS(t, "test-receiver")
+	// Setup S3 FS (RustFS)
+	s3FS, cleanup := setupS3FS(t, "test-receiver")
 	defer cleanup()
 
-	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), s3FS} {
 		snapVer := uint64(1)
 		snapMaxFiles := uint(3)
 
@@ -249,11 +271,11 @@ func TestSnapshotor_ValidateFileReceiverAndInstall(t *testing.T) {
 func TestSnapshotor_ValidateFileReceiverAndInstall_Fail(t *testing.T) {
 	p := t.TempDir()
 
-	// Setup MinIO FS
-	minioFS, cleanup := setupMinioFS(t, "test-receiver-fail")
+	// Setup S3 FS (RustFS)
+	s3FS, cleanup := setupS3FS(t, "test-receiver-fail")
 	defer cleanup()
 
-	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), s3FS} {
 
 		snapVer := uint64(1)
 		snapMaxFiles := uint(3)
@@ -365,10 +387,10 @@ func TestSnapshotor_LoadLastValidSnapshot(t *testing.T) {
 
 			// Create a unique prefix for this specific test case
 			prefix := fmt.Sprintf("load-snapshot-%d", tc.querySnaps[0].Index)
-			minioFS, cleanup := setupMinioFS(t, prefix)
+			s3FS, cleanup := setupS3FS(t, prefix)
 			defer cleanup()
 
-			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
+			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), s3FS} {
 
 				snapMaxFiles := uint(3)
 				snapVer := uint64(1)
@@ -419,12 +441,12 @@ func TestSnapshotor_Purge(t *testing.T) {
 		func() {
 			p := t.TempDir()
 
-			// Create a unique MinIO FS for this test case
+			// Create a unique S3 FS for this test case
 			prefix := fmt.Sprintf("test-purge-%d", tc.purgeIndex)
-			minioFS, cleanup := setupMinioFS(t, prefix)
+			s3FS, cleanup := setupS3FS(t, prefix)
 			defer cleanup()
 
-			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
+			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), s3FS} {
 				s := New(Config{
 					SnapshotVersion: snapVer,
 					MaxSnapFiles:    snapMaxFiles,
@@ -477,12 +499,12 @@ func TestSnapshotor_CommitSnapshot(t *testing.T) {
 		func(dt babuzapb.SnapshotFolderType) {
 			p := t.TempDir()
 
-			// Create a unique MinIO FS for this folder type
+			// Create a unique S3 FS for this folder type
 			prefix := fmt.Sprintf("test-commit-%d", dt)
-			minioFS, cleanup := setupMinioFS(t, prefix)
+			s3FS, cleanup := setupS3FS(t, prefix)
 			defer cleanup()
 
-			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
+			for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), s3FS} {
 				_, err := fs.CreateDirAndTouch(p, dt, 1)
 				assert.Nil(t, err)
 				s := New(Config{
@@ -504,8 +526,8 @@ func TestSnapshotor_CommitSnapshot(t *testing.T) {
 }
 
 func TestSnapshotor_scanInstalledSnapshot(t *testing.T) {
-	// Setup MinIO FS
-	minioFS, cleanup := setupMinioFS(t, "test-scan-installed")
+	// Setup S3 FS (RustFS)
+	s3FS, cleanup := setupS3FS(t, "test-scan-installed")
 	defer cleanup()
 
 	fds := []snapFileDesc{
@@ -527,7 +549,7 @@ func TestSnapshotor_scanInstalledSnapshot(t *testing.T) {
 			dataSize:        1024,
 		},
 	}
-	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), minioFS} {
+	for _, fs := range []api.SnapshotFileSystem{volatile.NewFileSystem(), durable.NewSnapshotFS(), s3FS} {
 		p := t.TempDir()
 		s := New(Config{
 			SnapshotVersion: 1,

@@ -113,8 +113,8 @@ You can configure various aspects of the KV store server including:
 		`Snapshot Implementation:
   "durable": Durable Snapshot - Default, stores snapshots on local disk
   "volatile": Volatile Snapshot - Stores snapshots in memory (for testing only)
-  "minio": MinIO Snapshot - Stores snapshots using MinIO object storage service
-Note: When choosing "minio", you must provide MinIO configuration parameters.`)
+  "s3": S3 Snapshot - Stores snapshots using S3-compatible object storage (AWS S3, RustFS, etc.)
+Note: When choosing "s3", you must provide S3 configuration parameters.`)
 
 	serverCommand.Flags().StringVar(&kvStoreConfig.StateMachine, "state-machine", builder.StateMachineMemory,
 		`State Machine Type:
@@ -122,19 +122,21 @@ Note: When choosing "minio", you must provide MinIO configuration parameters.`)
   "memory-concurrent": Memory State Machine with Concurrent Snapshot - Doesn't block operations while creating snapshots
   "disk": Disk State Machine - Persists data to disk`)
 
-	// ==== MinIO Configuration (for MinIO Snapshot) ====
-	serverCommand.Flags().StringVar(&kvStoreConfig.MinIOEndpoint, "minio-endpoint", "",
-		"MinIO Endpoint: The endpoint URL for the MinIO service. Example: 'play.min.io:9000'")
-	serverCommand.Flags().StringVar(&kvStoreConfig.MinIOAccessKeyID, "minio-access-key", "",
-		"MinIO Access Key ID: Access key for the MinIO service")
-	serverCommand.Flags().StringVar(&kvStoreConfig.MinIOSecretAccessKey, "minio-secret-key", "",
-		"MinIO Secret Access Key: Secret key for the MinIO service")
-	serverCommand.Flags().BoolVar(&kvStoreConfig.MinIOUseSSL, "minio-use-ssl", true,
-		"MinIO Use SSL: Set to true to enable SSL/TLS for MinIO connections")
-	serverCommand.Flags().StringVar(&kvStoreConfig.MinIOBucket, "minio-bucket", "raft-snapshots",
-		"MinIO Bucket: Name of the bucket to store Raft snapshots")
-	serverCommand.Flags().StringVar(&kvStoreConfig.MinIOPrefix, "minio-prefix", "",
-		"MinIO Prefix: Optional prefix (folder path) for snapshot objects in the bucket")
+	// ==== S3 Configuration (for S3 Snapshot) ====
+	serverCommand.Flags().StringVar(&kvStoreConfig.S3Endpoint, "s3-endpoint", "",
+		"S3 Endpoint: The endpoint URL for the S3 service. Example: 's3.amazonaws.com' or 'localhost:9000' for S3-compatible services")
+	serverCommand.Flags().StringVar(&kvStoreConfig.S3Region, "s3-region", "us-east-1",
+		"S3 Region: AWS region for the S3 service. Required for signature calculation")
+	serverCommand.Flags().StringVar(&kvStoreConfig.S3AccessKeyID, "s3-access-key", "",
+		"S3 Access Key ID: Access key for the S3 service")
+	serverCommand.Flags().StringVar(&kvStoreConfig.S3SecretAccessKey, "s3-secret-key", "",
+		"S3 Secret Access Key: Secret key for the S3 service")
+	serverCommand.Flags().BoolVar(&kvStoreConfig.S3UsePathStyle, "s3-path-style", false,
+		"S3 Path Style: Set to true to use path-style addressing (required for S3-compatible services like RustFS, MinIO)")
+	serverCommand.Flags().StringVar(&kvStoreConfig.S3Bucket, "s3-bucket", "raft-snapshots",
+		"S3 Bucket: Name of the bucket to store Raft snapshots")
+	serverCommand.Flags().StringVar(&kvStoreConfig.S3Prefix, "s3-prefix", "",
+		"S3 Prefix: Optional prefix (folder path) for snapshot objects in the bucket")
 
 	// ==== Advanced Raft Parameters ====
 	serverCommand.Flags().BoolVar(&kvStoreConfig.RaftDisableForwarding, "disable-forwarding", false,
@@ -184,9 +186,9 @@ func parseAndValidateServerParams() error {
 	}
 
 	// Validate Snapshot option
-	validSnapshotTypes := map[string]bool{builder.DurableSnapshot: true, builder.VolatileSnapshot: true, builder.MinIOSnapshot: true}
+	validSnapshotTypes := map[string]bool{builder.DurableSnapshot: true, builder.VolatileSnapshot: true, builder.S3Snapshot: true}
 	if _, ok := validSnapshotTypes[kvStoreConfig.BabuzaSnapshot]; !ok {
-		return fmt.Errorf("invalid snapshot option: %s (must be 'durable', 'volatile', or 'minio')", kvStoreConfig.BabuzaSnapshot)
+		return fmt.Errorf("invalid snapshot option: %s (must be 'durable', 'volatile', or 's3')", kvStoreConfig.BabuzaSnapshot)
 	}
 
 	// Validate State Machine option
@@ -202,19 +204,19 @@ func parseAndValidateServerParams() error {
 		}
 	}
 
-	// Validate MinIO settings when MinIO snapshot is selected
-	if kvStoreConfig.BabuzaSnapshot == builder.MinIOSnapshot {
-		if kvStoreConfig.MinIOEndpoint == "" {
-			return fmt.Errorf("minio-endpoint is required when using MinIO snapshot storage")
+	// Validate S3 settings when S3 snapshot is selected
+	if kvStoreConfig.BabuzaSnapshot == builder.S3Snapshot {
+		if kvStoreConfig.S3Endpoint == "" {
+			return fmt.Errorf("s3-endpoint is required when using S3 snapshot storage")
 		}
-		if kvStoreConfig.MinIOAccessKeyID == "" {
-			return fmt.Errorf("minio-access-key is required when using MinIO snapshot storage")
+		if kvStoreConfig.S3AccessKeyID == "" {
+			return fmt.Errorf("s3-access-key is required when using S3 snapshot storage")
 		}
-		if kvStoreConfig.MinIOSecretAccessKey == "" {
-			return fmt.Errorf("minio-secret-key is required when using MinIO snapshot storage")
+		if kvStoreConfig.S3SecretAccessKey == "" {
+			return fmt.Errorf("s3-secret-key is required when using S3 snapshot storage")
 		}
-		if kvStoreConfig.MinIOBucket == "" {
-			return fmt.Errorf("minio-bucket is required when using MinIO snapshot storage")
+		if kvStoreConfig.S3Bucket == "" {
+			return fmt.Errorf("s3-bucket is required when using S3 snapshot storage")
 		}
 	}
 

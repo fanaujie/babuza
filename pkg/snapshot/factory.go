@@ -82,7 +82,7 @@ func NewVolatileSnapshotManager(snapshotDir string, logger ibabuza.Logger, optio
 	}, fs, logger, nil)
 }
 
-func NewMinIOSnapshotManager(snapshotDir string, config cloudstorage.Config, logger ibabuza.Logger,
+func NewS3SnapshotManager(snapshotDir string, config cloudstorage.S3Config, logger ibabuza.Logger,
 	options ...SetOptions) ibabuza.SnapshotManager {
 	defaultOpt := Options{
 		snapshotVersion:  1,
@@ -91,11 +91,11 @@ func NewMinIOSnapshotManager(snapshotDir string, config cloudstorage.Config, log
 	for _, setOpt := range options {
 		setOpt(&defaultOpt)
 	}
-	fs, err := cloudstorage.NewMinioSnapshotFS(config)
+	fs, err := cloudstorage.NewS3SnapshotFS(config)
 	if err != nil {
-		panic("failed to create minio snapshot fs: " + err.Error())
+		panic("failed to create s3 snapshot fs: " + err.Error())
 	}
-	logger.Infof("volatile snapshot manager: creating volatile snapshot manager with snapshotDir=%s", snapshotDir)
+	logger.Infof("s3 snapshot manager: creating s3 snapshot manager with snapshotDir=%s", snapshotDir)
 	return New(Config{
 		SnapshotVersion: defaultOpt.snapshotVersion,
 		MaxSnapFiles:    defaultOpt.maxKeepSnapFiles,

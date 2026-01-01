@@ -21,6 +21,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"time"
+
 	"github.com/fanaujie/babuza/examples/kvstore/client"
 	"github.com/fanaujie/babuza/examples/kvstore/embedapp"
 	"github.com/fanaujie/babuza/examples/kvstore/server/kverror"
@@ -34,9 +37,8 @@ import (
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio/proxynetwork"
 	babuza "github.com/fanaujie/babuza/raft"
 	"github.com/fanaujie/babuza/test/testcluster"
-	"github.com/testcontainers/testcontainers-go/modules/minio"
-	"io"
-	"time"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func makeVotingStandardPeers(totalPeers int) ([]testcluster.Peer, *testcluster.ConnectedGroup) {
@@ -146,27 +148,54 @@ func basicClusterComponents(disableProposalForwarding bool) []BabuzaComponent {
 	return components
 }
 
-type minioContainer struct {
-	minioContainer *minio.MinioContainer
-	setupFunc      func() (*minio.MinioContainer, error)
-	deferFunc      func()
+const (
+	rustfsImage    = "rustfs/rustfs:latest"
+	rustfsUsername = "rustfsadmin"
+	rustfsPassword = "rustfsadmin"
+)
+
+type s3Container struct {
+	container testcontainers.Container
+	endpoint  string
 }
 
-func (m *minioContainer) Setup() error {
-	c, err := minio.Run(context.Background(), "minio/minio:latest",
-		minio.WithUsername("minioroot"), minio.WithPassword("miniopassword"))
+func (s *s3Container) Setup() error {
+	ctx := context.Background()
+	req := testcontainers.ContainerRequest{
+		Image:        rustfsImage,
+		ExposedPorts: []string{"9000/tcp", "9001/tcp"},
+		Env: map[string]string{
+			"RUSTFS_ACCESS_KEY": rustfsUsername,
+			"RUSTFS_SECRET_KEY": rustfsPassword,
+		},
+		WaitingFor: wait.ForListeningPort("9000/tcp"),
+	}
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
 	if err != nil {
 		return err
 	}
-	m.minioContainer = c
+	s.container = container
+
+	host, err := container.Host(ctx)
+	if err != nil {
+		return err
+	}
+	mappedPort, err := container.MappedPort(ctx, "9000")
+	if err != nil {
+		return err
+	}
+	s.endpoint = "http://" + host + ":" + mappedPort.Port()
 	return nil
 }
 
-func (m *minioContainer) Defer() error {
-	if m.minioContainer != nil {
-		return m.minioContainer.Terminate(context.Background())
+func (s *s3Container) Defer() error {
+	if s.container != nil {
+		return s.container.Terminate(context.Background())
 	}
-	return errors.New("minio container is nil")
+	return errors.New("s3 container is nil")
 }
 
 func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
@@ -226,24 +255,24 @@ func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 	// Create a BabuzaComponent for each test case
 	for _, tc := range testCases {
 		for _, walType := range []string{builder.BabuzaWal, builder.ETCDWal, builder.BadgerWalDisk, builder.PebbleWalDisk} {
-			for _, snapshotType := range []string{builder.DurableSnapshot, builder.MinIOSnapshot} {
+			for _, snapshotType := range []string{builder.DurableSnapshot, builder.S3Snapshot} {
 				for _, transportType := range []string{builder.TcpTransport, builder.HttpTransport, builder.GRPCTransport} {
-					var mc *minioContainer
-					if snapshotType == builder.MinIOSnapshot {
-						mc = &minioContainer{}
+					var sc *s3Container
+					if snapshotType == builder.S3Snapshot {
+						sc = &s3Container{}
 					}
 					components = append(components, BabuzaComponent{
 						InitFunc: func() error {
-							if mc == nil {
+							if sc == nil {
 								return nil
 							}
-							return mc.Setup()
+							return sc.Setup()
 						},
 						DeferFunc: func() error {
-							if mc == nil {
+							if sc == nil {
 								return nil
 							}
-							return mc.Defer()
+							return sc.Defer()
 						},
 						CaseName:           "BasicTest: 3nodes-" + transportType + walType + snapshotType + "-" + tc.caseName,
 						ClusterId:          1,
@@ -262,19 +291,16 @@ func basicSnapshotTestComponents(snapshotCount uint64) []BabuzaComponent {
 									b.AddGrpcOptions(protocol.SetGrpcOptsWithRecvMsgMaxSize(
 										int(float32(chunkSize) * 1.2)))
 								}
-								if snapshotType == builder.MinIOSnapshot {
-									// If using MinIO and gRPC, the chunk size must be greater than 5MB.
+								if snapshotType == builder.S3Snapshot {
+									// If using S3 and gRPC, the chunk size must be greater than 5MB.
 									// If the number of chunks is greater than 1, the chunk size must be greater than 5MB.
-									// This is a limitation of MinIO's compose functionality.
-									endpoint, err := mc.minioContainer.ConnectionString(context.Background())
-									if err != nil {
-										panic(err)
-									}
-									b.SetMinIOConfig(&cloudstorage.Config{
-										Endpoint:        endpoint,
-										AccessKeyID:     mc.minioContainer.Username,
-										SecretAccessKey: mc.minioContainer.Password,
-										UseSSL:          false,
+									// This is a limitation of S3's multipart upload functionality.
+									b.SetS3Config(&cloudstorage.S3Config{
+										Endpoint:        sc.endpoint,
+										Region:          "us-east-1",
+										AccessKeyID:     rustfsUsername,
+										SecretAccessKey: rustfsPassword,
+										UsePathStyle:    true,
 										Bucket:          "test-bucket",
 										Prefix:          "snapshot",
 									})
