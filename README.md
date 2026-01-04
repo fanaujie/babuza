@@ -1,50 +1,41 @@
 # Babuza
 
-A Go framework built on [etcd Raft](https://github.com/etcd-io/raft) for building distributed consensus-based systems with simplified APIs and some features.
+A production-ready Go framework built on [etcd Raft](https://github.com/etcd-io/raft) that simplifies building distributed consensus-based systems.
 
-## Features
+## Why Babuza?
 
-- **Simplified Raft Integration** - Abstracts etcd Raft complexity with clean Go interfaces
-- **Pluggable Components** - Interchangeable WAL, snapshot, transport, and session implementations
-- **Multiple State Machine Types** - Support for memory, disk, and concurrent snapshot state machines
-- **Dynamic Cluster Management** - Add/remove peers, learner nodes, and leader transfer
-- **Production Ready** - TLS/mTLS support, linearizable reads, configurable snapshots
-- **Disaster Recovery** - Standalone node restoration from existing WAL/snapshots
-- **Cloud-Native Snapshots** - AWS S3 and S3-compatible storage for snapshots
-- **Observable** - Built-in Prometheus and OpenTelemetry metrics support
+Building distributed systems with Raft is hard. While etcd provides a battle-tested Raft implementation, using it directly requires significant effort:
 
-## Key Innovations vs etcd
+- **Raft Ready Loop**: You must implement a goroutine to process `Ready()` structs, handle entries, messages, snapshots, and hard state persistence in the correct order
+- **Storage Integration**: WAL and snapshot storage must be carefully coordinated - write entries before sending messages, apply snapshots atomically
+- **Network Layer**: Build your own transport to send/receive Raft messages between peers, handle connection failures and retries
+- **State Machine Lifecycle**: Manage snapshot creation, restoration, and log compaction while ensuring consistency
+- **Cluster Membership**: Implement protocol for adding/removing nodes, handling joint consensus, and learner promotion
 
-Babuza introduces several architectural improvements over the standard etcd Raft usage:
+| Challenge | etcd Raft | Babuza |
+|-----------|-----------|--------|
+| **Memory Management** | Keeps all log entries in memory | Index-based caching saves 94-99% memory |
+| **Network Transport** | Basic HTTP transport provided | Pluggable TCP/HTTP/gRPC transports |
+| **WAL** | etcd WAL provided | Multiple backends: native, Badger, Pebble |
+| **Snapshot Transfer** | Full transfer via HTTP | Compressed & chunked transfer with rate limiting |
+| **Cluster Operations** | Manual peer management | Built-in add/remove/transfer APIs |
+| **Idempotency** | Application handles dedup | Session-based exactly-once semantics |
+| **Observability** | Roll your own | Prometheus & OpenTelemetry built-in |
+| **Disaster Recovery** | Complex manual process | One-command standalone restoration |
+| **Integration Testing** | Write your own test harness | testcluster with fault injection & partition simulation |
 
-### Memory-Efficient WAL with Index-Based Caching
+**Babuza lets you focus on your application logic, not Raft plumbing.**
 
-Unlike etcd which caches **all log entries in memory**, Babuza's WAL uses an **index + cache** architecture:
+## Memory Efficiency
 
-- Only stores entry metadata (term, index, type) in memory
-- Entry data is cached in a ring buffer with configurable size
-- On cache miss, reads entry data from WAL storage
-- Significantly reduces memory footprint for large log histories
+| Entries | Data Size | etcd Memory | Babuza Memory | Saved |
+|---------|-----------|-------------|---------------|-------|
+| 100K    | 1 KB      | 102 MB      | 5.35 MB       | **94.8%** |
+| 100K    | 10 KB     | 981 MB      | 5.35 MB       | **99.5%** |
 
-### Chunked Snapshot Transfer
+See the full [Memory Usage Benchmark Report](./docs/benchmarks/memory-usage-comparison.md) for detailed analysis.
 
-Transport layer supports **chunked snapshot transfer** with configurable chunk sizes:
-
-- Large snapshots are split into manageable chunks
-- Rate limiting prevents network saturation
-- Resumable transfers on network interruption
-- Reduces memory pressure during snapshot installation
-
-### Proposal Idempotency via Sessions
-
-Built-in **session management** ensures exactly-once semantics:
-
-- Client registers a session before proposing
-- Each proposal includes session ID and sequence number
-- Duplicate proposals return cached results
-- Multiple eviction strategies: time-based expiration or LRU
-
-### Experimental Multi-Raft (without modifying etcd Raft)
+## Experimental Multi-Raft (without modifying etcd Raft)
 
 The [experimental](./raft/experimental/README.md) package implements multi-Raft group support:
 
@@ -60,12 +51,57 @@ The [experimental](./raft/experimental/README.md) package implements multi-Raft 
 
 ## Quick Start
 
-See [examples/simple](./examples/simple/README.md) for simple example code.
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/raft"
+)
+
+// 1. Implement your state machine
+type KVStore struct{ data map[string]string }
+
+func (s *KVStore) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
+	var cmd struct{ Key, Value string }
+	json.Unmarshal(e.Command, &cmd)
+	s.data[cmd.Key] = cmd.Value
+	return ibabuza.ApplyResult{LogIndex: e.Index}
+}
+func (s *KVStore) Query(key any) (any, error) { return s.data[key.(string)], nil }
+func (s *KVStore) SaveSnapshot(ibabuza.StateMachineSnapshotContext, ibabuza.StateMachineSnapshotWriter) error { return nil }
+func (s *KVStore) RestoreFromSnapshot(ibabuza.StateMachineSnapshotReader) error { return nil }
+func (s *KVStore) Close() error { return nil }
+
+func main() {
+	// 2. Start Raft with default settings
+	r, _ := raft.NewDefaultBuilder().
+		DataDir("/tmp/babuza").
+		StateMachine(&KVStore{data: make(map[string]string)}).
+		Start()
+
+	// 3. Wait for leader election
+	time.Sleep(2 * time.Second)
+
+	// 4. Propose data through Raft consensus
+	data, _ := json.Marshal(map[string]string{"Key": "hello", "Value": "world"})
+	r.Propose(context.Background(), raft.ClientSession{}, data).WaitForApplyResult()
+
+	fmt.Println("Data committed through Raft consensus!")
+	r.Shutdown().Wait()
+}
+```
 
 ## Examples
 
 | Example | Description |
 |---------|-------------|
+| [Simple](./examples/simple/README.md) | Minimal single-node Raft example |
 | [KV Store](./examples/kvstore/README.md) | Single-raft distributed key-value store with REST API |
 | [Redis Cluster](./examples/redis-cluster/README.md) | Multi-raft Redis-compatible distributed cache |
 
