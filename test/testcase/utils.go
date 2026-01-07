@@ -41,44 +41,22 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
+var peerFactory = testcluster.NewPeerFactory(14200, 10000, 24200)
+
 func makeVotingStandardPeers(totalPeers int) ([]testcluster.Peer, *testcluster.ConnectedGroup) {
-	var peers []testcluster.Peer
-	var peerIDs []uint64
-	for i := 0; i < totalPeers; i++ {
-		peerID := uint64(i + 1)
-		peerIDs = append(peerIDs, peerID)
-		peers = append(peers, makeSingleStandardPeer(peerID, false))
-	}
-	return peers, testcluster.NewConnectedGroup(peerIDs)
+	return peerFactory.MakeVotingStandardPeers(totalPeers)
 }
+
 func makeSingleStandardPeer(peerID uint64, isLearner bool) testcluster.Peer {
-	return &testcluster.StandardPeer{
-		Id:                  peerID,
-		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerID),
-		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerID)},
-		IsLearner:           isLearner,
-	}
+	return peerFactory.MakeSingleStandardPeer(peerID, isLearner)
 }
 
 func makeVotingProxyPeers(count int) ([]testcluster.Peer, *testcluster.ConnectedGroup) {
-	var peers []testcluster.Peer
-	var peerIDs []uint64
-	for i := 0; i < count; i++ {
-		peerID := uint64(i + 1)
-		peerIDs = append(peerIDs, peerID)
-		peers = append(peers, makeSingleProxyPeer(peerID, false))
-	}
-	return peers, testcluster.NewConnectedGroup(peerIDs)
+	return peerFactory.MakeVotingProxyPeers(count)
 }
 
 func makeSingleProxyPeer(peerID uint64, isLearner bool) testcluster.Peer {
-	return &testcluster.BabuzaPeer{
-		Id:                  peerID,
-		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", 14200+peerID),
-		ProxyListenAddr:     fmt.Sprintf("127.0.0.1:%d", 24200+peerID),
-		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", 10000+peerID)},
-		IsLearner:           isLearner,
-	}
+	return peerFactory.MakeSingleProxyPeer(peerID, isLearner)
 }
 
 func customBabuzaComponent(sessionType, walType, snapshotType, transport string,

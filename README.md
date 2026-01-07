@@ -103,6 +103,7 @@ func main() {
 |---------|-------------|
 | [Simple](./examples/simple/README.md) | Minimal single-node Raft example |
 | [KV Store](./examples/kvstore/README.md) | Single-raft distributed key-value store with REST API |
+| [Distributed Lock](./examples/distlock/README.md) | Lease-based distributed lock with fencing tokens and wait queue |
 | [Redis Cluster](./examples/redis-cluster/README.md) | Multi-raft Redis-compatible distributed cache |
 
 ## Component Documentation

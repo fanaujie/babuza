@@ -15,7 +15,11 @@
 
 package testcluster
 
-import "github.com/fanaujie/babuza/ibabuza"
+import (
+	"fmt"
+
+	"github.com/fanaujie/babuza/ibabuza"
+)
 
 type Peer interface {
 	ID() uint64
@@ -128,4 +132,59 @@ func (s *StandardPeer) SetAppServiceAddresses(addrs []string) {
 
 func (s *StandardPeer) RaftTLSConfig() ibabuza.TLSConfig {
 	return s.TLSConfig
+}
+
+type PeerFactory struct {
+	RaftPortBase    uint64
+	AppPortBase     uint64
+	ProxyPortBase   uint64
+}
+
+func NewPeerFactory(raftPortBase, appPortBase, proxyPortBase uint64) *PeerFactory {
+	return &PeerFactory{
+		RaftPortBase:  raftPortBase,
+		AppPortBase:   appPortBase,
+		ProxyPortBase: proxyPortBase,
+	}
+}
+
+func (f *PeerFactory) MakeVotingStandardPeers(count int) ([]Peer, *ConnectedGroup) {
+	var peers []Peer
+	var peerIDs []uint64
+	for i := 0; i < count; i++ {
+		peerID := uint64(i + 1)
+		peerIDs = append(peerIDs, peerID)
+		peers = append(peers, f.MakeSingleStandardPeer(peerID, false))
+	}
+	return peers, NewConnectedGroup(peerIDs)
+}
+
+func (f *PeerFactory) MakeSingleStandardPeer(peerID uint64, isLearner bool) Peer {
+	return &StandardPeer{
+		Id:                  peerID,
+		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", f.RaftPortBase+peerID),
+		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", f.AppPortBase+peerID)},
+		IsLearner:           isLearner,
+	}
+}
+
+func (f *PeerFactory) MakeVotingProxyPeers(count int) ([]Peer, *ConnectedGroup) {
+	var peers []Peer
+	var peerIDs []uint64
+	for i := 0; i < count; i++ {
+		peerID := uint64(i + 1)
+		peerIDs = append(peerIDs, peerID)
+		peers = append(peers, f.MakeSingleProxyPeer(peerID, false))
+	}
+	return peers, NewConnectedGroup(peerIDs)
+}
+
+func (f *PeerFactory) MakeSingleProxyPeer(peerID uint64, isLearner bool) Peer {
+	return &BabuzaPeer{
+		Id:                  peerID,
+		RaftListenAddr:      fmt.Sprintf("127.0.0.1:%d", f.RaftPortBase+peerID),
+		ProxyListenAddr:     fmt.Sprintf("127.0.0.1:%d", f.ProxyPortBase+peerID),
+		AppServiceAddresses: []string{fmt.Sprintf("127.0.0.1:%d", f.AppPortBase+peerID)},
+		IsLearner:           isLearner,
+	}
 }

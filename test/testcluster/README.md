@@ -15,6 +15,7 @@ The `testcluster` package provides a `BabuzaCluster` abstraction that simplifies
 | `ProxyPeer` | Extended peer interface with proxy network support |
 | `StandardPeer` | Peer implementation for direct network tests |
 | `BabuzaPeer` | Peer implementation for proxy network tests |
+| `PeerFactory` | Factory for creating peers with configurable port ranges |
 | `ConnectedGroup` | Tracks peers in a connected network partition |
 | `EmbeddedApp` | Interface for embedded applications (e.g., kvstore) |
 | `EmbeddedClient` | Interface for cluster management operations |
@@ -74,6 +75,9 @@ connectedGroup.Add(peerID)
 
 // Get current connected peer IDs for cluster operations
 peerIDs := connectedGroup.GetIDs()
+
+// Get peer IDs excluding a specific peer (useful for leader change tests)
+remainingPeers := connectedGroup.GetIDsExclude(leaderID)
 ```
 
 ## Usage
@@ -104,7 +108,27 @@ cluster := testcluster.CreateTestCluster(
 )
 ```
 
-### Create Peers
+### Create Peers with PeerFactory (Recommended)
+
+`PeerFactory` creates peers with configurable port ranges. This is useful when running multiple test suites in parallel to avoid port conflicts:
+
+```go
+// Create a peer factory with custom port bases
+// Args: raftPortBase, appPortBase, proxyPortBase
+peerFactory := testcluster.NewPeerFactory(14200, 10000, 24200)
+
+// Create multiple standard peers
+peers, connectedGroup := peerFactory.MakeVotingStandardPeers(3)
+
+// Create multiple proxy peers (for fault simulation)
+peers, connectedGroup := peerFactory.MakeVotingProxyPeers(3)
+
+// Create a single peer
+standardPeer := peerFactory.MakeSingleStandardPeer(1, false)  // id=1, not learner
+proxyPeer := peerFactory.MakeSingleProxyPeer(1, true)         // id=1, learner
+```
+
+### Create Peers Manually
 
 ```go
 // Standard peer for direct network
@@ -318,7 +342,8 @@ cluster.ClearPeerFault(3)
 |--------|-------------|
 | `RaftElectionTimeout()` | Get Raft election timeout duration |
 | `GetAllRaft()` | Get all Raft instances |
-| `GetAllAppServiceAddresses()` | Get all application service addresses |
+| `GetAllAppServiceAddresses()` | Get all application service addresses (map by peer ID) |
+| `GetAllAppServiceAddressesFlat()` | Get all application service addresses as flat slice |
 | `GetAppServiceAddresses(peerIDs)` | Get service addresses for specific peers |
 | `ExecutePeerRaftOperation(peerID, func)` | Execute operation on peer's Raft |
 
@@ -358,13 +383,9 @@ func TestReElection(t *testing.T) {
 
     wait := cluster.RaftElectionTimeout() * 3
 
-    // Create 3 voting peers with proxy support
-    peers := []testcluster.Peer{
-        &testcluster.BabuzaPeer{Id: 1, RaftListenAddr: "127.0.0.1:14201", ProxyListenAddr: "127.0.0.1:24201"},
-        &testcluster.BabuzaPeer{Id: 2, RaftListenAddr: "127.0.0.1:14202", ProxyListenAddr: "127.0.0.1:24202"},
-        &testcluster.BabuzaPeer{Id: 3, RaftListenAddr: "127.0.0.1:14203", ProxyListenAddr: "127.0.0.1:24203"},
-    }
-    connectedGroup := testcluster.NewConnectedGroup([]uint64{1, 2, 3})
+    // Create 3 voting peers with proxy support using PeerFactory
+    peerFactory := testcluster.NewPeerFactory(14200, 10000, 24200)
+    peers, connectedGroup := peerFactory.MakeVotingProxyPeers(3)
 
     require.NoError(t, cluster.MakeCluster(wait, peers))
 
@@ -374,15 +395,17 @@ func TestReElection(t *testing.T) {
 
     // Disconnect leader to trigger re-election
     require.NoError(t, cluster.DisconnectPeer(leader1))
-    connectedGroup.Remove(leader1)
 
-    // Verify new leader elected
-    leader2, err := cluster.CheckOneLeader(wait, connectedGroup.GetIDs())
+    // Verify new leader elected (excluding disconnected leader)
+    leader2, err := cluster.CheckOneLeader(wait, connectedGroup.GetIDsExclude(leader1))
     require.NoError(t, err)
     require.NotEqual(t, leader1, leader2)
 
     // Reconnect old leader
     require.NoError(t, cluster.ConnectPeer(leader1))
-    connectedGroup.Add(leader1)
+
+    // Get all service addresses as flat slice for client
+    addresses := cluster.GetAllAppServiceAddressesFlat()
+    client := NewClient(addresses)
 }
 ```

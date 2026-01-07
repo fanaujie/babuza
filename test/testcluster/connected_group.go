@@ -56,3 +56,16 @@ func (g *ConnectedGroup) GetIDs() []uint64 {
 	}
 	return result
 }
+
+func (g *ConnectedGroup) GetIDsExclude(excludeID uint64) []uint64 {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	result := make([]uint64, 0, len(g.ids))
+	for id := range g.ids {
+		if id != excludeID {
+			result = append(result, id)
+		}
+	}
+	return result
+}

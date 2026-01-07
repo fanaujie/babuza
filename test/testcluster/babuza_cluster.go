@@ -182,6 +182,14 @@ func (c *BabuzaCluster) GetAllAppServiceAddresses() map[uint64][]string {
 	return result
 }
 
+func (c *BabuzaCluster) GetAllAppServiceAddressesFlat() []string {
+	var result []string
+	for _, controller := range c.appControllers {
+		result = append(result, controller.appsServiceAddresses...)
+	}
+	return result
+}
+
 func (c *BabuzaCluster) GetAppServiceAddresses(peerIDs []uint64) map[uint64][]string {
 	result := make(map[uint64][]string)
 	for _, id := range peerIDs {
