@@ -1,6 +1,6 @@
 # Babuza
 
-A production-ready Go framework built on [etcd Raft](https://github.com/etcd-io/raft) that simplifies building distributed consensus-based systems.
+A Go framework built on [etcd Raft](https://github.com/etcd-io/raft) that simplifies building distributed consensus-based systems.
 
 ## Why Babuza?
 
@@ -105,6 +105,10 @@ func main() {
 | [KV Store](./examples/kvstore/README.md) | Single-raft distributed key-value store with REST API |
 | [Distributed Lock](./examples/distlock/README.md) | Lease-based distributed lock with fencing tokens and wait queue |
 | [Redis Cluster](./examples/redis-cluster/README.md) | Multi-raft Redis-compatible distributed cache |
+
+## AI-Assisted Development
+
+Use [babuza-skills](https://github.com/fanaujie/babuza-skills) to enhance AI coding assistants (Claude Code, Cursor, Aider) with Babuza-specific knowledge for code generation and explanations.
 
 ## Component Documentation
 
