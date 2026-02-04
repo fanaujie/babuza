@@ -92,6 +92,16 @@ func (p *leaderProxyClient) SendRequest(ctx context.Context, makeRequest func(re
 		if err = res.Body.Close(); err != nil {
 			return err
 		}
+		if res.StatusCode >= 300 && res.StatusCode < 400 {
+			locationURL, err := res.Location()
+			if err != nil {
+				return err
+			}
+			if err = p.updateLeaderIndex(locationURL); err != nil {
+				return err
+			}
+			continue
+		}
 		if res.StatusCode == http.StatusServiceUnavailable || res.StatusCode == http.StatusGatewayTimeout {
 			if err = p.moveNextLeader(); err != nil {
 				return err
@@ -133,6 +143,9 @@ func (p *leaderProxyClient) SendRequestWithPeerId(peerID uint64, makeRequest fun
 	}
 	if err = res.Body.Close(); err != nil {
 		return err
+	}
+	if res.StatusCode >= 300 && res.StatusCode < 400 {
+		return raft.ErrNotLeader
 	}
 	if res.StatusCode == http.StatusServiceUnavailable {
 		return raft.ErrNotLeader

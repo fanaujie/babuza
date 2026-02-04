@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package ibabuza
 
 import (
-	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"io"
+
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 )
 
 type Entry struct {
@@ -39,6 +39,7 @@ func (ar ApplyResult) IsEmpty() bool {
 type StateMachineSnapshotWriter interface {
 	CreateStateMachineFile(fileTag string, compression babuzapb.SnapshotFileCompressionType) (io.WriteCloser, error)
 	AddStateMachineFileMetadata(fileTag string, metadata []byte) error
+	AddExternalFile(descriptor ExternalFileDescriptor) error
 }
 
 type StateMachineSnapshotReader interface {

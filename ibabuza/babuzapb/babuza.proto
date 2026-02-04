@@ -21,6 +21,7 @@ message RaftPeerAttribute {
   string    raftListenAddr = 2;
   bool      isLearner = 3;
   uint64    storeID = 4;
+  reserved 5; // was fileTransferAddr
 }
 
 message Peer {
@@ -56,6 +57,8 @@ message SnapshotFileDesc {
   int64              fileSize = 4;
   uint64            fileCrc64 = 5;
   bytes              metadata = 6;
+  bool              isExternal = 7;  // True if this is an external file reference
+  string            locationUri = 8; // External file location URI (for external files)
 }
 
 

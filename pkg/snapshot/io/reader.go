@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package io
 
 import (
 	"archive/tar"
 	"fmt"
+	"io"
+	"path/filepath"
+
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/codec"
 	"github.com/fanaujie/babuza/pkg/utility/multierror"
-	"io"
-	"path/filepath"
 )
 
 type Reader struct {
@@ -46,6 +46,13 @@ func NewReader(fs api.SnapshotFileSystem, dir string, metadata babuzapb.Snapshot
 }
 
 func (r *Reader) Open(fileTag string) (io.Reader, ibabuza.StateMachineFileDesc, error) {
+	metadata, ok := r.metadata.Files[fileTag]
+	if !ok {
+		return nil, ibabuza.StateMachineFileDesc{}, fmt.Errorf("snapshotor[index=%d]: not found tag(%s)", r.metadata.Snapshot.Metadata.Index, fileTag)
+	}
+	if metadata.IsExternal {
+		return nil, ibabuza.StateMachineFileDesc{}, fmt.Errorf("snapshotor[index=%d]: file is external (tag=%s), use Metadata() to access external file descriptors", r.metadata.Snapshot.Metadata.Index, fileTag)
+	}
 	filename, err := r.fs.PathHelper().SnapshotFileName(babuzapb.SnapshotFileType_StateMachine, r.metadata.Snapshot.Metadata.Index, fileTag)
 	if err != nil {
 		return nil, ibabuza.StateMachineFileDesc{}, err
@@ -84,6 +91,10 @@ func (r *Reader) ForEachFile(visitor func(io.Reader, babuzapb.SnapshotFileDesc) 
 	}
 
 	for tag := range r.metadata.Files {
+		// Skip external files — they are not transmitted via Raft snapshot.
+		if r.metadata.Files[tag].IsExternal {
+			continue
+		}
 		if err := visit(r.metadata.Snapshot.Metadata.Index, r.metadata.Files[tag]); err != nil {
 			return err
 		}
@@ -163,6 +174,11 @@ func (r *Reader) CreateTarArchiveReader() (io.ReadCloser, error) {
 			return
 		}
 		for _, fileDesc := range r.metadata.Files {
+			// Skip external files — they are not suitable for inline
+			// inclusion in the tar archive.
+			if fileDesc.IsExternal {
+				continue
+			}
 			filename, err := r.fs.PathHelper().SnapshotFileName(fileDesc.FileType, r.metadata.Snapshot.Metadata.Index, fileDesc.Tag)
 			if err != nil {
 				wErr = err

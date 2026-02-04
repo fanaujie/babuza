@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package io
 
 import (
 	"fmt"
+	"io"
+	"path/filepath"
+	"sync"
+
+	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/codec"
 	"go.etcd.io/etcd/raft/v3/raftpb"
-	"io"
-	"path/filepath"
-	"sync"
 )
 
 type Installer interface {
@@ -110,8 +111,11 @@ func (w *Writer) Commit(snap raftpb.Snapshot) (babuzapb.SnapshotMetadata, error)
 	}
 
 	for _, ff := range w.snapshotFiles {
-		ff.fileDesc.FileSize = int64(ff.crcWriter.FileSize())
-		ff.fileDesc.FileCrc64 = ff.crcWriter.Crc()
+		// External files have no crcWriter; their integrity is the application's responsibility
+		if ff.crcWriter != nil {
+			ff.fileDesc.FileSize = int64(ff.crcWriter.FileSize())
+			ff.fileDesc.FileCrc64 = ff.crcWriter.Crc()
+		}
 		sm.Files[ff.fileDesc.Tag] = *ff.fileDesc
 	}
 
@@ -125,9 +129,11 @@ func (w *Writer) Commit(snap raftpb.Snapshot) (babuzapb.SnapshotMetadata, error)
 	if err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
-	defer fw.Close()
-
 	if err = w.metadataEn.Encode(fw, sm); err != nil {
+		fw.Close()
+		return babuzapb.SnapshotMetadata{}, err
+	}
+	if err = fw.Close(); err != nil {
 		return babuzapb.SnapshotMetadata{}, err
 	}
 	return sm, w.installer.CommitSnapshot(babuzapb.SnapshotFolderType_TempWrite, w.snapshotIndex)
@@ -135,6 +141,29 @@ func (w *Writer) Commit(snap raftpb.Snapshot) (babuzapb.SnapshotMetadata, error)
 
 func (w *Writer) Dir() string {
 	return w.dir
+}
+
+func (w *Writer) AddExternalFile(descriptor ibabuza.ExternalFileDescriptor) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	fileTag := descriptor.FileTag
+	_, ok := w.snapshotFiles[fileTag]
+	if ok {
+		return fmt.Errorf("snapshotor[index=%d]: duplicated tag(%s)", w.snapshotIndex, fileTag)
+	}
+
+	w.snapshotFiles[fileTag] = snapshotFileMetadata{
+		fileDesc: &babuzapb.SnapshotFileDesc{
+			FileType:    babuzapb.SnapshotFileType_StateMachine,
+			Tag:         fileTag,
+			IsExternal:  true,
+			LocationUri: descriptor.LocationUri,
+			Metadata:    descriptor.Metadata,
+		},
+		// crcWriter is nil for external files since content is not written locally
+	}
+	return nil
 }
 
 func (w *Writer) create(fileTag string, filePath string, compression babuzapb.SnapshotFileCompressionType,

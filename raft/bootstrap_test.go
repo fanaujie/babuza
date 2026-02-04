@@ -44,7 +44,8 @@ func genConfChangeEntry(index, nodeId uint64, confChangeType raftpb.ConfChangeTy
 
 func TestBootstrap_ListRaftConfChangeAddNodeIds(t *testing.T) {
 
-	walDir := os.TempDir()
+	walDir, err := os.MkdirTemp("", "bootstrap_test")
+	assert.NoError(t, err)
 	defer os.RemoveAll(walDir)
 
 	ws := babuzawal.NewWalManager(walDir, &logger.Mock{})

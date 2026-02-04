@@ -17,6 +17,7 @@ package raft
 
 import (
 	"context"
+	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/metrics"
@@ -103,6 +104,17 @@ func (m *mockSnapshotManager) Purge(snapshot raftpb.Snapshot) error {
 
 func (m *mockSnapshotManager) Close() error {
 	return nil
+}
+
+func (m *mockSnapshotManager) Purger() ibabuza.SnapshotPurger {
+	return nil
+}
+
+func (m *mockSnapshotManager) SetExternalFileHandler(handler ibabuza.ExternalFileHandler) {
+}
+
+func (m *mockSnapshotManager) GetExternalFileMetadata(snapshotIndex uint64, fileTag string) (babuzapb.SnapshotFileDesc, error) {
+	return babuzapb.SnapshotFileDesc{}, fmt.Errorf("not found")
 }
 
 type mockSession struct {

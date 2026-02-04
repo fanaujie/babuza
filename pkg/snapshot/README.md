@@ -101,6 +101,48 @@ fileWriter.Close()
 metadata, err := writer.Commit(raftSnapshot)
 ```
 
+### Create Snapshot with External Files
+
+```go
+writer, err := snapshotMgr.CreateAtomicSnapshotWriter(term, index)
+if err != nil {
+    return err
+}
+
+// Write regular state machine data
+fileWriter, err := writer.CreateStateMachineFile("data", babuzapb.SnapshotFileCompression_Snappy)
+// Write data to fileWriter...
+fileWriter.Close()
+
+// Register an external file reference (e.g., a large file already on S3)
+err = writer.AddExternalFile(ibabuza.ExternalFileDescriptor{
+    FileTag:     "model_weights",
+    LocationUri: "s3://bucket/path/to/weights.bin",
+})
+
+metadata, err := writer.Commit(raftSnapshot)
+```
+
+### Handle External Files on Snapshot Install
+
+```go
+// Register handler before snapshots are received
+snapshotMgr.SetExternalFileHandler(&myHandler{})
+
+type myHandler struct{}
+
+func (h *myHandler) OnSnapshotReceived(snapshotIndex uint64, files []ibabuza.ExternalFileDescriptor) error {
+    for _, f := range files {
+        // Pull external file from f.LocationUri
+    }
+    return nil
+}
+
+// Query external file metadata from an installed snapshot
+desc, err := snapshotMgr.GetExternalFileMetadata(snapshotIndex, "model_weights")
+fmt.Println(desc.LocationUri) // "s3://bucket/path/to/weights.bin"
+```
+
 ### Load Snapshot
 
 ```go
@@ -205,6 +247,8 @@ type SnapshotManager interface {
     Purger() SnapshotPurger
     Purge(snapshot raftpb.Snapshot) error
     Close() error
+    SetExternalFileHandler(handler ExternalFileHandler)
+    GetExternalFileMetadata(snapshotIndex uint64, fileTag string) (babuzapb.SnapshotFileDesc, error)
 }
 ```
 
@@ -217,6 +261,7 @@ type AtomicSnapshotWriter interface {
     CreateClusterFile(compression babuzapb.SnapshotFileCompressionType) (io.WriteCloser, error)
     CreateSessionFile(compression babuzapb.SnapshotFileCompressionType) (io.WriteCloser, error)
     Commit(raftpb.Snapshot) (babuzapb.SnapshotMetadata, error)
+    AddExternalFile(descriptor ExternalFileDescriptor) error
 }
 ```
 
@@ -243,6 +288,25 @@ type AtomicSnapshotReceiver interface {
     Commit(snapshotIndex uint64) error
 }
 ```
+
+### ExternalFileHandler
+
+```go
+type ExternalFileDescriptor struct {
+    FileTag     string
+    LocationUri string
+    Metadata    []byte
+}
+
+type ExternalFileHandler interface {
+    OnSnapshotReceived(snapshotIndex uint64, files []ExternalFileDescriptor) error
+}
+```
+
+External files are references to data stored outside the snapshot (e.g., S3 objects). They are tracked in snapshot metadata via `isExternal` and `locationUri` fields but are **not** transferred via Raft snapshot chunks. When a snapshot containing external files is committed, the `ExternalFileHandler.OnSnapshotReceived` callback is invoked so the application can pull the files asynchronously.
+
+- `SnapshotReader.Open()` returns an error for external file tags; use `Metadata()` to access external file descriptors.
+- `ForEachFile()` and `CreateTarArchiveReader()` skip external files automatically.
 
 ## Snapshot File Compression
 

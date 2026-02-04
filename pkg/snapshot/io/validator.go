@@ -114,24 +114,35 @@ func (f *FileValidator) GetMetadataFile(dir string) (babuzapb.SnapshotMetadata, 
 	return f.metadataDecode.Decode(r)
 }
 
-func (f *FileValidator) ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMetadata) error {
+func (f *FileValidator) ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMetadata, skipExternal ...bool) error {
+	skip := len(skipExternal) > 0 && skipExternal[0]
 	for _, snapFile := range m.Files {
-		filename, err := f.fs.PathHelper().SnapshotFileName(snapFile.FileType, m.Snapshot.Metadata.Index, snapFile.Tag)
-		if err != nil {
-			return err
+		if skip && snapFile.IsExternal {
+			continue
 		}
-		fp := filepath.Join(dir, filename)
+		var fp string
+		if snapFile.IsExternal {
+			// External files are stored in the external subdirectory with just their tag as filename
+			fp = filepath.Join(dir, "external", snapFile.Tag)
+		} else {
+			filename, err := f.fs.PathHelper().SnapshotFileName(snapFile.FileType, m.Snapshot.Metadata.Index, snapFile.Tag)
+			if err != nil {
+				return err
+			}
+			fp = filepath.Join(dir, filename)
+		}
 
-		if f.fs.ExistFilePath(fp) == false {
-			return fmt.Errorf("snapshotor[index=%d]: not found snapshot file (tag=%s)", m.Snapshot.Metadata.Index, snapFile.Tag)
+		if !f.fs.ExistFilePath(fp) {
+			return fmt.Errorf("snapshotor[index=%d]: not found snapshot file (tag=%s, external=%t)", m.Snapshot.Metadata.Index, snapFile.Tag, snapFile.IsExternal)
 		}
 
 		crcR, err := f.fs.CrcFileRead(fp)
 		if err != nil {
 			return err
 		}
-		defer crcR.Close()
+
 		_, err = io.Copy(io.Discard, crcR)
+		crcR.Close()
 		if err != nil {
 			return err
 		}
@@ -144,7 +155,6 @@ func (f *FileValidator) ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMet
 			return fmt.Errorf("snapshotor[index=%d]: mismatch crc(%d != %d) (tag=%s)", m.Snapshot.Metadata.Index, crc, snapFile.FileCrc64,
 				snapFile.Tag)
 		}
-		return nil
 	}
 	return nil
 }

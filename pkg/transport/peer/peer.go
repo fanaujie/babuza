@@ -287,16 +287,7 @@ func (p *RaftPeerImpl) sendSnapshotMsgWithChunk(reader io.Reader, fileSize int64
 
 	var written int64
 	for {
-		nr, err := reader.Read(chunkBuf)
-		if err != nil {
-			if err == io.EOF {
-				if fileSize != written {
-					return ErrPeerCorruptedSnapshotFile
-				}
-				return nil
-			}
-			return err
-		}
+		nr, readErr := io.ReadFull(reader, chunkBuf)
 		if nr > 0 {
 			msg.ChunkMessage.Id++
 			msg.ChunkMessage.Data = chunkBuf[:nr]
@@ -307,7 +298,7 @@ func (p *RaftPeerImpl) sendSnapshotMsgWithChunk(reader io.Reader, fileSize int64
 			case <-p.closer.CloseCh():
 				return ErrPeerStopped
 			default:
-				if err = p.chunkRateLimiter.Wait(context.Background()); err != nil {
+				if err := p.chunkRateLimiter.Wait(context.Background()); err != nil {
 					return err
 				}
 				res, sErr := p.transportClient.SendSnapshotMessage(msg)
@@ -319,6 +310,15 @@ func (p *RaftPeerImpl) sendSnapshotMsgWithChunk(reader io.Reader, fileSize int64
 				}
 				p.breaker.Success()
 			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
+				if fileSize != written {
+					return ErrPeerCorruptedSnapshotFile
+				}
+				return nil
+			}
+			return readErr
 		}
 	}
 }

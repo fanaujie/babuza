@@ -17,7 +17,7 @@ The `ibabuza` package defines the contracts that all Babuza components must impl
 | `DiskStateMachine` | Extends BaseStateMachine with Open() and concurrent snapshot support |
 | `ConcurrentSnapshotStateMachine` | Prepare/release snapshot context for concurrent snapshots |
 | `SessionEnabledStateMachine` | State machines that support client sessions |
-| `StateMachineSnapshotWriter` | Write state machine files during snapshot |
+| `StateMachineSnapshotWriter` | Write state machine files and external file references during snapshot |
 | `StateMachineSnapshotReader` | Read state machine files during restore |
 | `ResponseSerializer` | Serialize/deserialize responses for session replay |
 
@@ -52,11 +52,12 @@ The `ibabuza` package defines the contracts that all Babuza components must impl
 
 | Interface | Description |
 |-----------|-------------|
-| `SnapshotManager` | Create, load, and purge snapshots |
+| `SnapshotManager` | Create, load, and purge snapshots; manage external file handlers |
 | `SnapshotReader` | Read snapshot data and metadata |
-| `AtomicSnapshotWriter` | Write snapshot atomically |
+| `AtomicSnapshotWriter` | Write snapshot atomically, including external file references |
 | `AtomicSnapshotReceiver` | Receive snapshot chunks from leader |
 | `SnapshotPurger` | Automatic snapshot purging |
+| `ExternalFileHandler` | Callback for external file notification on snapshot install |
 
 ### Write-Ahead Log
 
@@ -120,6 +121,11 @@ func (m *MyStateMachine) SaveSnapshot(ctx ibabuza.StateMachineSnapshotContext, w
     writer, _ := w.CreateStateMachineFile("data", babuzapb.SnapshotFileCompression_Snappy)
     defer writer.Close()
     // Serialize m.data to writer
+
+    // Optionally register external file references (e.g., large files on S3)
+    // w.AddExternalFile(ibabuza.ExternalFileDescriptor{
+    //     FileTag: "large_blob", LocationUri: "s3://bucket/blob",
+    // })
     return nil
 }
 

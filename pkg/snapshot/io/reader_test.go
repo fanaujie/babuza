@@ -12,19 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package io
 
 import (
+	"archive/tar"
+	"io"
+	"path/filepath"
+	"testing"
+
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/codec"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/durable"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/volatile"
 	"github.com/stretchr/testify/assert"
-	"io"
-	"path/filepath"
-	"testing"
 )
 
 func TestReader_Create(t *testing.T) {
@@ -192,6 +193,115 @@ func TestReader_ForEachFile(t *testing.T) {
 			assert.Equal(t, int64(len(data)), fileDesc.FileSize)
 			return nil
 		}))
+	}
+}
+
+func TestReader_ForEachFile_SkipsExternalFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	for _, fs := range []api.SnapshotFileSystem{
+		volatile.NewFileSystem(),
+		durable.NewSnapshotFS(),
+	} {
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		assert.Nil(t, err)
+		fdFiles := []snapFileDesc{
+			{
+				fileType:        babuzapb.SnapshotFileType_StateMachine,
+				tag:             "regular_one",
+				compressionType: babuzapb.SnapshotFileCompression_None,
+				dataSize:        1024,
+			},
+			{
+				fileType:        babuzapb.SnapshotFileType_Cluster,
+				compressionType: babuzapb.SnapshotFileCompression_None,
+				dataSize:        1024,
+			},
+			{
+				fileType:        babuzapb.SnapshotFileType_Session,
+				compressionType: babuzapb.SnapshotFileCompression_None,
+				dataSize:        1024,
+			},
+			{
+				fileType:        babuzapb.SnapshotFileType_StateMachine,
+				tag:             "ext_file",
+				compressionType: babuzapb.SnapshotFileCompression_None,
+				isExternalFile:  true,
+				externalFileUri: "s3://bucket/path/to/file.ext",
+			},
+		}
+		metadata := genSnapshotFiles(t, fs, targetDir, 1, 1, 1, fdFiles)
+		r := NewReader(fs, targetDir, metadata, &codec.Metadata{})
+
+		var visitedTags []string
+		err = r.ForEachFile(func(reader io.Reader, fileDesc babuzapb.SnapshotFileDesc) error {
+			visitedTags = append(visitedTags, fileDesc.Tag)
+			assert.False(t, fileDesc.IsExternal, "external file should not be visited")
+			return nil
+		})
+		assert.Nil(t, err)
+		assert.NotContains(t, visitedTags, "ext_file")
+		assert.Contains(t, visitedTags, "regular_one")
+	}
+}
+
+func TestReader_CreateTarArchiveReader_SkipsExternalFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	for _, fs := range []api.SnapshotFileSystem{
+		volatile.NewFileSystem(),
+		durable.NewSnapshotFS(),
+	} {
+		targetDir, err := fs.CreateDirAndTouch(tmpDir, babuzapb.SnapshotFolderType_TempWrite, 1)
+		assert.Nil(t, err)
+		fdFiles := []snapFileDesc{
+			{
+				fileType:        babuzapb.SnapshotFileType_StateMachine,
+				tag:             "regular_one",
+				compressionType: babuzapb.SnapshotFileCompression_None,
+				dataSize:        512,
+			},
+			{
+				fileType:        babuzapb.SnapshotFileType_Cluster,
+				compressionType: babuzapb.SnapshotFileCompression_None,
+				dataSize:        512,
+			},
+			{
+				fileType:        babuzapb.SnapshotFileType_Session,
+				compressionType: babuzapb.SnapshotFileCompression_None,
+				dataSize:        512,
+			},
+			{
+				fileType:        babuzapb.SnapshotFileType_StateMachine,
+				tag:             "ext_file",
+				compressionType: babuzapb.SnapshotFileCompression_None,
+				dataSize:        512,
+				isExternalFile:  true,
+				externalFileUri: "s3://bucket/path/to/file.ext",
+			},
+		}
+		metadata := genSnapshotFiles(t, fs, targetDir, 1, 1, 1, fdFiles)
+
+		r := NewReader(fs, targetDir, metadata, &codec.Metadata{})
+		tarReader, err := r.CreateTarArchiveReader()
+		assert.Nil(t, err)
+
+		tr := tar.NewReader(tarReader)
+		var tarEntryNames []string
+		for {
+			header, tErr := tr.Next()
+			if tErr == io.EOF {
+				break
+			}
+			assert.Nil(t, tErr)
+			tarEntryNames = append(tarEntryNames, header.Name)
+			io.Copy(io.Discard, tr)
+		}
+		tarReader.Close()
+
+		// Should have metadata + regular files
+		assert.True(t, len(tarEntryNames) > 0)
+		for _, name := range tarEntryNames {
+			assert.NotContains(t, name, "s3")
+		}
 	}
 }
 

@@ -18,6 +18,8 @@ package snapshot
 import (
 	"context"
 	"fmt"
+	"sync"
+
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
@@ -566,3 +568,92 @@ func TestSnapshotor_scanInstalledSnapshot(t *testing.T) {
 	}
 
 }
+
+// --- External file notification tests ---
+
+// recordingExternalFileHandler records OnSnapshotReceived calls for verification.
+type recordingExternalFileHandler struct {
+	mu    sync.Mutex
+	calls []struct {
+		snapshotIndex uint64
+		files         []ibabuza.ExternalFileDescriptor
+	}
+	err error
+}
+
+func (h *recordingExternalFileHandler) OnSnapshotReceived(snapshotIndex uint64, files []ibabuza.ExternalFileDescriptor) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls = append(h.calls, struct {
+		snapshotIndex uint64
+		files         []ibabuza.ExternalFileDescriptor
+	}{snapshotIndex, files})
+	return h.err
+}
+
+func TestSnapshotor_CommitNotifiesExternalFileHandler(t *testing.T) {
+	p := t.TempDir()
+	fs := durable.NewSnapshotFS()
+
+	handler := &recordingExternalFileHandler{}
+
+	s := New(Config{
+		SnapshotVersion: 1,
+		SnapshotDir:     p,
+	}, fs, &logger.Mock{}, nil)
+	s.SetExternalFileHandler(handler)
+
+	// Create a snapshot that has both a regular file and an external file.
+	w, err := s.CreateAtomicSnapshotWriter(1, 1)
+	require.NoError(t, err)
+
+	writeRandomData(t, w, babuzapb.SnapshotFileType_StateMachine, "regular", babuzapb.SnapshotFileCompression_None, 512)
+	writeRandomData(t, w, babuzapb.SnapshotFileType_Cluster, "", babuzapb.SnapshotFileCompression_None, 512)
+	writeRandomData(t, w, babuzapb.SnapshotFileType_Session, "", babuzapb.SnapshotFileCompression_None, 512)
+
+	require.NoError(t, w.AddExternalFile(ibabuza.ExternalFileDescriptor{
+		FileTag: "ext_present", LocationUri: "s3://bucket/ext_present",
+	}))
+	require.NoError(t, w.AddExternalFile(ibabuza.ExternalFileDescriptor{
+		FileTag: "ext_missing", LocationUri: "s3://bucket/ext_missing",
+	}))
+
+	_, err = w.Commit(raftpb.Snapshot{Metadata: raftpb.SnapshotMetadata{Index: 1, Term: 1}})
+	require.NoError(t, err)
+
+	// OnSnapshotReceived should have been called with the external files.
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+	require.Len(t, handler.calls, 1)
+	assert.Equal(t, uint64(1), handler.calls[0].snapshotIndex)
+	assert.Len(t, handler.calls[0].files, 2)
+}
+
+func TestSnapshotor_CommitNoNotificationWithoutExternalFiles(t *testing.T) {
+	p := t.TempDir()
+	fs := durable.NewSnapshotFS()
+
+	handler := &recordingExternalFileHandler{}
+
+	s := New(Config{
+		SnapshotVersion: 1,
+		SnapshotDir:     p,
+	}, fs, &logger.Mock{}, nil)
+	s.SetExternalFileHandler(handler)
+
+	// Create snapshot with only regular files.
+	genSnapFiles(t, s, 1, 1, []snapFileDesc{
+		{fileType: babuzapb.SnapshotFileType_StateMachine, tag: "one",
+			compressionType: babuzapb.SnapshotFileCompression_None, dataSize: 512},
+		{fileType: babuzapb.SnapshotFileType_Cluster,
+			compressionType: babuzapb.SnapshotFileCompression_None, dataSize: 512},
+		{fileType: babuzapb.SnapshotFileType_Session,
+			compressionType: babuzapb.SnapshotFileCompression_None, dataSize: 512},
+	})
+
+	// No notification should have been sent.
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+	assert.Empty(t, handler.calls, "OnSnapshotReceived should not be called when no external files")
+}
+

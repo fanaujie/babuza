@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package snapshot
 
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"sync"
+
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
@@ -25,8 +27,6 @@ import (
 	"github.com/fanaujie/babuza/pkg/snapshot/io"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
-	"sort"
-	"sync"
 )
 
 type purgeRequest struct {
@@ -41,16 +41,17 @@ type Config struct {
 }
 
 type Snapshotor struct {
-	config            Config
-	fs                api.SnapshotFileSystem
-	installedSnapshot map[uint64]struct{}
-	metadataCodec     *codec.Metadata
-	fileValidator     *io.FileValidator
-	logger            ibabuza.Logger
-	mu                sync.Mutex
-	purgeRequestCh    chan purgeRequest
-	stopCh            chan struct{}
-	once              sync.Once
+	config              Config
+	fs                  api.SnapshotFileSystem
+	installedSnapshot   map[uint64]struct{}
+	metadataCodec       *codec.Metadata
+	fileValidator       *io.FileValidator
+	logger              ibabuza.Logger
+	mu                  sync.Mutex
+	purgeRequestCh      chan purgeRequest
+	stopCh              chan struct{}
+	once                sync.Once
+	externalFileHandler ibabuza.ExternalFileHandler
 }
 
 func New(config Config, fs api.SnapshotFileSystem, logger ibabuza.Logger, purgeRequestCh chan purgeRequest) *Snapshotor {
@@ -190,8 +191,10 @@ func (s *Snapshotor) purgeSnapshot(snapshot raftpb.Snapshot) error {
 		}
 		installSnapshot = installSnapshot[1:]
 	}
+
 	return nil
 }
+
 
 func (s *Snapshotor) Purge(snapshot raftpb.Snapshot) error {
 	s.purgeRequestCh <- purgeRequest{
@@ -216,6 +219,29 @@ func (s *Snapshotor) CommitSnapshot(folderType babuzapb.SnapshotFolderType, snap
 
 func (s *Snapshotor) SnapshotVersion() uint64 {
 	return s.config.SnapshotVersion
+}
+
+func (s *Snapshotor) SetExternalFileHandler(handler ibabuza.ExternalFileHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.externalFileHandler = handler
+}
+
+func (s *Snapshotor) GetExternalFileMetadata(snapshotIndex uint64, fileTag string) (babuzapb.SnapshotFileDesc, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	meta, err := s.getInstalledSnapshotMetadata(snapshotIndex)
+	if err != nil {
+		return babuzapb.SnapshotFileDesc{}, err
+	}
+
+	fileDesc, ok := meta.Files[fileTag]
+	if !ok || !fileDesc.IsExternal {
+		return babuzapb.SnapshotFileDesc{}, fmt.Errorf("snapshot: external file not found: index=%d tag=%s", snapshotIndex, fileTag)
+	}
+
+	return fileDesc, nil
 }
 
 func (s *Snapshotor) getInstalledSnapshotMetadata(snapIndex uint64) (babuzapb.SnapshotMetadata, error) {
@@ -313,6 +339,31 @@ func (s *Snapshotor) commitSnapshot(folderType babuzapb.SnapshotFolderType, snap
 		return err
 	}
 	s.installedSnapshot[snapshotIndex] = struct{}{}
+
+	meta, err := s.getInstalledSnapshotMetadata(snapshotIndex)
+	if err != nil {
+		return err
+	}
+
+	var externalFiles []ibabuza.ExternalFileDescriptor
+	for tag, fileDesc := range meta.Files {
+		if fileDesc.IsExternal {
+			externalFiles = append(externalFiles, ibabuza.ExternalFileDescriptor{
+				FileTag:     tag,
+				LocationUri: fileDesc.LocationUri,
+				Metadata:    fileDesc.Metadata,
+			})
+		}
+	}
+	if len(externalFiles) > 0 {
+		handler := s.externalFileHandler
+		if handler == nil {
+			return nil
+		}
+		if err = handler.OnSnapshotReceived(snapshotIndex, externalFiles); err != nil {
+			return fmt.Errorf("snapshot: ExternalFileHandler.OnSnapshotReceived failed for index=%d: %w", snapshotIndex, err)
+		}
+	}
 	return nil
 }
 

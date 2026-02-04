@@ -16,39 +16,41 @@
 package io
 
 import (
-    "fmt"
-    "github.com/fanaujie/babuza/ibabuza/babuzapb"
-    "github.com/fanaujie/babuza/pkg/snapshot/fs/api"
-    "path/filepath"
+	"fmt"
+	"path/filepath"
+
+	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
 )
 
 type ValidateFile interface {
-    GetMetadataFile(dir string) (babuzapb.SnapshotMetadata, error)
-    ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMetadata) error
+	GetMetadataFile(dir string) (babuzapb.SnapshotMetadata, error)
+	ValidateSnapshotFiles(dir string, m babuzapb.SnapshotMetadata, skipExternal ...bool) error
 }
 
 type Receiver struct {
-    fs             api.SnapshotFileSystem
-    dir            string
-    metadata       babuzapb.SnapshotMetadata
-    metadataEn     MetadataEncoder
-    installer      Installer
-    fileValidator  ValidateFile
-    chunkValidator map[string]*ChunkValidator
+	fs             api.SnapshotFileSystem
+	dir            string
+	metadata       babuzapb.SnapshotMetadata
+	metadataEn     MetadataEncoder
+	installer      Installer
+	fileValidator  ValidateFile
+	chunkValidator map[string]*ChunkValidator
 }
 
 func NewReceiver(fs api.SnapshotFileSystem, dir string, metadata babuzapb.SnapshotMetadata, metadataEn MetadataEncoder, installer Installer,
-    fileValidator ValidateFile) *Receiver {
-    return &Receiver{
-        fs:             fs,
-        dir:            dir,
-        metadata:       metadata,
-        metadataEn:     metadataEn,
-        installer:      installer,
-        fileValidator:  fileValidator,
-        chunkValidator: make(map[string]*ChunkValidator),
-    }
+	fileValidator ValidateFile) *Receiver {
+	return &Receiver{
+		fs:             fs,
+		dir:            dir,
+		metadata:       metadata,
+		metadataEn:     metadataEn,
+		installer:      installer,
+		fileValidator:  fileValidator,
+		chunkValidator: make(map[string]*ChunkValidator),
+	}
 }
+
 
 func (r *Receiver) SaveChunk(snapshotIndex uint64, msg babuzapb.SnapshotChunkMessage) error {
     if r.metadata.Snapshot.Metadata.Index != snapshotIndex {
@@ -76,35 +78,38 @@ func (r *Receiver) SaveChunk(snapshotIndex uint64, msg babuzapb.SnapshotChunkMes
 }
 
 func (r *Receiver) DeleteDir() error {
-    return r.fs.RemoveDir(r.dir)
+	return r.fs.RemoveDir(r.dir)
 }
 
 func (r *Receiver) Commit(snapshotIndex uint64) error {
-    if r.metadata.Snapshot.Metadata.Index != snapshotIndex {
-        return fmt.Errorf("snapshotor: mismatch snapshot index(expected=%d,get=%d)", r.metadata.Snapshot.Metadata.Index, snapshotIndex)
-    }
-    if err := r.writeMetadataFile(snapshotIndex); err != nil {
-        return err
-    }
+	if r.metadata.Snapshot.Metadata.Index != snapshotIndex {
+		return fmt.Errorf("snapshotor: mismatch snapshot index(expected=%d,get=%d)", r.metadata.Snapshot.Metadata.Index, snapshotIndex)
+	}
 
-    m, err := r.fileValidator.GetMetadataFile(r.dir)
-    if err != nil {
-        return err
-    }
+	if err := r.writeMetadataFile(snapshotIndex); err != nil {
+		return err
+	}
 
-    if m.Version != r.installer.SnapshotVersion() {
-        return fmt.Errorf("snapshotor: mismatch snapshot version(expected=%d,get=%d)", r.installer.SnapshotVersion(), m.Version)
-    }
+	m, err := r.fileValidator.GetMetadataFile(r.dir)
+	if err != nil {
+		return err
+	}
 
-    if err = r.fileValidator.ValidateSnapshotFiles(r.dir, m); err != nil {
-        return err
-    }
+	if m.Version != r.installer.SnapshotVersion() {
+		return fmt.Errorf("snapshotor: mismatch snapshot version(expected=%d,get=%d)", r.installer.SnapshotVersion(), m.Version)
+	}
 
-    if err = r.installer.CommitSnapshot(babuzapb.SnapshotFolderType_TempReceive, snapshotIndex); err != nil {
-        return err
-    }
+	// Validate only non-external files; external files will be pulled asynchronously
+	// after CommitSnapshot renames the temp directory to installed.
+	if err = r.fileValidator.ValidateSnapshotFiles(r.dir, m, true); err != nil {
+		return err
+	}
 
-    return nil
+	if err = r.installer.CommitSnapshot(babuzapb.SnapshotFolderType_TempReceive, snapshotIndex); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (r *Receiver) writeMetadataFile(snapshotIndex uint64) error {

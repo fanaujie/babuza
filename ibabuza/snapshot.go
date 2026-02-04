@@ -12,15 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package ibabuza
 
 import (
+	"io"
+
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
-	"io"
 )
+
+type ExternalFileDescriptor struct {
+	FileTag     string
+	LocationUri string
+	Metadata    []byte
+}
+
+type ExternalFileHandler interface {
+	OnSnapshotReceived(snapshotIndex uint64, files []ExternalFileDescriptor) error
+}
 
 type StateMachineFileDesc struct {
 	Tag      string
@@ -44,6 +54,7 @@ type AtomicSnapshotWriter interface {
 	CreateClusterFile(compression babuzapb.SnapshotFileCompressionType) (io.WriteCloser, error)
 	CreateSessionFile(compression babuzapb.SnapshotFileCompressionType) (io.WriteCloser, error)
 	Commit(raftpb.Snapshot) (babuzapb.SnapshotMetadata, error)
+	AddExternalFile(descriptor ExternalFileDescriptor) error
 }
 type AtomicSnapshotReceiver interface {
 	SaveChunk(snapshotIndex uint64, msg babuzapb.SnapshotChunkMessage) error
@@ -64,4 +75,6 @@ type SnapshotManager interface {
 	Purger() SnapshotPurger
 	Purge(snapshot raftpb.Snapshot) error
 	Close() error
+	SetExternalFileHandler(handler ExternalFileHandler)
+	GetExternalFileMetadata(snapshotIndex uint64, fileTag string) (babuzapb.SnapshotFileDesc, error)
 }

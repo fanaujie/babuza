@@ -12,20 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package io
 
 import (
+	"hash/crc32"
+	"io"
+	"math/rand"
+	"testing"
+
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/api"
 	"github.com/fanaujie/babuza/pkg/snapshot/fs/codec"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
-	"hash/crc32"
-	"io"
-	"math/rand"
-	"testing"
 )
 
 type mockInstaller struct {
@@ -46,6 +46,8 @@ type snapFileDesc struct {
 	compressionType babuzapb.SnapshotFileCompressionType
 	dataSize        int
 	metadata        []byte
+	isExternalFile  bool
+	externalFileUri string
 }
 
 var (
@@ -116,10 +118,17 @@ func writeRandomData(t *testing.T, w ibabuza.AtomicSnapshotWriter, fd snapFileDe
 
 func genSnapshotFiles(t *testing.T, fs api.SnapshotFileSystem, dir string, version, snapshotTerm, snapshotIndex uint64,
 	files []snapFileDesc) babuzapb.SnapshotMetadata {
-	
+
 	w := NewWriter(fs, dir, &codec.Metadata{}, &mockInstaller{vesion: version}, snapshotIndex)
 
 	for _, fd := range files {
+		if fd.isExternalFile {
+			assert.Nil(t, w.AddExternalFile(ibabuza.ExternalFileDescriptor{
+				FileTag:     fd.tag,
+				LocationUri: fd.externalFileUri,
+			}))
+			continue
+		}
 		writeRandomData(t, w, fd)
 		if fd.fileType == babuzapb.SnapshotFileType_StateMachine {
 			assert.Nil(t, w.AddStateMachineFileMetadata(fd.tag, fd.metadata))
