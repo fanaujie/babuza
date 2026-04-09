@@ -1,5 +1,7 @@
 # Babuza
 
+**Languages:** English | [繁體中文](./README.zh-TW.md) | [简体中文](./README.zh-CN.md)
+
 A Go framework built on [etcd Raft](https://github.com/etcd-io/raft) that simplifies building distributed consensus-based systems.
 
 ## Why Babuza?
@@ -58,6 +60,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/fanaujie/babuza/ibabuza"
@@ -65,15 +68,24 @@ import (
 )
 
 // 1. Implement your state machine
-type KVStore struct{ data map[string]string }
+type KVStore struct {
+	mu   sync.RWMutex
+	data map[string]string
+}
 
 func (s *KVStore) Apply(e ibabuza.Entry) ibabuza.ApplyResult {
 	var cmd struct{ Key, Value string }
 	json.Unmarshal(e.Command, &cmd)
+	s.mu.Lock()
 	s.data[cmd.Key] = cmd.Value
+	s.mu.Unlock()
 	return ibabuza.ApplyResult{LogIndex: e.Index}
 }
-func (s *KVStore) Query(key any) (any, error) { return s.data[key.(string)], nil }
+func (s *KVStore) Query(key any) (any, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data[key.(string)], nil
+}
 func (s *KVStore) SaveSnapshot(ibabuza.StateMachineSnapshotContext, ibabuza.StateMachineSnapshotWriter) error { return nil }
 func (s *KVStore) RestoreFromSnapshot(ibabuza.StateMachineSnapshotReader) error { return nil }
 func (s *KVStore) Close() error { return nil }
