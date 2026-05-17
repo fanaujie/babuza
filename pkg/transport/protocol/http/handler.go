@@ -15,11 +15,13 @@
 package http
 
 import (
+	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -117,9 +119,12 @@ func (h *handler) snapshotMessageStreamFunc(w http.ResponseWriter, req *http.Req
 	}
 	defer h.withRequestReadTimeout(req, h.config.SnapshotStreamIdleTimeout)()
 	defer req.Body.Close()
+	if err := http.NewResponseController(w).EnableFullDuplex(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	reader := frame.NewReader(req.Body)
-	var lastRes babuzapb.SnapshotMessageResponse
 	frameCount := 0
 	for {
 		eof, err := reader.ReadFrameOrEOF(func(msgType frame.MessageType, msgBuf []byte) error {
@@ -134,15 +139,28 @@ func (h *handler) snapshotMessageStreamFunc(w http.ResponseWriter, req *http.Req
 				return err
 			}
 			frameCount++
-			lastRes = h.raft.ProcessSnapshotMessage(snapMsg)
+			res := h.raft.ProcessSnapshotMessage(snapMsg)
+			if snapMsg.Type == babuzapb.SnapshotMessageType_Finish || res.Status != babuzapb.SUCCESS {
+				if err := writeSnapshotResponseFrame(w, &res); err != nil {
+					return err
+				}
+				if err := http.NewResponseController(w).Flush(); err != nil {
+					return err
+				}
+			}
+			if snapMsg.Type == babuzapb.SnapshotMessageType_Finish || res.Status != babuzapb.SUCCESS {
+				return errSnapshotStreamRejected
+			}
 			return nil
 		})
 		if err != nil {
+			if errors.Is(err, errSnapshotStreamRejected) {
+				return
+			}
+			if frameCount > 0 {
+				return
+			}
 			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if frameCount > 0 && lastRes.Status != babuzapb.SUCCESS {
-			writeProtoMessage[*babuzapb.SnapshotMessageResponse](w, &lastRes)
 			return
 		}
 		if eof {
@@ -150,10 +168,18 @@ func (h *handler) snapshotMessageStreamFunc(w http.ResponseWriter, req *http.Req
 				http.Error(w, "snapshot stream is empty", http.StatusBadRequest)
 				return
 			}
-			writeProtoMessage[*babuzapb.SnapshotMessageResponse](w, &lastRes)
 			return
 		}
 	}
+}
+
+var errSnapshotStreamRejected = errors.New("snapshot stream rejected")
+
+func writeSnapshotResponseFrame(w io.Writer, res *babuzapb.SnapshotMessageResponse) error {
+	bufSize := frame.EncodeSize(res.Size())
+	bufSlice := allocator.Acquire(bufSize)
+	defer allocator.Release(bufSlice)
+	return frame.NewWriter(w).Encode(bufSlice.Buffer[:bufSize], frame.SnapshotMsgResType, res)
 }
 
 func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {

@@ -43,20 +43,27 @@ type RaftMsgClient struct {
 	resolver             ibabuza.TransportResolver
 	urlPool              *UrlPool
 	messageStreamEnabled bool
-	streamMu             sync.Mutex
+	messageStreamMu      sync.Mutex
+	snapshotStreamMu     sync.Mutex
 	stream               *messageStream
 	snapshotStream       *snapshotStream
 }
 
 type messageStream struct {
+	peerID uint64
 	body   *io.PipeWriter
 	doneCh chan error
 }
 
 type snapshotStream struct {
-	peerID uint64
-	body   *io.PipeWriter
-	resCh  chan snapshotStreamResult
+	peerID    uint64
+	clusterID uint64
+	groupID   uint64
+	term      uint64
+	index     uint64
+	body      *io.PipeWriter
+	doneCh    chan struct{}
+	result    snapshotStreamResult
 }
 
 type snapshotStreamResult struct {
@@ -102,13 +109,14 @@ func (r *RaftMsgClient) SendMultiRaftMessage(babuzapb.MultiRaftBatchMessage) err
 }
 func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	//TODO: retry if failed?
-	if batchMsg.Messages == nil || len(batchMsg.Messages) == 0 {
-		return fmt.Errorf("batch message is empty")
+	peerID, err := batchMessagePeer(batchMsg)
+	if err != nil {
+		return err
 	}
 	if r.messageStreamEnabled {
-		return r.sendBatchMessageStream(batchMsg)
+		return r.sendBatchMessageStream(peerID, batchMsg)
 	}
-	u, err := r.getUrl(batchMsg.Messages[0].To, raftBatchMsgPrefix)
+	u, err := r.getUrl(peerID, raftBatchMsgPrefix)
 	if err != nil {
 		return err
 	}
@@ -139,21 +147,46 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	return nil
 }
 
-func (r *RaftMsgClient) sendBatchMessageStream(batchMsg babuzapb.BatchMessage) error {
-	r.streamMu.Lock()
-	defer r.streamMu.Unlock()
+func batchMessagePeer(batchMsg babuzapb.BatchMessage) (uint64, error) {
+	if batchMsg.Messages == nil || len(batchMsg.Messages) == 0 {
+		return 0, fmt.Errorf("batch message is empty")
+	}
+	peerID := batchMsg.Messages[0].To
+	for i := 1; i < len(batchMsg.Messages); i++ {
+		if batchMsg.Messages[i].To != peerID {
+			return 0, fmt.Errorf("batch message contains multiple peers: %d and %d", peerID, batchMsg.Messages[i].To)
+		}
+	}
+	return peerID, nil
+}
+
+func (r *RaftMsgClient) sendBatchMessageStream(peerID uint64, batchMsg babuzapb.BatchMessage) error {
+	r.messageStreamMu.Lock()
+	defer r.messageStreamMu.Unlock()
 
 	if r.stream == nil {
-		stream, err := r.openMessageStreamLocked(batchMsg.Messages[0].To)
+		stream, err := r.openMessageStreamLocked(peerID)
+		if err != nil {
+			return err
+		}
+		r.stream = stream
+	} else if r.stream.peerID != peerID {
+		r.closeStreamLocked(r.stream, nil)
+		stream, err := r.openMessageStreamLocked(peerID)
 		if err != nil {
 			return err
 		}
 		r.stream = stream
 	}
+	stream := r.stream
 	select {
-	case <-r.stream.doneCh:
+	case err := <-stream.doneCh:
 		r.stream = nil
-		stream, err := r.openMessageStreamLocked(batchMsg.Messages[0].To)
+		_ = stream.body.CloseWithError(err)
+		if err != nil {
+			return err
+		}
+		stream, err := r.openMessageStreamLocked(peerID)
 		if err != nil {
 			return err
 		}
@@ -169,6 +202,16 @@ func (r *RaftMsgClient) sendBatchMessageStream(batchMsg babuzapb.BatchMessage) e
 	if err != nil {
 		r.closeStreamLocked(r.stream, err)
 		return err
+	}
+	stream = r.stream
+	select {
+	case err := <-stream.doneCh:
+		r.stream = nil
+		_ = stream.body.CloseWithError(err)
+		if err != nil {
+			return err
+		}
+	default:
 	}
 	return nil
 }
@@ -188,6 +231,7 @@ func (r *RaftMsgClient) openMessageStreamLocked(peerID uint64) (*messageStream, 
 		return nil, err
 	}
 	stream := &messageStream{
+		peerID: peerID,
 		body:   pw,
 		doneCh: make(chan error, 1),
 	}
@@ -205,8 +249,8 @@ func (r *RaftMsgClient) monitorMessageStream(stream *messageStream, req *http.Re
 	}
 
 	stream.doneCh <- err
-	r.streamMu.Lock()
-	defer r.streamMu.Unlock()
+	r.messageStreamMu.Lock()
+	defer r.messageStreamMu.Unlock()
 	if r.stream == stream {
 		r.stream = nil
 	}
@@ -273,13 +317,16 @@ func (r *RaftMsgClient) sendSnapshotMessageStream(snapMsg babuzapb.SnapshotMessa
 }
 
 func (r *RaftMsgClient) sendSnapshotMetadataStream(snapMsg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
-	r.streamMu.Lock()
-	defer r.streamMu.Unlock()
+	r.snapshotStreamMu.Lock()
+	defer r.snapshotStreamMu.Unlock()
 
 	if r.snapshotStream != nil {
+		if result, ok := r.finishedSnapshotStreamResultLocked(r.snapshotStream); ok {
+			return result.resp, result.err
+		}
 		return babuzapb.SnapshotMessageResponse{}, fmt.Errorf("snapshot stream already active for peer %d", r.snapshotStream.peerID)
 	}
-	stream, err := r.openSnapshotStreamLocked(snapMsg.To)
+	stream, err := r.openSnapshotStreamLocked(snapMsg)
 	if err != nil {
 		return babuzapb.SnapshotMessageResponse{}, err
 	}
@@ -292,14 +339,23 @@ func (r *RaftMsgClient) sendSnapshotMetadataStream(snapMsg babuzapb.SnapshotMess
 }
 
 func (r *RaftMsgClient) sendSnapshotChunkStream(snapMsg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
-	r.streamMu.Lock()
-	defer r.streamMu.Unlock()
+	r.snapshotStreamMu.Lock()
+	defer r.snapshotStreamMu.Unlock()
 
-	stream, err := r.activeSnapshotStreamLocked()
+	stream, result, err := r.activeSnapshotStreamLocked()
 	if err != nil {
 		return babuzapb.SnapshotMessageResponse{}, err
 	}
+	if result != nil {
+		return result.resp, result.err
+	}
+	if err := stream.validateMessage(snapMsg); err != nil {
+		return babuzapb.SnapshotMessageResponse{}, err
+	}
 	if err := r.writeSnapshotFrameLocked(stream, snapMsg); err != nil {
+		if result, ok := r.finishedSnapshotStreamResultLocked(stream); ok {
+			return result.resp, result.err
+		}
 		r.closeSnapshotStreamLocked(stream, err)
 		return babuzapb.SnapshotMessageResponse{}, err
 	}
@@ -307,30 +363,42 @@ func (r *RaftMsgClient) sendSnapshotChunkStream(snapMsg babuzapb.SnapshotMessage
 }
 
 func (r *RaftMsgClient) finishSnapshotStream(snapMsg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
-	r.streamMu.Lock()
-	defer r.streamMu.Unlock()
+	r.snapshotStreamMu.Lock()
+	defer r.snapshotStreamMu.Unlock()
 
-	stream, err := r.activeSnapshotStreamLocked()
+	stream, result, err := r.activeSnapshotStreamLocked()
 	if err != nil {
 		return babuzapb.SnapshotMessageResponse{}, err
 	}
+	if result != nil {
+		return result.resp, result.err
+	}
+	if err := stream.validateMessage(snapMsg); err != nil {
+		return babuzapb.SnapshotMessageResponse{}, err
+	}
 	if err := r.writeSnapshotFrameLocked(stream, snapMsg); err != nil {
+		if result, ok := r.finishedSnapshotStreamResultLocked(stream); ok {
+			return result.resp, result.err
+		}
 		r.closeSnapshotStreamLocked(stream, err)
 		return babuzapb.SnapshotMessageResponse{}, err
 	}
 	if err := stream.body.Close(); err != nil {
+		if result, ok := r.finishedSnapshotStreamResultLocked(stream); ok {
+			return result.resp, result.err
+		}
 		r.closeSnapshotStreamLocked(stream, err)
 		return babuzapb.SnapshotMessageResponse{}, err
 	}
-	result := <-stream.resCh
+	finalResult := r.readSnapshotResponseLocked(stream)
 	if r.snapshotStream == stream {
 		r.snapshotStream = nil
 	}
-	return result.resp, result.err
+	return finalResult.resp, finalResult.err
 }
 
-func (r *RaftMsgClient) openSnapshotStreamLocked(peerID uint64) (*snapshotStream, error) {
-	u, err := r.getUrl(peerID, raftSnapshotStreamPrefix)
+func (r *RaftMsgClient) openSnapshotStreamLocked(snapMsg babuzapb.SnapshotMessage) (*snapshotStream, error) {
+	u, err := r.getUrl(snapMsg.To, raftSnapshotStreamPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -344,9 +412,13 @@ func (r *RaftMsgClient) openSnapshotStreamLocked(peerID uint64) (*snapshotStream
 		return nil, err
 	}
 	stream := &snapshotStream{
-		peerID: peerID,
-		body:   pw,
-		resCh:  make(chan snapshotStreamResult, 1),
+		peerID:    snapMsg.To,
+		clusterID: snapMsg.ClusterID,
+		groupID:   snapMsg.GroupID,
+		term:      snapMsg.Term,
+		index:     snapMsg.Index,
+		body:      pw,
+		doneCh:    make(chan struct{}),
 	}
 	go r.monitorSnapshotStream(stream, req)
 	return stream, nil
@@ -354,27 +426,88 @@ func (r *RaftMsgClient) openSnapshotStreamLocked(peerID uint64) (*snapshotStream
 
 func (r *RaftMsgClient) monitorSnapshotStream(stream *snapshotStream, req *http.Request) {
 	var result snapshotStreamResult
+	defer func() {
+		if result.err != nil || result.resp.Status != babuzapb.SUCCESS {
+			_ = stream.body.CloseWithError(result.err)
+		}
+		stream.result = result
+		close(stream.doneCh)
+	}()
 	res, err := r.snapshotStreamClient.Do(req)
 	if err != nil {
 		result.err = err
-		stream.resCh <- result
 		return
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		result.err = fmt.Errorf("unexpected status code: %d", res.StatusCode)
-		stream.resCh <- result
 		return
 	}
-	result.err = decodeExpectedMessage(res.Body, res.ContentLength, &result.resp)
-	stream.resCh <- result
+	reader := frame.NewReader(res.Body)
+	for {
+		eof, err := reader.ReadFrameOrEOF(func(msgType frame.MessageType, msgBuf []byte) error {
+			if msgType != frame.SnapshotMsgResType {
+				return fmt.Errorf("unsupported message type: %d", msgType)
+			}
+			return result.resp.Unmarshal(msgBuf)
+		})
+		if err != nil {
+			result.err = err
+			return
+		}
+		if eof {
+			result.err = fmt.Errorf("snapshot stream closed before response")
+			return
+		}
+		if result.resp.Status != babuzapb.SUCCESS {
+			_ = stream.body.CloseWithError(fmt.Errorf("snapshot stream failed: %s", result.resp.Message))
+		}
+		return
+	}
 }
 
-func (r *RaftMsgClient) activeSnapshotStreamLocked() (*snapshotStream, error) {
+func (r *RaftMsgClient) activeSnapshotStreamLocked() (*snapshotStream, *snapshotStreamResult, error) {
 	if r.snapshotStream == nil {
-		return nil, fmt.Errorf("snapshot stream is not active")
+		return nil, nil, fmt.Errorf("snapshot stream is not active")
 	}
-	return r.snapshotStream, nil
+	if result, ok := r.finishedSnapshotStreamResultLocked(r.snapshotStream); ok {
+		return nil, &result, nil
+	}
+	return r.snapshotStream, nil, nil
+}
+
+func (r *RaftMsgClient) finishedSnapshotStreamResultLocked(stream *snapshotStream) (snapshotStreamResult, bool) {
+	select {
+	case <-stream.doneCh:
+		r.closeSnapshotStreamLocked(stream, stream.result.err)
+		return stream.result, true
+	default:
+		return snapshotStreamResult{}, false
+	}
+}
+
+func (s *snapshotStream) validateMessage(snapMsg babuzapb.SnapshotMessage) error {
+	if snapMsg.To != s.peerID {
+		return fmt.Errorf("snapshot stream peer mismatch: active=%d message=%d", s.peerID, snapMsg.To)
+	}
+	if snapMsg.ClusterID != s.clusterID {
+		return fmt.Errorf("snapshot stream cluster mismatch: active=%d message=%d", s.clusterID, snapMsg.ClusterID)
+	}
+	if snapMsg.GroupID != s.groupID {
+		return fmt.Errorf("snapshot stream group mismatch: active=%d message=%d", s.groupID, snapMsg.GroupID)
+	}
+	if snapMsg.Term != s.term {
+		return fmt.Errorf("snapshot stream term mismatch: active=%d message=%d", s.term, snapMsg.Term)
+	}
+	if snapMsg.Index != s.index {
+		return fmt.Errorf("snapshot stream index mismatch: active=%d message=%d", s.index, snapMsg.Index)
+	}
+	return nil
+}
+
+func (r *RaftMsgClient) readSnapshotResponseLocked(stream *snapshotStream) snapshotStreamResult {
+	<-stream.doneCh
+	return stream.result
 }
 
 func (r *RaftMsgClient) writeSnapshotFrameLocked(stream *snapshotStream, snapMsg babuzapb.SnapshotMessage) error {
@@ -462,18 +595,23 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 }
 
 func (r *RaftMsgClient) Close() error {
-	r.streamMu.Lock()
-	defer r.streamMu.Unlock()
 	var err error
+
+	r.messageStreamMu.Lock()
 	if r.stream != nil {
 		err = r.stream.body.Close()
 		r.stream = nil
 	}
+	r.messageStreamMu.Unlock()
+
+	r.snapshotStreamMu.Lock()
 	if r.snapshotStream != nil {
 		if closeErr := r.snapshotStream.body.Close(); err == nil {
 			err = closeErr
 		}
 		r.snapshotStream = nil
 	}
+	r.snapshotStreamMu.Unlock()
+
 	return err
 }
