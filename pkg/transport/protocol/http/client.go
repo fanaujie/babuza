@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package http
 
 import (
@@ -37,8 +36,27 @@ func NewClient(cfg ibabuza.TLSConfig, options ServerConfig) (*http.Client, error
 			DialTLSContext: dialCtx,
 		}
 	}
-	//TODO: reuse http.Client, snapshot need new connection
 	return &http.Client{
 		Transport: roundTrip,
+	}, nil
+}
+
+func NewSnapshotStreamClient(cfg ibabuza.TLSConfig, options ServerConfig) (*http.Client, error) {
+	dialCtx, err := dialContext(cfg, options)
+	if err != nil {
+		return nil, err
+	}
+
+	transport := &http.Transport{
+		MaxConnsPerHost:     1,
+		MaxIdleConnsPerHost: 1,
+	}
+	if cfg.EnableTLS {
+		transport.DialTLSContext = dialCtx
+	} else {
+		transport.DialContext = dialCtx
+	}
+	return &http.Client{
+		Transport: transport,
 	}, nil
 }

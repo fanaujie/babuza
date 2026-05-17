@@ -16,7 +16,9 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
@@ -26,6 +28,7 @@ import (
 	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
+	"hash/crc32"
 	"io"
 	"math/rand"
 	"net"
@@ -210,6 +213,41 @@ func (m *streamTestRaft) PublishApplicationService(babuzapb.PublishApplicationSe
 	return babuzapb.PublishApplicationServiceResponse{}
 }
 
+type snapshotStreamTestRaft struct {
+	processed  chan babuzapb.SnapshotMessage
+	count      atomic.Int64
+	responseFn func(babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse
+}
+
+func newSnapshotStreamTestRaft(buffer int) *snapshotStreamTestRaft {
+	return &snapshotStreamTestRaft{
+		processed: make(chan babuzapb.SnapshotMessage, buffer),
+	}
+}
+
+func (m *snapshotStreamTestRaft) ProcessBatchMessage(babuzapb.BatchMessage) {
+}
+
+func (m *snapshotStreamTestRaft) ProcessSnapshotMessage(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
+	m.count.Add(1)
+	m.processed <- message
+	if m.responseFn != nil {
+		return m.responseFn(message)
+	}
+	return babuzapb.SnapshotMessageResponse{
+		Status:  babuzapb.SUCCESS,
+		Message: message.Type.String(),
+	}
+}
+
+func (m *snapshotStreamTestRaft) GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+	return babuzapb.GetClusterPeersResponse{}
+}
+
+func (m *snapshotStreamTestRaft) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+	return babuzapb.PublishApplicationServiceResponse{}
+}
+
 type benchmarkRaft struct {
 	count atomic.Int64
 }
@@ -219,7 +257,8 @@ func (m *benchmarkRaft) ProcessBatchMessage(message babuzapb.BatchMessage) {
 }
 
 func (m *benchmarkRaft) ProcessSnapshotMessage(babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
-	return babuzapb.SnapshotMessageResponse{}
+	m.count.Add(1)
+	return babuzapb.SnapshotMessageResponse{Status: babuzapb.SUCCESS}
 }
 
 func (m *benchmarkRaft) GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
@@ -238,6 +277,19 @@ func testBatchMessage(from, to, index uint64) babuzapb.BatchMessage {
 				To:    to,
 				Index: index,
 			},
+		},
+	}
+}
+
+func testSnapshotMessage(from, to, index uint64, typ babuzapb.SnapshotMessageType) babuzapb.SnapshotMessage {
+	return babuzapb.SnapshotMessage{
+		From:  from,
+		To:    to,
+		Index: index,
+		Type:  typ,
+		ChunkMessage: babuzapb.SnapshotChunkMessage{
+			FileTag: "default",
+			Data:    []byte("chunk"),
 		},
 	}
 }
@@ -268,6 +320,32 @@ func startHTTPMessageTestServer(t testing.TB, streamEnabled bool, tlsEnabled boo
 	} else {
 		srv.Start()
 	}
+	t.Cleanup(srv.Close)
+	return srv, shortCount, streamCount
+}
+
+func startHTTPSnapshotTestServer(t testing.TB, streamEnabled bool, raft ibabuza.RaftMessageHandler) (*httptest.Server, *atomic.Int64, *atomic.Int64) {
+	t.Helper()
+	shortCount := &atomic.Int64{}
+	streamCount := &atomic.Int64{}
+	h := &handler{
+		raft: raft,
+		config: ServerConfig{
+			MessageStreamEnabled:      streamEnabled,
+			StreamIdleTimeout:         time.Second,
+			SnapshotStreamIdleTimeout: time.Second,
+		},
+	}
+	mux := stdhttp.NewServeMux()
+	mux.HandleFunc(raftSnapshotMsgPrefix, func(w stdhttp.ResponseWriter, req *stdhttp.Request) {
+		shortCount.Add(1)
+		h.snapshotMessageFunc(w, req)
+	})
+	mux.HandleFunc(raftSnapshotStreamPrefix, func(w stdhttp.ResponseWriter, req *stdhttp.Request) {
+		streamCount.Add(1)
+		h.snapshotMessageStreamFunc(w, req)
+	})
+	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv, shortCount, streamCount
 }
@@ -422,6 +500,217 @@ func TestHTTPBatchMessageStreamRejectsMalformedFrames(t *testing.T) {
 	}
 }
 
+func TestHTTPSnapshotStreamDisabledUsesShortRequest(t *testing.T) {
+	raft := newSnapshotStreamTestRaft(3)
+	srv, shortCount, streamCount := startHTTPSnapshotTestServer(t, false, raft)
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false)
+	defer client.Close()
+
+	msgs := []babuzapb.SnapshotMessage{
+		testSnapshotMessage(1, 2, 10, babuzapb.SnapshotMessageType_Metadata),
+		testSnapshotMessage(1, 2, 10, babuzapb.SnapshotMessageType_Chunk),
+		testSnapshotMessage(1, 2, 10, babuzapb.SnapshotMessageType_Finish),
+	}
+	for _, msg := range msgs {
+		res, err := client.SendSnapshotMessage(msg)
+		assert.NoError(t, err)
+		assert.Equal(t, babuzapb.SUCCESS, res.Status)
+	}
+	assert.EqualValues(t, 3, shortCount.Load())
+	assert.EqualValues(t, 0, streamCount.Load())
+	assert.EqualValues(t, 3, raft.count.Load())
+}
+
+func TestHTTPSnapshotStreamEnabledSendsTransferOnOneStream(t *testing.T) {
+	raft := newSnapshotStreamTestRaft(3)
+	srv, shortCount, streamCount := startHTTPSnapshotTestServer(t, true, raft)
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+	defer client.Close()
+
+	res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 11, babuzapb.SnapshotMessageType_Metadata))
+	assert.NoError(t, err)
+	assert.Equal(t, babuzapb.SUCCESS, res.Status)
+
+	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 11, babuzapb.SnapshotMessageType_Chunk))
+	assert.NoError(t, err)
+	assert.Equal(t, babuzapb.SUCCESS, res.Status)
+
+	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 11, babuzapb.SnapshotMessageType_Finish))
+	assert.NoError(t, err)
+	assert.Equal(t, babuzapb.SUCCESS, res.Status)
+	assert.Equal(t, babuzapb.SnapshotMessageType_Finish.String(), res.Message)
+
+	got := make(map[babuzapb.SnapshotMessageType]bool)
+	for i := 0; i < 3; i++ {
+		select {
+		case msg := <-raft.processed:
+			got[msg.Type] = true
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for streamed snapshot")
+		}
+	}
+	assert.True(t, got[babuzapb.SnapshotMessageType_Metadata])
+	assert.True(t, got[babuzapb.SnapshotMessageType_Chunk])
+	assert.True(t, got[babuzapb.SnapshotMessageType_Finish])
+	assert.EqualValues(t, 0, shortCount.Load())
+	assert.EqualValues(t, 1, streamCount.Load())
+}
+
+func TestHTTPSnapshotStreamReturnsProcessorFailureOnFinish(t *testing.T) {
+	raft := newSnapshotStreamTestRaft(3)
+	raft.responseFn = func(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
+		if message.Type == babuzapb.SnapshotMessageType_Finish {
+			return babuzapb.SnapshotMessageResponse{Status: babuzapb.FAILED, Message: "finish failed"}
+		}
+		return babuzapb.SnapshotMessageResponse{Status: babuzapb.SUCCESS}
+	}
+	srv, _, streamCount := startHTTPSnapshotTestServer(t, true, raft)
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+	defer client.Close()
+
+	res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 12, babuzapb.SnapshotMessageType_Metadata))
+	assert.NoError(t, err)
+	assert.Equal(t, babuzapb.SUCCESS, res.Status)
+	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 12, babuzapb.SnapshotMessageType_Chunk))
+	assert.NoError(t, err)
+	assert.Equal(t, babuzapb.SUCCESS, res.Status)
+	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 12, babuzapb.SnapshotMessageType_Finish))
+	assert.NoError(t, err)
+	assert.Equal(t, babuzapb.FAILED, res.Status)
+	assert.Equal(t, "finish failed", res.Message)
+	assert.EqualValues(t, 1, streamCount.Load())
+}
+
+func TestHTTPSnapshotStreamRejectsConcurrentMetadata(t *testing.T) {
+	raft := newSnapshotStreamTestRaft(2)
+	srv, _, streamCount := startHTTPSnapshotTestServer(t, true, raft)
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+	defer client.Close()
+
+	_, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 13, babuzapb.SnapshotMessageType_Metadata))
+	assert.NoError(t, err)
+	_, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 14, babuzapb.SnapshotMessageType_Metadata))
+	assert.Error(t, err)
+	_, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 13, babuzapb.SnapshotMessageType_Finish))
+	assert.NoError(t, err)
+	assert.EqualValues(t, 1, streamCount.Load())
+}
+
+func TestHTTPSnapshotStreamRejectsMalformedFrames(t *testing.T) {
+	tests := []struct {
+		name string
+		body func(t *testing.T) io.Reader
+	}{
+		{
+			name: "unsupported type",
+			body: func(t *testing.T) io.Reader {
+				msg := testBatchMessage(1, 2, 10)
+				return bytes.NewReader(encodeFrameForTest(t, frame.BatchMsgType, &msg))
+			},
+		},
+		{
+			name: "crc mismatch",
+			body: func(t *testing.T) io.Reader {
+				msg := testSnapshotMessage(1, 2, 10, babuzapb.SnapshotMessageType_Metadata)
+				buf := encodeFrameForTest(t, frame.SnapshotMsgReqType, &msg)
+				buf[len(buf)-1] ^= 0xff
+				return bytes.NewReader(buf)
+			},
+		},
+		{
+			name: "malformed protobuf",
+			body: func(t *testing.T) io.Reader {
+				return bytes.NewReader(encodeRawFrameForTest(frame.SnapshotMsgReqType, []byte{0xff}))
+			},
+		},
+		{
+			name: "empty stream",
+			body: func(t *testing.T) io.Reader {
+				return bytes.NewReader(nil)
+			},
+		},
+		{
+			name: "partial header",
+			body: func(t *testing.T) io.Reader {
+				return bytes.NewReader([]byte{1, 2, 3})
+			},
+		},
+		{
+			name: "partial body",
+			body: func(t *testing.T) io.Reader {
+				msg := testSnapshotMessage(1, 2, 10, babuzapb.SnapshotMessageType_Metadata)
+				buf := encodeFrameForTest(t, frame.SnapshotMsgReqType, &msg)
+				return bytes.NewReader(buf[:len(buf)-1])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raft := newSnapshotStreamTestRaft(1)
+			srv, _, _ := startHTTPSnapshotTestServer(t, true, raft)
+			res, err := srv.Client().Post(srv.URL+raftSnapshotStreamPrefix, "application/octet-stream", tt.body(t))
+			assert.NoError(t, err)
+			defer res.Body.Close()
+			assert.Equal(t, stdhttp.StatusBadRequest, res.StatusCode)
+			assert.EqualValues(t, 0, raft.count.Load())
+		})
+	}
+}
+
+func TestNewSnapshotStreamClientLimitsConnectionsPerHost(t *testing.T) {
+	client, err := NewSnapshotStreamClient(ibabuza.TLSConfig{}, ServerConfig{})
+	assert.NoError(t, err)
+	transport, ok := client.Transport.(*stdhttp.Transport)
+	assert.True(t, ok)
+	assert.Equal(t, 1, transport.MaxConnsPerHost)
+	assert.Equal(t, 1, transport.MaxIdleConnsPerHost)
+	transport.CloseIdleConnections()
+}
+
+func TestHandlerRequestReadTimeoutSelection(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	cfg := ServerConfig{
+		ReadDeadline:              time.Second,
+		StreamIdleTimeout:         2 * time.Second,
+		SnapshotStreamIdleTimeout: 3 * time.Second,
+	}
+	conn := newConnection(serverConn, cfg.ReadDeadline, cfg.WriteDeadline)
+	req := httptest.NewRequest(stdhttp.MethodPost, raftSnapshotStreamPrefix, nil)
+	req = req.WithContext(context.WithValue(req.Context(), serverConnectionContextKey{}, conn))
+
+	h := &handler{config: cfg}
+	restore := h.withRequestReadTimeout(req, cfg.SnapshotStreamIdleTimeout)
+	assert.Equal(t, cfg.SnapshotStreamIdleTimeout, conn.ReadTimeout())
+	restore()
+	assert.Equal(t, cfg.ReadDeadline, conn.ReadTimeout())
+
+	restore = h.withRequestReadTimeout(req, cfg.StreamIdleTimeout)
+	assert.Equal(t, cfg.StreamIdleTimeout, conn.ReadTimeout())
+	restore()
+	assert.Equal(t, cfg.ReadDeadline, conn.ReadTimeout())
+
+	restore = h.withRequestReadTimeout(req, 0)
+	assert.Equal(t, cfg.ReadDeadline, conn.ReadTimeout())
+	restore()
+	assert.Equal(t, cfg.ReadDeadline, conn.ReadTimeout())
+}
+
 func encodeFrameForTest(t *testing.T, msgType frame.MessageType, msg frame.Message) []byte {
 	t.Helper()
 	buf := bytes.NewBuffer(nil)
@@ -430,6 +719,14 @@ func encodeFrameForTest(t *testing.T, msgType frame.MessageType, msg frame.Messa
 	defer allocator.Release(byteSlice)
 	assert.NoError(t, writer.Encode(byteSlice.Buffer, msgType, msg))
 	return append([]byte(nil), buf.Bytes()...)
+}
+
+func encodeRawFrameForTest(msgType frame.MessageType, payload []byte) []byte {
+	buf := make([]byte, frame.HeaderSize+len(payload))
+	binary.LittleEndian.PutUint32(buf[0:frame.CrcOffset], uint32((len(payload)<<frame.MsgSizeShift)|(int(msgType&frame.MsgTypeMask))))
+	binary.LittleEndian.PutUint32(buf[frame.CrcOffset:frame.HeaderSize], crc32.Checksum(payload, frame.Crc32Table))
+	copy(buf[frame.HeaderSize:], payload)
+	return buf
 }
 
 func BenchmarkHTTPBatchMessageShortRequest(b *testing.B) {
@@ -481,6 +778,61 @@ func BenchmarkHTTPBatchMessageStream(b *testing.B) {
 	}
 	if raft.count.Load() != int64(b.N) {
 		b.Fatalf("processed %d messages, want %d", raft.count.Load(), b.N)
+	}
+}
+
+func BenchmarkHTTPSnapshotShortRequestSmallChunks(b *testing.B) {
+	benchmarkHTTPSnapshotTransfer(b, false, 32, 256)
+}
+
+func BenchmarkHTTPSnapshotStreamSmallChunks(b *testing.B) {
+	benchmarkHTTPSnapshotTransfer(b, true, 32, 256)
+}
+
+func BenchmarkHTTPSnapshotShortRequestLargeChunks(b *testing.B) {
+	benchmarkHTTPSnapshotTransfer(b, false, 4, 8192)
+}
+
+func BenchmarkHTTPSnapshotStreamLargeChunks(b *testing.B) {
+	benchmarkHTTPSnapshotTransfer(b, true, 4, 8192)
+}
+
+func benchmarkHTTPSnapshotTransfer(b *testing.B, streamEnabled bool, chunkCount int, chunkSize int) {
+	raft := &benchmarkRaft{}
+	srv, _, _ := startHTTPSnapshotTestServer(b, streamEnabled, raft)
+	defer srv.Close()
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: streamEnabled})
+	defer client.Close()
+
+	chunkData := bytes.Repeat([]byte("x"), chunkSize)
+	metadata := testSnapshotMessage(1, 2, 1, babuzapb.SnapshotMessageType_Metadata)
+	chunk := testSnapshotMessage(1, 2, 1, babuzapb.SnapshotMessageType_Chunk)
+	chunk.ChunkMessage.Data = chunkData
+	finish := testSnapshotMessage(1, 2, 1, babuzapb.SnapshotMessageType_Finish)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		index := uint64(i + 1)
+		metadata.Index = index
+		chunk.Index = index
+		finish.Index = index
+		if _, err := client.SendSnapshotMessage(metadata); err != nil {
+			b.Fatal(err)
+		}
+		for chunkID := 0; chunkID < chunkCount; chunkID++ {
+			chunk.ChunkMessage.Id = int64(chunkID)
+			chunk.ChunkMessage.LastChunk = chunkID == chunkCount-1
+			if _, err := client.SendSnapshotMessage(chunk); err != nil {
+				b.Fatal(err)
+			}
+		}
+		if _, err := client.SendSnapshotMessage(finish); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

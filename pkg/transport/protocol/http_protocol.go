@@ -22,18 +22,20 @@ import (
 )
 
 type Http struct {
-	config  ibabuza.TransportConfig
-	options raftHttp.ServerConfig
-	logger  ibabuza.Logger
-	client  *http.Client
+	config               ibabuza.TransportConfig
+	options              raftHttp.ServerConfig
+	logger               ibabuza.Logger
+	client               *http.Client
+	snapshotStreamClient *http.Client
 }
 
 func DefaultHttpOptions() raftHttp.ServerConfig {
 	return raftHttp.ServerConfig{
-		WriteDeadline:     time.Second * 5,
-		ReadDeadline:      time.Second * 5,
-		ShutdownTimeout:   time.Second * 5,
-		StreamIdleTimeout: time.Second * 30,
+		WriteDeadline:             time.Second * 5,
+		ReadDeadline:              time.Second * 5,
+		ShutdownTimeout:           time.Second * 5,
+		StreamIdleTimeout:         time.Second * 30,
+		SnapshotStreamIdleTimeout: time.Minute * 5,
 	}
 }
 
@@ -69,6 +71,12 @@ func SetHttpOptsWithStreamIdleTimeout(d time.Duration) SetHttpOptions {
 	}
 }
 
+func SetHttpOptsWithSnapshotStreamIdleTimeout(d time.Duration) SetHttpOptions {
+	return func(opt *raftHttp.ServerConfig) {
+		opt.SnapshotStreamIdleTimeout = d
+	}
+}
+
 func NewHttp(logger ibabuza.Logger, setOpts ...SetHttpOptions) *Http {
 	opts := DefaultHttpOptions()
 	for _, s := range setOpts {
@@ -88,6 +96,13 @@ func (h *Http) Setup(cfg ibabuza.TransportConfig) error {
 		return err
 	}
 	h.client = client
+	if h.options.MessageStreamEnabled {
+		snapshotStreamClient, err := raftHttp.NewSnapshotStreamClient(h.config.TLSConfig, h.options)
+		if err != nil {
+			return err
+		}
+		h.snapshotStreamClient = snapshotStreamClient
+	}
 	return nil
 }
 
@@ -96,7 +111,7 @@ func (h *Http) CreateServer(handler ibabuza.RaftMessageHandler) (ibabuza.Transpo
 }
 
 func (h *Http) CreateClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
-	return raftHttp.NewRaftMsgClient(h.client, resolver, h.config.TLSConfig.EnableTLS, h.options), nil
+	return raftHttp.NewRaftMsgClientWithSnapshotStreamClient(h.client, h.snapshotStreamClient, resolver, h.config.TLSConfig.EnableTLS, h.options), nil
 }
 
 func (h *Http) Close() error {

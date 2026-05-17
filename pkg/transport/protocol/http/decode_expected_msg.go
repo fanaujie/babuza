@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package http
 
 import (
@@ -22,6 +21,9 @@ import (
 )
 
 func decodeExpectedMessage(r io.Reader, expectedSize int64, expectedMsg proto.Message) error {
+	if expectedSize == 0 {
+		return proto.Unmarshal(nil, expectedMsg)
+	}
 	var byteSlice *allocator.ByteSlice
 	byteSlice = allocator.Acquire(int(expectedSize))
 	defer allocator.Release(byteSlice)

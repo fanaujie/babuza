@@ -20,18 +20,37 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	"net"
+	"sync/atomic"
 	"time"
 )
 
 type Connection struct {
 	net.Conn
-	readTimeout  time.Duration
-	writeTimeout time.Duration
+	readTimeoutNanos atomic.Int64
+	writeTimeout     time.Duration
+}
+
+func newConnection(conn net.Conn, readTimeout time.Duration, writeTimeout time.Duration) *Connection {
+	c := &Connection{
+		Conn:         conn,
+		writeTimeout: writeTimeout,
+	}
+	c.SetReadTimeout(readTimeout)
+	return c
+}
+
+func (c *Connection) SetReadTimeout(readTimeout time.Duration) {
+	c.readTimeoutNanos.Store(int64(readTimeout))
+}
+
+func (c *Connection) ReadTimeout() time.Duration {
+	return time.Duration(c.readTimeoutNanos.Load())
 }
 
 func (c *Connection) Read(b []byte) (n int, err error) {
-	if c.readTimeout > 0 {
-		if err = c.SetReadDeadline(time.Now().Add(c.readTimeout)); err != nil {
+	readTimeout := c.ReadTimeout()
+	if readTimeout > 0 {
+		if err = c.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
 			return 0, err
 		}
 	}
@@ -57,11 +76,7 @@ func dialContext(cfg ibabuza.TLSConfig, options ServerConfig) (func(ctx context.
 			if dErr != nil {
 				return nil, dErr
 			}
-			return &Connection{
-				Conn:         conn,
-				readTimeout:  options.ReadDeadline,
-				writeTimeout: options.WriteDeadline,
-			}, nil
+			return newConnection(conn, options.ReadDeadline, options.WriteDeadline), nil
 		}, nil
 	} else {
 		return func(ctx context.Context, network string, addr string) (net.Conn, error) {
@@ -69,11 +84,7 @@ func dialContext(cfg ibabuza.TLSConfig, options ServerConfig) (func(ctx context.
 			if dErr != nil {
 				return nil, dErr
 			}
-			return &Connection{
-				Conn:         conn,
-				readTimeout:  options.ReadDeadline,
-				writeTimeout: options.WriteDeadline,
-			}, nil
+			return newConnection(conn, options.ReadDeadline, options.WriteDeadline), nil
 		}, nil
 	}
 }

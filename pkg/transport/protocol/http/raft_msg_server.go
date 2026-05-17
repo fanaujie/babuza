@@ -27,12 +27,15 @@ import (
 	"time"
 )
 
+type serverConnectionContextKey struct{}
+
 type ServerConfig struct {
-	WriteDeadline        time.Duration
-	ReadDeadline         time.Duration
-	ShutdownTimeout      time.Duration
-	MessageStreamEnabled bool
-	StreamIdleTimeout    time.Duration
+	WriteDeadline             time.Duration
+	ReadDeadline              time.Duration
+	ShutdownTimeout           time.Duration
+	MessageStreamEnabled      bool
+	StreamIdleTimeout         time.Duration
+	SnapshotStreamIdleTimeout time.Duration
 }
 
 type RaftMsgServer struct {
@@ -60,6 +63,7 @@ func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, raft iba
 	mux.HandleFunc(raftBatchMsgPrefix, h.batchMessageFunc)
 	mux.HandleFunc(raftBatchMsgStreamPrefix, h.batchMessageStreamFunc)
 	mux.HandleFunc(raftSnapshotMsgPrefix, h.snapshotMessageFunc)
+	mux.HandleFunc(raftSnapshotStreamPrefix, h.snapshotMessageStreamFunc)
 	mux.HandleFunc(raftClusterPeersPrefix, h.clusterPeersFunc)
 	mux.HandleFunc(raftAppServiceUrlsPrefix, h.publishApplicationServiceFunc)
 	readTimeout := config.ReadDeadline
@@ -73,6 +77,15 @@ func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, raft iba
 		Handler:      mux,
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
+	}
+	if config.MessageStreamEnabled {
+		r.srv.ConnContext = func(ctx context.Context, conn net.Conn) context.Context {
+			c, ok := conn.(*Connection)
+			if !ok {
+				return ctx
+			}
+			return context.WithValue(ctx, serverConnectionContextKey{}, c)
+		}
 	}
 	return r
 }
@@ -97,19 +110,12 @@ func (r *RaftMsgServer) Start() error {
 	if r.config.MessageStreamEnabled {
 		listener = &deadlineListener{
 			Listener:     listener,
-			readTimeout:  r.streamReadTimeout(),
+			readTimeout:  r.config.ReadDeadline,
 			writeTimeout: r.config.WriteDeadline,
 		}
 	}
 	go r.srv.Serve(listener)
 	return nil
-}
-
-func (r *RaftMsgServer) streamReadTimeout() time.Duration {
-	if r.config.StreamIdleTimeout > 0 {
-		return r.config.StreamIdleTimeout
-	}
-	return r.config.ReadDeadline
 }
 
 type deadlineListener struct {
@@ -123,11 +129,7 @@ func (l *deadlineListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Connection{
-		Conn:         c,
-		readTimeout:  l.readTimeout,
-		writeTimeout: l.writeTimeout,
-	}, nil
+	return newConnection(c, l.readTimeout, l.writeTimeout), nil
 }
 
 func (r *RaftMsgServer) Stop() error {
@@ -140,6 +142,9 @@ func (r *RaftMsgServer) Stop() error {
 }
 
 func (r *RaftMsgServer) decodeExpectedMessage(reader io.Reader, expectedSize int64, expectedMsg proto.Message) error {
+	if expectedSize == 0 {
+		return proto.Unmarshal(nil, expectedMsg)
+	}
 	var byteSlice *allocator.ByteSlice
 	byteSlice = allocator.Acquire(int(expectedSize))
 	defer allocator.Release(byteSlice)
