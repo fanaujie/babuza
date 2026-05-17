@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package protocol
 
 import (
@@ -31,9 +30,10 @@ type Http struct {
 
 func DefaultHttpOptions() raftHttp.ServerConfig {
 	return raftHttp.ServerConfig{
-		WriteDeadline:   time.Second * 5,
-		ReadDeadline:    time.Second * 5,
-		ShutdownTimeout: time.Second * 5,
+		WriteDeadline:     time.Second * 5,
+		ReadDeadline:      time.Second * 5,
+		ShutdownTimeout:   time.Second * 5,
+		StreamIdleTimeout: time.Second * 30,
 	}
 }
 
@@ -54,6 +54,18 @@ func SetHttpOptsWithReadDeadline(d time.Duration) SetHttpOptions {
 func SetHttpOptsWithShutdownTimeout(d time.Duration) SetHttpOptions {
 	return func(opt *raftHttp.ServerConfig) {
 		opt.ShutdownTimeout = d
+	}
+}
+
+func SetHttpOptsWithMessageStreamEnabled(enabled bool) SetHttpOptions {
+	return func(opt *raftHttp.ServerConfig) {
+		opt.MessageStreamEnabled = enabled
+	}
+}
+
+func SetHttpOptsWithStreamIdleTimeout(d time.Duration) SetHttpOptions {
+	return func(opt *raftHttp.ServerConfig) {
+		opt.StreamIdleTimeout = d
 	}
 }
 
@@ -84,7 +96,7 @@ func (h *Http) CreateServer(handler ibabuza.RaftMessageHandler) (ibabuza.Transpo
 }
 
 func (h *Http) CreateClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
-	return raftHttp.NewRaftMsgClient(h.client, resolver, h.config.TLSConfig.EnableTLS), nil
+	return raftHttp.NewRaftMsgClient(h.client, resolver, h.config.TLSConfig.EnableTLS, h.options), nil
 }
 
 func (h *Http) Close() error {

@@ -12,21 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package http
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
+	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
+	"io"
 	"math/rand"
 	"net"
+	stdhttp "net/http"
+	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -174,6 +180,308 @@ func (m *MockTransportResolver) ResolvePeerAddress(peerID uint64) (string, error
 		return addr, nil
 	}
 	return "localhost:14200", nil // Default for testing
+}
+
+type streamTestRaft struct {
+	processed chan babuzapb.BatchMessage
+	count     atomic.Int64
+}
+
+func newStreamTestRaft(buffer int) *streamTestRaft {
+	return &streamTestRaft{
+		processed: make(chan babuzapb.BatchMessage, buffer),
+	}
+}
+
+func (m *streamTestRaft) ProcessBatchMessage(message babuzapb.BatchMessage) {
+	m.count.Add(1)
+	m.processed <- message
+}
+
+func (m *streamTestRaft) ProcessSnapshotMessage(babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
+	return babuzapb.SnapshotMessageResponse{}
+}
+
+func (m *streamTestRaft) GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+	return babuzapb.GetClusterPeersResponse{}
+}
+
+func (m *streamTestRaft) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+	return babuzapb.PublishApplicationServiceResponse{}
+}
+
+type benchmarkRaft struct {
+	count atomic.Int64
+}
+
+func (m *benchmarkRaft) ProcessBatchMessage(message babuzapb.BatchMessage) {
+	m.count.Add(1)
+}
+
+func (m *benchmarkRaft) ProcessSnapshotMessage(babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
+	return babuzapb.SnapshotMessageResponse{}
+}
+
+func (m *benchmarkRaft) GetClusterPeer(babuzapb.GetClusterPeersRequest) babuzapb.GetClusterPeersResponse {
+	return babuzapb.GetClusterPeersResponse{}
+}
+
+func (m *benchmarkRaft) PublishApplicationService(babuzapb.PublishApplicationServiceRequest) babuzapb.PublishApplicationServiceResponse {
+	return babuzapb.PublishApplicationServiceResponse{}
+}
+
+func testBatchMessage(from, to, index uint64) babuzapb.BatchMessage {
+	return babuzapb.BatchMessage{
+		Messages: []raftpb.Message{
+			{
+				From:  from,
+				To:    to,
+				Index: index,
+			},
+		},
+	}
+}
+
+func startHTTPMessageTestServer(t testing.TB, streamEnabled bool, tlsEnabled bool, raft ibabuza.RaftMessageHandler) (*httptest.Server, *atomic.Int64, *atomic.Int64) {
+	t.Helper()
+	shortCount := &atomic.Int64{}
+	streamCount := &atomic.Int64{}
+	h := &handler{
+		raft: raft,
+		config: ServerConfig{
+			MessageStreamEnabled: streamEnabled,
+			StreamIdleTimeout:    time.Second,
+		},
+	}
+	mux := stdhttp.NewServeMux()
+	mux.HandleFunc(raftBatchMsgPrefix, func(w stdhttp.ResponseWriter, req *stdhttp.Request) {
+		shortCount.Add(1)
+		h.batchMessageFunc(w, req)
+	})
+	mux.HandleFunc(raftBatchMsgStreamPrefix, func(w stdhttp.ResponseWriter, req *stdhttp.Request) {
+		streamCount.Add(1)
+		h.batchMessageStreamFunc(w, req)
+	})
+	srv := httptest.NewUnstartedServer(mux)
+	if tlsEnabled {
+		srv.StartTLS()
+	} else {
+		srv.Start()
+	}
+	t.Cleanup(srv.Close)
+	return srv, shortCount, streamCount
+}
+
+func TestHTTPBatchMessageStreamDisabledUsesShortRequest(t *testing.T) {
+	raft := newStreamTestRaft(1)
+	srv, shortCount, streamCount := startHTTPMessageTestServer(t, false, false, raft)
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false)
+	defer client.Close()
+
+	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 10)))
+	assert.EqualValues(t, 1, shortCount.Load())
+	assert.EqualValues(t, 0, streamCount.Load())
+
+	select {
+	case msg := <-raft.processed:
+		assert.EqualValues(t, 10, msg.Messages[0].Index)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for short request batch")
+	}
+}
+
+func TestHTTPBatchMessageStreamEnabledSendsMultipleFrames(t *testing.T) {
+	raft := newStreamTestRaft(2)
+	srv, shortCount, streamCount := startHTTPMessageTestServer(t, true, false, raft)
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+
+	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 10)))
+	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 11)))
+	assert.NoError(t, client.Close())
+
+	got := make(map[uint64]bool)
+	for i := 0; i < 2; i++ {
+		select {
+		case msg := <-raft.processed:
+			got[msg.Messages[0].Index] = true
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for streamed batch")
+		}
+	}
+	assert.True(t, got[10])
+	assert.True(t, got[11])
+	assert.EqualValues(t, 0, shortCount.Load())
+	assert.EqualValues(t, 1, streamCount.Load())
+}
+
+func TestHTTPBatchMessageStreamTLS(t *testing.T) {
+	raft := newStreamTestRaft(1)
+	srv, _, streamCount := startHTTPMessageTestServer(t, true, true, raft)
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, true, ServerConfig{MessageStreamEnabled: true})
+
+	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 10)))
+	assert.NoError(t, client.Close())
+	select {
+	case <-raft.processed:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for TLS streamed batch")
+	}
+	assert.EqualValues(t, 1, streamCount.Load())
+}
+
+func TestHTTPBatchMessageStreamRecreatesAfterResponseFailure(t *testing.T) {
+	raft := newStreamTestRaft(1)
+	srv, _, streamCount := startHTTPMessageTestServer(t, true, false, raft)
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+	defer client.Close()
+
+	_, staleBody := io.Pipe()
+	defer staleBody.Close()
+	staleStream := &messageStream{
+		body:   staleBody,
+		doneCh: make(chan error, 1),
+	}
+	staleStream.doneCh <- fmt.Errorf("previous stream failed")
+	client.stream = staleStream
+
+	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 11)))
+	assert.NoError(t, client.Close())
+	select {
+	case msg := <-raft.processed:
+		assert.EqualValues(t, 11, msg.Messages[0].Index)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for recreated stream batch")
+	}
+	assert.EqualValues(t, 1, streamCount.Load())
+}
+
+func TestHTTPBatchMessageStreamRejectsMalformedFrames(t *testing.T) {
+	tests := []struct {
+		name string
+		body func(t *testing.T) io.Reader
+	}{
+		{
+			name: "unsupported type",
+			body: func(t *testing.T) io.Reader {
+				return bytes.NewReader(encodeFrameForTest(t, frame.SnapshotMsgReqType, &babuzapb.SnapshotMessage{}))
+			},
+		},
+		{
+			name: "crc mismatch",
+			body: func(t *testing.T) io.Reader {
+				msg := testBatchMessage(1, 2, 10)
+				buf := encodeFrameForTest(t, frame.BatchMsgType, &msg)
+				buf[len(buf)-1] ^= 0xff
+				return bytes.NewReader(buf)
+			},
+		},
+		{
+			name: "empty batch",
+			body: func(t *testing.T) io.Reader {
+				return bytes.NewReader(encodeFrameForTest(t, frame.BatchMsgType, &babuzapb.BatchMessage{}))
+			},
+		},
+		{
+			name: "partial header",
+			body: func(t *testing.T) io.Reader {
+				return bytes.NewReader([]byte{1, 2, 3})
+			},
+		},
+		{
+			name: "partial body",
+			body: func(t *testing.T) io.Reader {
+				msg := testBatchMessage(1, 2, 10)
+				buf := encodeFrameForTest(t, frame.BatchMsgType, &msg)
+				return bytes.NewReader(buf[:len(buf)-1])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raft := newStreamTestRaft(1)
+			srv, _, _ := startHTTPMessageTestServer(t, true, false, raft)
+			res, err := srv.Client().Post(srv.URL+raftBatchMsgStreamPrefix, "application/octet-stream", tt.body(t))
+			assert.NoError(t, err)
+			defer res.Body.Close()
+			assert.Equal(t, stdhttp.StatusBadRequest, res.StatusCode)
+			assert.EqualValues(t, 0, raft.count.Load())
+		})
+	}
+}
+
+func encodeFrameForTest(t *testing.T, msgType frame.MessageType, msg frame.Message) []byte {
+	t.Helper()
+	buf := bytes.NewBuffer(nil)
+	writer := frame.NewWriter(buf)
+	byteSlice := allocator.Acquire(frame.EncodeSize(msg.Size()))
+	defer allocator.Release(byteSlice)
+	assert.NoError(t, writer.Encode(byteSlice.Buffer, msgType, msg))
+	return append([]byte(nil), buf.Bytes()...)
+}
+
+func BenchmarkHTTPBatchMessageShortRequest(b *testing.B) {
+	raft := &benchmarkRaft{}
+	srv, _, _ := startHTTPMessageTestServer(b, false, false, raft)
+	defer srv.Close()
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false)
+	defer client.Close()
+	msg := testBatchMessage(1, 2, 1)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		msg.Messages[0].Index = uint64(i + 1)
+		if err := client.SendBatchMessage(msg); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkHTTPBatchMessageStream(b *testing.B) {
+	raft := &benchmarkRaft{}
+	srv, _, _ := startHTTPMessageTestServer(b, true, false, raft)
+	defer srv.Close()
+
+	resolver := NewMockTransportResolver()
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+	msg := testBatchMessage(1, 2, 1)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		msg.Messages[0].Index = uint64(i + 1)
+		if err := client.SendBatchMessage(msg); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.StopTimer()
+	if err := client.Close(); err != nil {
+		b.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for raft.count.Load() < int64(b.N) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if raft.count.Load() != int64(b.N) {
+		b.Fatalf("processed %d messages, want %d", raft.count.Load(), b.N)
+	}
 }
 
 func TestSingleServerClient_SendAndReceive(t *testing.T) {

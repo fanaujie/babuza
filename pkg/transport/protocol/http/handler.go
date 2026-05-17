@@ -12,20 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package http
 
 import (
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"net/http"
 	"strconv"
 )
 
 type handler struct {
-	raft ibabuza.RaftMessageHandler
+	raft   ibabuza.RaftMessageHandler
+	config ServerConfig
 }
 
 func (h *handler) batchMessageFunc(w http.ResponseWriter, req *http.Request) {
@@ -41,6 +42,48 @@ func (h *handler) batchMessageFunc(w http.ResponseWriter, req *http.Request) {
 	}
 	h.raft.ProcessBatchMessage(batchMsg)
 	w.WriteHeader(http.StatusOK)
+}
+
+func (h *handler) batchMessageStreamFunc(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.config.MessageStreamEnabled {
+		http.NotFound(w, req)
+		return
+	}
+	defer req.Body.Close()
+
+	reader := frame.NewReader(req.Body)
+	for {
+		eof, err := reader.ReadFrameOrEOF(func(msgType frame.MessageType, msgBuf []byte) error {
+			if msgType != frame.BatchMsgType {
+				return fmt.Errorf("unsupported message type: %d", msgType)
+			}
+			if len(msgBuf) == 0 {
+				return fmt.Errorf("batch message is empty")
+			}
+			batchMsg := babuzapb.BatchMessage{}
+			if err := batchMsg.Unmarshal(msgBuf); err != nil {
+				return err
+			}
+			if len(batchMsg.Messages) == 0 {
+				return fmt.Errorf("batch message is empty")
+			}
+			h.raft.ProcessBatchMessage(batchMsg)
+			return nil
+		})
+		if eof {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 }
 
 func (h *handler) snapshotMessageFunc(w http.ResponseWriter, req *http.Request) {

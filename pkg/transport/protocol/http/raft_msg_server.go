@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package http
 
 import (
@@ -29,9 +28,11 @@ import (
 )
 
 type ServerConfig struct {
-	WriteDeadline   time.Duration
-	ReadDeadline    time.Duration
-	ShutdownTimeout time.Duration
+	WriteDeadline        time.Duration
+	ReadDeadline         time.Duration
+	ShutdownTimeout      time.Duration
+	MessageStreamEnabled bool
+	StreamIdleTimeout    time.Duration
 }
 
 type RaftMsgServer struct {
@@ -53,17 +54,25 @@ func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, raft iba
 	}
 	mux := http.NewServeMux()
 	h := &handler{
-		raft: raft,
+		raft:   raft,
+		config: config,
 	}
 	mux.HandleFunc(raftBatchMsgPrefix, h.batchMessageFunc)
+	mux.HandleFunc(raftBatchMsgStreamPrefix, h.batchMessageStreamFunc)
 	mux.HandleFunc(raftSnapshotMsgPrefix, h.snapshotMessageFunc)
 	mux.HandleFunc(raftClusterPeersPrefix, h.clusterPeersFunc)
 	mux.HandleFunc(raftAppServiceUrlsPrefix, h.publishApplicationServiceFunc)
+	readTimeout := config.ReadDeadline
+	writeTimeout := config.WriteDeadline
+	if config.MessageStreamEnabled {
+		readTimeout = 0
+		writeTimeout = 0
+	}
 	r.srv = &http.Server{
 		Addr:         cfg.PeerAddress,
 		Handler:      mux,
-		ReadTimeout:  config.ReadDeadline,
-		WriteTimeout: config.WriteDeadline,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: writeTimeout,
 	}
 	return r
 }
@@ -82,8 +91,43 @@ func (r *RaftMsgServer) Start() error {
 	} else {
 		listener, err = tls.Listen("tcp", r.cfg.PeerAddress, tlsCfg)
 	}
+	if err != nil {
+		return err
+	}
+	if r.config.MessageStreamEnabled {
+		listener = &deadlineListener{
+			Listener:     listener,
+			readTimeout:  r.streamReadTimeout(),
+			writeTimeout: r.config.WriteDeadline,
+		}
+	}
 	go r.srv.Serve(listener)
 	return nil
+}
+
+func (r *RaftMsgServer) streamReadTimeout() time.Duration {
+	if r.config.StreamIdleTimeout > 0 {
+		return r.config.StreamIdleTimeout
+	}
+	return r.config.ReadDeadline
+}
+
+type deadlineListener struct {
+	net.Listener
+	readTimeout  time.Duration
+	writeTimeout time.Duration
+}
+
+func (l *deadlineListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &Connection{
+		Conn:         c,
+		readTimeout:  l.readTimeout,
+		writeTimeout: l.writeTimeout,
+	}, nil
 }
 
 func (r *RaftMsgServer) Stop() error {
