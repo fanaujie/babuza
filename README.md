@@ -1,8 +1,8 @@
 # Babuza
 
-**Languages:** English | [繁體中文](./README.zh-TW.md) | [简体中文](./README.zh-CN.md)
+**Languages:** English | [繁體中文](./README.zh-TW.md)
 
-A Go framework built on [etcd Raft](https://github.com/etcd-io/raft) that simplifies building distributed consensus-based systems.
+Babuza turns [etcd Raft](https://github.com/etcd-io/raft) into an embeddable Go framework for production services. It provides the Raft runtime, WAL, snapshots, transport, sessions, cluster operations, and integration test harness you otherwise have to build around etcd/raft yourself.
 
 ## Why Babuza?
 
@@ -28,28 +28,45 @@ Building distributed systems with Raft is hard. While etcd provides a battle-tes
 
 **Babuza lets you focus on your application logic, not Raft plumbing.**
 
-## Memory Efficiency
+## Core Features
+
+| Feature | What Babuza Provides |
+|---------|----------------------|
+| **Raft Runtime** | Ready-loop processing, proposal handling, linearizable reads, and lifecycle management |
+| **WAL Backends** | Native Babuza WAL, etcd WAL, Badger, and Pebble options |
+| **Snapshot Management** | Durable, volatile, and S3-compatible snapshot storage with chunked transfer |
+| **Transport Layer** | Pluggable TCP, HTTP, and gRPC transports, including HTTP stream mode |
+| **Client Sessions** | Optional exactly-once semantics through no-op, expiring, or LRU session managers |
+| **Cluster Operations** | Add/remove/update peers, promote learners, transfer leadership, and disaster recovery |
+| **Testing Harness** | Multi-node testcluster support with partitions, node failures, restarts, and fault injection |
+| **Observability** | Prometheus and OpenTelemetry integration points |
+
+## Performance
+
+### Memory Efficiency
 
 | Entries | Data Size | etcd Memory | Babuza Memory | Saved |
 |---------|-----------|-------------|---------------|-------|
-| 100K    | 1 KB      | 102 MB      | 5.35 MB       | **94.8%** |
-| 100K    | 10 KB     | 981 MB      | 5.35 MB       | **99.5%** |
+| 100K | 1 KB | 102 MB | 5.35 MB | **94.8%** |
+| 100K | 10 KB | 981 MB | 5.35 MB | **99.5%** |
 
-See the full [Memory Usage Benchmark Report](./docs/benchmarks/memory-usage-comparison.md) for detailed analysis.
+Babuza stores log entry metadata in memory and reads entry payloads from WAL on demand, so memory usage stays mostly independent of entry data size. See the full [Memory Usage Benchmark Report](./docs/benchmarks/memory-usage-comparison.md).
 
-## Experimental Multi-Raft (without modifying etcd Raft)
+### HTTP Stream Transport
 
-The [experimental](./raft/experimental/README.md) package implements multi-Raft group support:
+HTTP transport supports an opt-in stream mode that reuses long-lived HTTP request bodies for framed Raft messages and snapshot chunks. In local benchmarks, stream mode significantly reduces per-message request overhead:
 
-- **Coalesced Heartbeats** - Merge heartbeats from multiple Raft groups to reduce network overhead
-- **Shared WAL** - Multiple Raft groups share a single WAL instance
-- **Sharded Scheduling** - Efficient processing across many Raft groups
-- All implemented without any modifications to the etcd Raft library
+| Workload | Short Request | HTTP Stream | Improvement |
+|----------|---------------|-------------|-------------|
+| Batch message | 26.806 us/op | 2.349 us/op | 11.4x faster |
+| Snapshot, 32 x 256 B chunks | 990.327 us/op | 148.066 us/op | 6.7x faster |
+| Snapshot, 4 x 8 KiB chunks | 175.458 us/op | 90.616 us/op | 1.9x faster |
+
+See the full [HTTP Stream Benchmark Comparison](./docs/benchmarks/http-stream-benchmark-comparison.md) for benchmark details and allocation results.
 
 ## Architecture
 
 ![architecture](images/babuza_architecture.svg)
-
 
 ## Quick Start
 
@@ -122,7 +139,7 @@ func main() {
 
 Use [babuza-skills](https://github.com/fanaujie/babuza-skills) to enhance AI coding assistants (Claude Code, Cursor, Aider) with Babuza-specific knowledge for code generation and explanations.
 
-## Component Documentation
+## Documentation
 
 ### Core Packages
 
@@ -130,7 +147,6 @@ Use [babuza-skills](https://github.com/fanaujie/babuza-skills) to enhance AI cod
 |---------|-------------|
 | [ibabuza](./ibabuza/README.md) | Core interfaces for all pluggable components |
 | [raft](./raft/README.md) | Consensus layer, cluster bootstrap, and Raft API |
-| [raft/experimental](./raft/experimental/README.md) | Multi-Raft with coalesced heartbeats and shared WAL (experimental) |
 | [pkg/builder](./pkg/builder/README.md) | Component builder pattern for easy assembly |
 
 ### Infrastructure Packages
@@ -155,11 +171,17 @@ Use [babuza-skills](https://github.com/fanaujie/babuza-skills) to enhance AI cod
 | **Snapshot** | `durable`, `volatile`, `s3` |
 | **Metrics** | `otel`, `prometheus` |
 
+## Experimental Multi-Raft
+
+The [raft/experimental](./raft/experimental/README.md) package implements multi-Raft group support without modifying the upstream etcd Raft library:
+
+- **Coalesced Heartbeats** - Merge heartbeats from multiple Raft groups to reduce network overhead
+- **Shared WAL** - Multiple Raft groups share a single WAL instance
+- **Sharded Scheduling** - Efficient processing across many Raft groups
 
 ## Test Cluster Framework
 
 Babuza provides a [testcluster](./test/testcluster/README.md) framework for testing distributed system failure scenarios:
-
 
 **Supported Failure Scenarios:**
 
@@ -171,8 +193,6 @@ Babuza provides a [testcluster](./test/testcluster/README.md) framework for test
 | **Quorum Loss** | Disconnect majority of nodes |
 | **Node Restart** | Stop and restart with WAL/snapshot recovery |
 | **Disaster Recovery** | Recover standalone from lost cluster |
-
-
 
 ## Contributing
 

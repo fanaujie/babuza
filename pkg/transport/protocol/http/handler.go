@@ -12,20 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package http
 
 import (
+	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
+	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
+	"io"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 type handler struct {
-	raft ibabuza.RaftMessageHandler
+	raft   ibabuza.RaftMessageHandler
+	config ServerConfig
 }
 
 func (h *handler) batchMessageFunc(w http.ResponseWriter, req *http.Request) {
@@ -34,6 +38,7 @@ func (h *handler) batchMessageFunc(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	defer h.withRequestReadTimeout(req, h.config.ReadDeadline)()
 	batchMsg := babuzapb.BatchMessage{}
 	if err := decodeExpectedMessage(req.Body, req.ContentLength, &batchMsg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -43,12 +48,56 @@ func (h *handler) batchMessageFunc(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (h *handler) batchMessageStreamFunc(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.config.MessageStreamEnabled {
+		http.NotFound(w, req)
+		return
+	}
+	defer h.withRequestReadTimeout(req, h.config.StreamIdleTimeout)()
+	defer req.Body.Close()
+
+	reader := frame.NewReader(req.Body)
+	for {
+		eof, err := reader.ReadFrameOrEOF(func(msgType frame.MessageType, msgBuf []byte) error {
+			if msgType != frame.BatchMsgType {
+				return fmt.Errorf("unsupported message type: %d", msgType)
+			}
+			if len(msgBuf) == 0 {
+				return fmt.Errorf("batch message is empty")
+			}
+			batchMsg := babuzapb.BatchMessage{}
+			if err := batchMsg.Unmarshal(msgBuf); err != nil {
+				return err
+			}
+			if len(batchMsg.Messages) == 0 {
+				return fmt.Errorf("batch message is empty")
+			}
+			h.raft.ProcessBatchMessage(batchMsg)
+			return nil
+		})
+		if eof {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+}
+
 func (h *handler) snapshotMessageFunc(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	defer h.withRequestReadTimeout(req, h.config.ReadDeadline)()
 	snapMsg := babuzapb.SnapshotMessage{}
 	if err := decodeExpectedMessage(req.Body, req.ContentLength, &snapMsg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -58,12 +107,88 @@ func (h *handler) snapshotMessageFunc(w http.ResponseWriter, req *http.Request) 
 	writeProtoMessage[*babuzapb.SnapshotMessageResponse](w, &res)
 }
 
+func (h *handler) snapshotMessageStreamFunc(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.config.MessageStreamEnabled {
+		http.NotFound(w, req)
+		return
+	}
+	defer h.withRequestReadTimeout(req, h.config.SnapshotStreamIdleTimeout)()
+	defer req.Body.Close()
+	if err := http.NewResponseController(w).EnableFullDuplex(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	reader := frame.NewReader(req.Body)
+	frameCount := 0
+	for {
+		eof, err := reader.ReadFrameOrEOF(func(msgType frame.MessageType, msgBuf []byte) error {
+			if msgType != frame.SnapshotMsgReqType {
+				return fmt.Errorf("unsupported message type: %d", msgType)
+			}
+			if len(msgBuf) == 0 {
+				return fmt.Errorf("snapshot message is empty")
+			}
+			snapMsg := babuzapb.SnapshotMessage{}
+			if err := snapMsg.Unmarshal(msgBuf); err != nil {
+				return err
+			}
+			frameCount++
+			res := h.raft.ProcessSnapshotMessage(snapMsg)
+			if snapMsg.Type == babuzapb.SnapshotMessageType_Finish || res.Status != babuzapb.SUCCESS {
+				if err := writeSnapshotResponseFrame(w, &res); err != nil {
+					return err
+				}
+				if err := http.NewResponseController(w).Flush(); err != nil {
+					return err
+				}
+			}
+			if snapMsg.Type == babuzapb.SnapshotMessageType_Finish || res.Status != babuzapb.SUCCESS {
+				return errSnapshotStreamRejected
+			}
+			return nil
+		})
+		if err != nil {
+			if errors.Is(err, errSnapshotStreamRejected) {
+				return
+			}
+			if frameCount > 0 {
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if eof {
+			if frameCount == 0 {
+				http.Error(w, "snapshot stream is empty", http.StatusBadRequest)
+				return
+			}
+			return
+		}
+	}
+}
+
+var errSnapshotStreamRejected = errors.New("snapshot stream rejected")
+
+func writeSnapshotResponseFrame(w io.Writer, res *babuzapb.SnapshotMessageResponse) error {
+	bufSize := frame.EncodeSize(res.Size())
+	bufSlice := allocator.Acquire(bufSize)
+	defer allocator.Release(bufSlice)
+	return frame.NewWriter(w).Encode(bufSlice.Buffer[:bufSize], frame.SnapshotMsgResType, res)
+}
+
 func (h *handler) clusterPeersFunc(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	defer h.withRequestReadTimeout(req, h.config.ReadDeadline)()
 	cId := req.URL.Query().Get("clusterID")
 	if cId == "" {
 		http.Error(w, "", http.StatusBadRequest)
@@ -109,6 +234,7 @@ func (h *handler) publishApplicationServiceFunc(w http.ResponseWriter, req *http
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	defer h.withRequestReadTimeout(req, h.config.ReadDeadline)()
 	appServiceUrlReq := babuzapb.PublishApplicationServiceRequest{}
 	if err := decodeExpectedMessage(req.Body, req.ContentLength, &appServiceUrlReq); err != nil {
 		fmt.Println(err.Error())
@@ -119,11 +245,33 @@ func (h *handler) publishApplicationServiceFunc(w http.ResponseWriter, req *http
 	writeProtoMessage[*babuzapb.PublishApplicationServiceResponse](w, &res)
 }
 
+func (h *handler) withRequestReadTimeout(req *http.Request, readTimeout time.Duration) func() {
+	conn, ok := req.Context().Value(serverConnectionContextKey{}).(*Connection)
+	if !ok || conn == nil {
+		return func() {}
+	}
+	conn.SetReadTimeout(h.endpointReadTimeout(readTimeout))
+	return func() {
+		conn.SetReadTimeout(h.config.ReadDeadline)
+	}
+}
+
+func (h *handler) endpointReadTimeout(readTimeout time.Duration) time.Duration {
+	if readTimeout > 0 {
+		return readTimeout
+	}
+	return h.config.ReadDeadline
+}
+
 func writeProtoMessage[T interface {
 	Size() int
 	MarshalTo([]byte) (int, error)
 }](w http.ResponseWriter, res T) {
 	msgSize := res.Size()
+	if msgSize == 0 {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	byteSlice := allocator.Acquire(msgSize)
 	defer allocator.Release(byteSlice)
 

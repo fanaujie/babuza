@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package frame
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"hash/crc32"
@@ -34,15 +34,23 @@ func NewReader(conn io.Reader) *Reader {
 }
 
 func (r *Reader) ReadFrame(msgHandler func(msgType MessageType, msgBuf []byte) error) error {
+	eof, err := r.ReadFrameOrEOF(msgHandler)
+	if eof {
+		return io.ErrUnexpectedEOF
+	}
+	return err
+}
+
+func (r *Reader) ReadFrameOrEOF(msgHandler func(msgType MessageType, msgBuf []byte) error) (bool, error) {
 	headerSliceBuf := allocator.Acquire(HeaderSize)
 	defer allocator.Release(headerSliceBuf)
 
 	headerBuf := headerSliceBuf.Buffer[:HeaderSize]
 	if _, err := io.ReadFull(r.conn, headerBuf); err != nil {
-		if err == io.EOF {
-			return io.ErrUnexpectedEOF
+		if errors.Is(err, io.EOF) {
+			return true, nil
 		}
-		return err
+		return false, err
 	}
 	h := binary.LittleEndian.Uint32(headerBuf[0:CrcOffset])
 	crc := binary.LittleEndian.Uint32(headerBuf[CrcOffset:HeaderSize])
@@ -53,19 +61,19 @@ func (r *Reader) ReadFrame(msgHandler func(msgType MessageType, msgBuf []byte) e
 		defer allocator.Release(msgSliceBuf)
 		messageBuf := msgSliceBuf.Buffer[:msgSize]
 		if _, err := io.ReadFull(r.conn, messageBuf); err != nil {
-			if err == io.EOF {
-				return io.ErrUnexpectedEOF
+			if errors.Is(err, io.EOF) {
+				return false, io.ErrUnexpectedEOF
 			}
-			return err
+			return false, err
 		}
 		readCrc = crc32.Checksum(messageBuf, Crc32Table)
 		if readCrc != crc {
-			return fmt.Errorf("crc does not match.(expected=%d) (real=%d)", crc, readCrc)
+			return false, fmt.Errorf("crc does not match.(expected=%d) (real=%d)", crc, readCrc)
 		}
-		return msgHandler(MessageType(h&MsgTypeMask), messageBuf)
+		return false, msgHandler(MessageType(h&MsgTypeMask), messageBuf)
 	}
 	if readCrc != crc {
-		return fmt.Errorf("crc does not match.(expected=%d) (real=%d)", crc, readCrc)
+		return false, fmt.Errorf("crc does not match.(expected=%d) (real=%d)", crc, readCrc)
 	}
-	return msgHandler(MessageType(h&MsgTypeMask), nil)
+	return false, msgHandler(MessageType(h&MsgTypeMask), nil)
 }

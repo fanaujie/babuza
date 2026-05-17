@@ -124,8 +124,10 @@ When a peer fails to send messages, the circuit breaker marks the connection as 
 | Protocol | Package | Description |
 |----------|---------|-------------|
 | TCP | `protocol/tcp` | Raw TCP with length-prefixed messages |
-| HTTP | `protocol/http` | HTTP/1.1 transport |
+| HTTP | `protocol/http` | HTTP/1.1 transport with optional stream mode |
 | gRPC | `protocol/grpc` | gRPC with streaming support |
+
+See the [HTTP Stream Benchmark Comparison](../../docs/benchmarks/http-stream-benchmark-comparison.md) for short-request vs stream-mode performance results.
 
 ## Usage
 
@@ -282,6 +284,7 @@ builder.AddHttpOptions(
     protocol.SetHttpOptsWithReadDeadline(time.Second * 10),
     protocol.SetHttpOptsWithWriteDeadline(time.Second * 10),
     protocol.SetHttpOptsWithShutdownTimeout(time.Second * 5),
+    protocol.SetHttpOptsWithMessageStreamEnabled(true),
 )
 ```
 

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package http
 
 import (
@@ -21,24 +20,47 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	"net"
+	"sync/atomic"
 	"time"
 )
 
 type Connection struct {
 	net.Conn
-	readTimeout  time.Duration
-	writeTimeout time.Duration
+	readTimeoutNanos atomic.Int64
+	writeTimeout     time.Duration
+}
+
+func newConnection(conn net.Conn, readTimeout time.Duration, writeTimeout time.Duration) *Connection {
+	c := &Connection{
+		Conn:         conn,
+		writeTimeout: writeTimeout,
+	}
+	c.SetReadTimeout(readTimeout)
+	return c
+}
+
+func (c *Connection) SetReadTimeout(readTimeout time.Duration) {
+	c.readTimeoutNanos.Store(int64(readTimeout))
+}
+
+func (c *Connection) ReadTimeout() time.Duration {
+	return time.Duration(c.readTimeoutNanos.Load())
 }
 
 func (c *Connection) Read(b []byte) (n int, err error) {
-	if err = c.SetReadDeadline(time.Now().Add(c.readTimeout)); err != nil {
-		return 0, err
+	readTimeout := c.ReadTimeout()
+	if readTimeout > 0 {
+		if err = c.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			return 0, err
+		}
 	}
 	return c.Conn.Read(b)
 }
 func (c *Connection) Write(b []byte) (n int, err error) {
-	if err = c.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
-		return 0, err
+	if c.writeTimeout > 0 {
+		if err = c.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+			return 0, err
+		}
 	}
 	return c.Conn.Write(b)
 }
@@ -54,11 +76,7 @@ func dialContext(cfg ibabuza.TLSConfig, options ServerConfig) (func(ctx context.
 			if dErr != nil {
 				return nil, dErr
 			}
-			return &Connection{
-				Conn:         conn,
-				readTimeout:  options.ReadDeadline,
-				writeTimeout: options.WriteDeadline,
-			}, nil
+			return newConnection(conn, options.ReadDeadline, options.WriteDeadline), nil
 		}, nil
 	} else {
 		return func(ctx context.Context, network string, addr string) (net.Conn, error) {
@@ -66,11 +84,7 @@ func dialContext(cfg ibabuza.TLSConfig, options ServerConfig) (func(ctx context.
 			if dErr != nil {
 				return nil, dErr
 			}
-			return &Connection{
-				Conn:         conn,
-				readTimeout:  options.ReadDeadline,
-				writeTimeout: options.WriteDeadline,
-			}, nil
+			return newConnection(conn, options.ReadDeadline, options.WriteDeadline), nil
 		}, nil
 	}
 }

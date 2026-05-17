@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package frame
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
@@ -203,4 +203,20 @@ func TestIncompleteRead(t *testing.T) {
 	})
 
 	assert.Error(t, err)
+}
+
+func TestReadFrameOrEOFDistinguishesCleanAndPartialEOF(t *testing.T) {
+	reader := NewReader(bytes.NewReader(nil))
+	eof, err := reader.ReadFrameOrEOF(func(msgType MessageType, msgBuf []byte) error {
+		return nil
+	})
+	assert.True(t, eof)
+	assert.NoError(t, err)
+
+	reader = NewReader(bytes.NewReader([]byte{1, 2, 3}))
+	eof, err = reader.ReadFrameOrEOF(func(msgType MessageType, msgBuf []byte) error {
+		return nil
+	})
+	assert.False(t, eof)
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
 }
