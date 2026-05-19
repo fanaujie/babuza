@@ -54,15 +54,17 @@ Babuza stores log entry metadata in memory and reads entry payloads from WAL on 
 
 ### HTTP Stream Transport
 
-HTTP transport supports an opt-in stream mode that reuses long-lived HTTP request bodies for framed Raft messages and snapshot chunks. In local benchmarks, stream mode significantly reduces per-message request overhead:
+HTTP transport supports an opt-in message stream mode for Raft batch messages. Peers open receiver-initiated `GET /raft/messages/stream` response streams, and senders write framed Raft batches into those active streams to reduce per-message HTTP request overhead. Snapshot transfer remains on the regular `/raft/snapshot` request-response path.
 
-| Workload | Short Request | HTTP Stream | Improvement |
-|----------|---------------|-------------|-------------|
-| Batch message | 26.806 us/op | 2.349 us/op | 11.4x faster |
-| Snapshot, 32 x 256 B chunks | 990.327 us/op | 148.066 us/op | 6.7x faster |
-| Snapshot, 4 x 8 KiB chunks | 175.458 us/op | 90.616 us/op | 1.9x faster |
+Latest local benchmark on Apple M4:
 
-See the full [HTTP Stream Benchmark Comparison](./docs/benchmarks/http-stream-benchmark-comparison.md) for benchmark details and allocation results.
+| Workload | Short Request | Message Stream Enabled | Result |
+|----------|---------------|------------------------|--------|
+| Batch message | 26.918 us/op | 1.625 us/op | 16.6x faster |
+| Snapshot, 32 x 256 B chunks | 940.638 us/op | 938.864 us/op | unchanged; short request |
+| Snapshot, 4 x 8 KiB chunks | 177.084 us/op | 176.838 us/op | unchanged; short request |
+
+See the [HTTP Stream Benchmark Comparison](./docs/benchmarks/http-stream-benchmark-comparison.md) for benchmark details and allocation results.
 
 ## Architecture
 

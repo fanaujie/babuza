@@ -39,26 +39,33 @@ type ServerConfig struct {
 }
 
 type RaftMsgServer struct {
-	cfg    ibabuza.TransportConfig
-	raft   ibabuza.RaftMessageHandler
-	config ServerConfig
-	logger ibabuza.Logger
-	srv    *http.Server
+	cfg              ibabuza.TransportConfig
+	raft             ibabuza.RaftMessageHandler
+	config           ServerConfig
+	logger           ibabuza.Logger
+	srv              *http.Server
+	messageStreamHub *MessageStreamHub
 }
 
 func NewRaftMsgServer(cfg ibabuza.TransportConfig, config ServerConfig, raft ibabuza.RaftMessageHandler,
-	logger ibabuza.Logger) *RaftMsgServer {
+	logger ibabuza.Logger, hubs ...*MessageStreamHub) *RaftMsgServer {
 
+	var messageHub *MessageStreamHub
+	if len(hubs) > 0 {
+		messageHub = hubs[0]
+	}
 	r := &RaftMsgServer{
-		cfg:    cfg,
-		raft:   raft,
-		config: config,
-		logger: logger,
+		cfg:              cfg,
+		raft:             raft,
+		config:           config,
+		logger:           logger,
+		messageStreamHub: messageHub,
 	}
 	mux := http.NewServeMux()
 	h := &handler{
-		raft:   raft,
-		config: config,
+		raft:             raft,
+		config:           config,
+		messageStreamHub: messageHub,
 	}
 	mux.HandleFunc(raftBatchMsgPrefix, h.batchMessageFunc)
 	mux.HandleFunc(raftBatchMsgStreamPrefix, h.batchMessageStreamFunc)
@@ -133,6 +140,9 @@ func (l *deadlineListener) Accept() (net.Conn, error) {
 }
 
 func (r *RaftMsgServer) Stop() error {
+	if r.messageStreamHub != nil {
+		r.messageStreamHub.closeAll()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), r.config.ShutdownTimeout)
 	defer cancel()
 	if err := r.srv.Shutdown(ctx); err != nil {

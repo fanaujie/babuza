@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package grpc
 
 import (
@@ -157,7 +156,13 @@ func (r *MultiRaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessag
 	defer cancel()
 
 	res, err := client.SendSnapshotMessage(ctx, &snapMsg)
-	return *res, err
+	if err != nil {
+		return babuzapb.SnapshotMessageResponse{}, err
+	}
+	if res == nil {
+		return babuzapb.SnapshotMessageResponse{}, fmt.Errorf("snapshot response is nil")
+	}
+	return *res, nil
 }
 
 func (r *MultiRaftMsgClient) GetClusterPeers(request babuzapb.GetClusterPeersRequest) (babuzapb.GetClusterPeersResponse, error) {

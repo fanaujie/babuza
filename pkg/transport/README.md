@@ -456,9 +456,13 @@ HTTP uses REST-like endpoints with protobuf serialization:
 | Endpoint | Method | Request Body | Response Body |
 |----------|--------|--------------|---------------|
 | `/raft/messages` | POST | `BatchMessage` | - |
+| `/raft/messages/stream` | GET | Query params (`from`) | Framed `BatchMessage` stream |
 | `/raft/snapshot` | POST | `SnapshotMessage` | `SnapshotMessageResponse` |
 | `/raft/peers` | GET | Query params | `GetClusterPeersResponse` |
 | `/raft/app-service-urls` | POST | `PublishApplicationServiceRequest` | `PublishApplicationServiceResponse` |
+
+**Query Parameters for `/raft/messages/stream`:**
+- `from` - Receiver peer ID that is opening the stream
 
 **Query Parameters for `/raft/peers`:**
 - `clusterID` - Cluster identifier

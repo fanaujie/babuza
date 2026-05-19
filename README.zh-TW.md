@@ -54,15 +54,17 @@ Babuza 只把 log entry metadata 留在記憶體，entry payload 需要時才從
 
 ### HTTP Stream Transport
 
-HTTP transport 支援 opt-in 的 stream mode，會重用長連線 HTTP request body 來傳送 framed Raft message 和 snapshot chunks。本機 benchmark 顯示，stream mode 可以明顯降低每筆訊息的 HTTP request 開銷：
+HTTP transport 支援 opt-in 的 Raft message stream mode。Peer 會先建立 receiver-initiated 的 `GET /raft/messages/stream` response stream；sender 會把 framed Raft batch 寫入已建立的 stream，以降低每筆訊息的 HTTP request 開銷。Snapshot transfer 維持原本 `/raft/snapshot` request-response 路徑。
 
-| 工作負載 | Short Request | HTTP Stream | 改善幅度 |
-|----------|---------------|-------------|----------|
-| Batch message | 26.806 us/op | 2.349 us/op | 快 11.4x |
-| Snapshot，32 x 256 B chunks | 990.327 us/op | 148.066 us/op | 快 6.7x |
-| Snapshot，4 x 8 KiB chunks | 175.458 us/op | 90.616 us/op | 快 1.9x |
+Apple M4 本機最新 benchmark：
 
-完整數據請看 [HTTP Stream Benchmark Comparison](./docs/benchmarks/http-stream-benchmark-comparison.md)，裡面有 benchmark 細節和 allocation 結果。
+| 工作負載 | Short Request | Message Stream Enabled | 結果 |
+|----------|---------------|------------------------|------|
+| Batch message | 26.918 us/op | 1.625 us/op | 快 16.6x |
+| Snapshot，32 x 256 B chunks | 940.638 us/op | 938.864 us/op | 幾乎不變；仍是 short request |
+| Snapshot，4 x 8 KiB chunks | 177.084 us/op | 176.838 us/op | 幾乎不變；仍是 short request |
+
+完整資訊與 allocation 結果請看 [HTTP Stream Benchmark Comparison](./docs/benchmarks/http-stream-benchmark-comparison.md)。
 
 ## 架構
 

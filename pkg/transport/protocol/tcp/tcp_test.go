@@ -26,6 +26,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/connpool"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/internal/testutil"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio"
@@ -261,6 +262,7 @@ func TestNewServerClient(t *testing.T) {
 
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		srv := NewRaftMsgServer(c.TransportConfig, ServerConfig{
 			ReadDeadline:  defaultCfg.ReadDeadline,
 			WriteDeadline: defaultCfg.WriteDeadline,
@@ -281,7 +283,7 @@ func TestNewServerClient(t *testing.T) {
 }
 
 func TestServer_StartAndStop(t *testing.T) {
-	local := "localhost:14200"
+	local := testutil.FreeTCPAddr(t, "localhost")
 	n := networkio.NewTcpPhysicalIO()
 	srv := NewRaftMsgServer(ibabuza.TransportConfig{
 		PeerAddress: local}, ServerConfig{
@@ -436,6 +438,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 	}
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		mockTransport := newMockTransportRaft(1)
 		srv := NewRaftMsgServer(c.TransportConfig, ServerConfig{
 			ReadDeadline:  defaultCfg.ReadDeadline,
@@ -569,6 +572,7 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 	}
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		mockTransport := newMockTransportRaft(c.clients)
 		srv := NewRaftMsgServer(c.TransportConfig, ServerConfig{
 			ReadDeadline:  defaultCfg.ReadDeadline,

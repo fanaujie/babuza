@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package transport
 
 import (
@@ -68,12 +67,7 @@ func (m *PeerManagerImpl[Peer, Reporter]) AddPeer(groupID ibabuza.RaftGroupID, p
 	identifier := RaftPeerIdentifier{GroupID: groupID, PeerID: peerID}
 	if _, ok := m.addresses[identifier]; !ok {
 		m.addresses[identifier] = peerAddress
-		if _, exists := m.peers[peerAddress]; exists {
-			m.refCounts[peerAddress]++
-			return nil
-		}
-		m.peers[peerAddress] = factory.CreatePeer(peerAddress)
-		m.refCounts[peerAddress] = 1
+		m.retainAddressLocked(peerAddress, factory)
 		return nil
 	}
 
@@ -84,62 +78,85 @@ func (m *PeerManagerImpl[Peer, Reporter]) UpdatePeer(groupID ibabuza.RaftGroupID
 	factory PeerFactory[Peer]) error {
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	identifier := RaftPeerIdentifier{GroupID: groupID, PeerID: peerID}
 	oldAddress, exists := m.addresses[identifier]
 	if !exists {
+		m.mu.Unlock()
 		return fmt.Errorf("peer not found for group %v and peer %v", groupID, peerID)
 
 	}
 	if oldAddress == updatePeerAddress {
+		m.mu.Unlock()
 		return nil
 	}
 
-	m.refCounts[oldAddress]--
-	if m.refCounts[oldAddress] == 0 {
-		delete(m.peers, oldAddress)
-		delete(m.refCounts, oldAddress)
-	}
+	peerToStop, stopPeer := m.releaseAddressLocked(oldAddress)
 
 	m.addresses[identifier] = updatePeerAddress
-	if _, exists = m.peers[updatePeerAddress]; exists {
-		m.refCounts[updatePeerAddress]++
-	} else {
-		m.peers[updatePeerAddress] = factory.CreatePeer(updatePeerAddress)
-		m.refCounts[updatePeerAddress] = 1
-	}
+	m.retainAddressLocked(updatePeerAddress, factory)
+	m.mu.Unlock()
 
+	stopPeerIfNeeded(peerToStop, stopPeer)
 	return nil
 }
 
 func (m *PeerManagerImpl[Peer, Reporter]) RemovePeer(groupID ibabuza.RaftGroupID, peerID uint64) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	identifier := RaftPeerIdentifier{GroupID: groupID, PeerID: peerID}
 
 	address, exists := m.addresses[identifier]
 	if !exists {
+		m.mu.Unlock()
 		return fmt.Errorf("peer not found for group %v and peer %v", groupID, peerID)
 	}
 	delete(m.addresses, identifier)
-	m.refCounts[address]--
-	if m.refCounts[address] == 0 {
-		delete(m.peers, address)
-		delete(m.refCounts, address)
-	}
+	peerToStop, stopPeer := m.releaseAddressLocked(address)
+	m.mu.Unlock()
 
+	stopPeerIfNeeded(peerToStop, stopPeer)
 	return nil
 }
 
 func (m *PeerManagerImpl[Peer, Reporter]) RemoveAllPeers() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
+	peers := m.peers
 	m.peers = make(map[string]Peer)
 	m.addresses = make(map[RaftPeerIdentifier]string)
 	m.refCounts = make(map[string]int)
+	m.mu.Unlock()
+
+	for _, peer := range peers {
+		peer.Stop()
+	}
+}
+
+func (m *PeerManagerImpl[Peer, Reporter]) retainAddressLocked(peerAddress string, factory PeerFactory[Peer]) {
+	if _, exists := m.peers[peerAddress]; exists {
+		m.refCounts[peerAddress]++
+		return
+	}
+	m.peers[peerAddress] = factory.CreatePeer(peerAddress)
+	m.refCounts[peerAddress] = 1
+}
+
+func (m *PeerManagerImpl[Peer, Reporter]) releaseAddressLocked(peerAddress string) (Peer, bool) {
+	var peerToStop Peer
+	m.refCounts[peerAddress]--
+	if m.refCounts[peerAddress] > 0 {
+		return peerToStop, false
+	}
+	peerToStop = m.peers[peerAddress]
+	delete(m.peers, peerAddress)
+	delete(m.refCounts, peerAddress)
+	return peerToStop, true
+}
+
+func stopPeerIfNeeded[Peer PeerAction[Reporter], Reporter any](peer Peer, shouldStop bool) {
+	if shouldStop {
+		peer.Stop()
+	}
 }
 
 func (m *PeerManagerImpl[Peer, Reporter]) ResolvePeerAddress(groupID ibabuza.RaftGroupID, peerID uint64) (string, error) {

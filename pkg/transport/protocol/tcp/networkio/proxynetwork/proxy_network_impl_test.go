@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,8 +45,27 @@ func (mockConn) SetDeadline(t time.Time) error      { return nil }
 func (mockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (mockConn) SetWriteDeadline(t time.Time) error { return nil }
 
+var proxyInEndpoints = struct {
+	sync.Mutex
+	addresses map[uint64]string
+}{addresses: make(map[uint64]string)}
+
 func getProxyInEndpoint(peerID uint64) string {
-	return fmt.Sprintf("127.0.0.1:%d", 14200+peerID)
+	proxyInEndpoints.Lock()
+	defer proxyInEndpoints.Unlock()
+	if addr, ok := proxyInEndpoints.addresses[peerID]; ok {
+		return addr
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	addr := listener.Addr().String()
+	if err = listener.Close(); err != nil {
+		panic(err)
+	}
+	proxyInEndpoints.addresses[peerID] = addr
+	return addr
 }
 
 func TestRaftNetwork_AddProxy(t *testing.T) {
@@ -109,7 +129,7 @@ func TestRaftNetwork_EnableDisableProxy(t *testing.T) {
 			p := New()
 			assert.Nil(t, p.AddProxy(ibabuza.ProxyConfig{
 				Id:                1,
-				InAddr:            "127.0.0.1:14200",
+				InAddr:            getProxyInEndpoint(1),
 				InListenTLSConfig: tc.serverTLS,
 				OutDialTLSConfig:  tc.clientTls,
 			}))

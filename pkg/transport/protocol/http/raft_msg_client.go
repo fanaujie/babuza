@@ -16,6 +16,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"github.com/fanaujie/babuza/ibabuza"
@@ -26,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 )
 
 const (
@@ -43,16 +45,15 @@ type RaftMsgClient struct {
 	resolver             ibabuza.TransportResolver
 	urlPool              *UrlPool
 	messageStreamEnabled bool
-	messageStreamMu      sync.Mutex
+	messageStreamHub     *MessageStreamHub
+	localNodeID          uint64
+	streamHandler        ibabuza.RaftMessageHandler
 	snapshotStreamMu     sync.Mutex
-	stream               *messageStream
 	snapshotStream       *snapshotStream
-}
-
-type messageStream struct {
-	peerID uint64
-	body   *io.PipeWriter
-	doneCh chan error
+	receiveStreamMu      sync.Mutex
+	receiveStreamCancel  context.CancelFunc
+	receiveStreamDone    chan struct{}
+	receiveStreamPeerID  uint64
 }
 
 type snapshotStream struct {
@@ -92,6 +93,15 @@ func NewRaftMsgClientWithSnapshotStreamClient(client *http.Client, snapshotStrea
 	}
 }
 
+func NewRaftMsgClientWithMessageStreamHub(client *http.Client, resolver ibabuza.TransportResolver, enableTls bool,
+	config ServerConfig, hub *MessageStreamHub, localNodeID uint64, streamHandler ibabuza.RaftMessageHandler) *RaftMsgClient {
+	r := NewRaftMsgClientWithSnapshotStreamClient(client, client, resolver, enableTls, config)
+	r.messageStreamHub = hub
+	r.localNodeID = localNodeID
+	r.streamHandler = streamHandler
+	return r
+}
+
 func (r *RaftMsgClient) getUrl(peerID uint64, path string) (*url.URL, error) {
 	addr, err := r.resolver.ResolvePeerAddress(peerID)
 	if err != nil {
@@ -113,9 +123,19 @@ func (r *RaftMsgClient) SendBatchMessage(batchMsg babuzapb.BatchMessage) error {
 	if err != nil {
 		return err
 	}
-	if r.messageStreamEnabled {
-		return r.sendBatchMessageStream(peerID, batchMsg)
+	if r.messageStreamEnabled && r.messageStreamHub != nil {
+		err = r.messageStreamHub.send(peerID, batchMsg)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, errMessageStreamUnavailable) && !errors.Is(err, errMessageStreamBackpressure) {
+			return err
+		}
 	}
+	return r.sendBatchMessageShort(peerID, batchMsg)
+}
+
+func (r *RaftMsgClient) sendBatchMessageShort(peerID uint64, batchMsg babuzapb.BatchMessage) error {
 	u, err := r.getUrl(peerID, raftBatchMsgPrefix)
 	if err != nil {
 		return err
@@ -160,117 +180,106 @@ func batchMessagePeer(batchMsg babuzapb.BatchMessage) (uint64, error) {
 	return peerID, nil
 }
 
-func (r *RaftMsgClient) sendBatchMessageStream(peerID uint64, batchMsg babuzapb.BatchMessage) error {
-	r.messageStreamMu.Lock()
-	defer r.messageStreamMu.Unlock()
-
-	if r.stream == nil {
-		stream, err := r.openMessageStreamLocked(peerID)
-		if err != nil {
-			return err
-		}
-		r.stream = stream
-	} else if r.stream.peerID != peerID {
-		r.closeStreamLocked(r.stream, nil)
-		stream, err := r.openMessageStreamLocked(peerID)
-		if err != nil {
-			return err
-		}
-		r.stream = stream
-	}
-	stream := r.stream
-	select {
-	case err := <-stream.doneCh:
-		r.stream = nil
-		_ = stream.body.CloseWithError(err)
-		if err != nil {
-			return err
-		}
-		stream, err := r.openMessageStreamLocked(peerID)
-		if err != nil {
-			return err
-		}
-		r.stream = stream
-	default:
-	}
-
-	bufSize := frame.EncodeSize(batchMsg.Size())
-	bufSlice := allocator.Acquire(bufSize)
-	defer allocator.Release(bufSlice)
-
-	err := frame.NewWriter(r.stream.body).Encode(bufSlice.Buffer[:bufSize], frame.BatchMsgType, &batchMsg)
-	if err != nil {
-		r.closeStreamLocked(r.stream, err)
-		return err
-	}
-	stream = r.stream
-	select {
-	case err := <-stream.doneCh:
-		r.stream = nil
-		_ = stream.body.CloseWithError(err)
-		if err != nil {
-			return err
-		}
-	default:
-	}
-	return nil
-}
-
-func (r *RaftMsgClient) openMessageStreamLocked(peerID uint64) (*messageStream, error) {
-	u, err := r.getUrl(peerID, raftBatchMsgStreamPrefix)
-	if err != nil {
-		return nil, err
-	}
-	defer r.urlPool.Release(u)
-
-	pr, pw := io.Pipe()
-	req, err := http.NewRequest(http.MethodPost, u.String(), pr)
-	if err != nil {
-		_ = pr.Close()
-		_ = pw.Close()
-		return nil, err
-	}
-	stream := &messageStream{
-		peerID: peerID,
-		body:   pw,
-		doneCh: make(chan error, 1),
-	}
-	go r.monitorMessageStream(stream, req)
-	return stream, nil
-}
-
-func (r *RaftMsgClient) monitorMessageStream(stream *messageStream, req *http.Request) {
-	res, err := r.client.Do(req)
-	if err == nil {
-		if res.StatusCode != http.StatusOK {
-			err = fmt.Errorf("unexpected status code: %d", res.StatusCode)
-		}
-		_ = res.Body.Close()
-	}
-
-	stream.doneCh <- err
-	r.messageStreamMu.Lock()
-	defer r.messageStreamMu.Unlock()
-	if r.stream == stream {
-		r.stream = nil
-	}
-}
-
-func (r *RaftMsgClient) closeStreamLocked(stream *messageStream, err error) {
-	if stream == nil {
+func (r *RaftMsgClient) StartMessageStream(peerID uint64) {
+	if !r.messageStreamEnabled || r.streamHandler == nil || r.localNodeID == 0 {
 		return
 	}
-	_ = stream.body.CloseWithError(err)
-	if r.stream == stream {
-		r.stream = nil
+
+	r.receiveStreamMu.Lock()
+	if r.receiveStreamCancel != nil {
+		r.receiveStreamMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	r.receiveStreamCancel = cancel
+	r.receiveStreamDone = done
+	r.receiveStreamPeerID = peerID
+	r.receiveStreamMu.Unlock()
+
+	go func() {
+		defer close(done)
+		r.receiveMessageStreamLoop(ctx, peerID)
+	}()
+}
+
+func (r *RaftMsgClient) receiveMessageStreamLoop(ctx context.Context, peerID uint64) {
+	backoff := 50 * time.Millisecond
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		_ = r.receiveMessageStreamOnce(ctx, peerID)
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < time.Second {
+			backoff *= 2
+			if backoff > time.Second {
+				backoff = time.Second
+			}
+		}
+	}
+}
+
+func (r *RaftMsgClient) receiveMessageStreamOnce(ctx context.Context, peerID uint64) error {
+	u, err := r.getUrl(peerID, raftBatchMsgStreamPrefix)
+	if err != nil {
+		return err
+	}
+	defer r.urlPool.Release(u)
+	q := u.Query()
+	q.Set("from", fmt.Sprintf("%d", r.localNodeID))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return err
+	}
+	res, err := r.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
+	reader := frame.NewReader(res.Body)
+	for {
+		eof, err := reader.ReadFrameOrEOF(func(msgType frame.MessageType, msgBuf []byte) error {
+			if msgType != frame.BatchMsgType {
+				return fmt.Errorf("unsupported message type: %d", msgType)
+			}
+			if len(msgBuf) == 0 {
+				return fmt.Errorf("batch message is empty")
+			}
+			batchMsg := babuzapb.BatchMessage{}
+			if err := batchMsg.Unmarshal(msgBuf); err != nil {
+				return err
+			}
+			if len(batchMsg.Messages) == 0 {
+				return fmt.Errorf("batch message is empty")
+			}
+			r.streamHandler.ProcessBatchMessage(batchMsg)
+			return nil
+		})
+		if eof {
+			return io.EOF
+		}
+		if err != nil {
+			return err
+		}
 	}
 }
 
 func (r *RaftMsgClient) SendSnapshotMessage(snapMsg babuzapb.SnapshotMessage) (babuzapb.SnapshotMessageResponse, error) {
 	//TODO: retry if failed?
-	if r.messageStreamEnabled {
-		return r.sendSnapshotMessageStream(snapMsg)
-	}
 	var resp babuzapb.SnapshotMessageResponse
 	u, err := r.getUrl(snapMsg.To, raftSnapshotMsgPrefix)
 	if err != nil {
@@ -597,12 +606,16 @@ func (r *RaftMsgClient) PublishApplicationService(request babuzapb.PublishApplic
 func (r *RaftMsgClient) Close() error {
 	var err error
 
-	r.messageStreamMu.Lock()
-	if r.stream != nil {
-		err = r.stream.body.Close()
-		r.stream = nil
+	r.receiveStreamMu.Lock()
+	receiveCancel := r.receiveStreamCancel
+	receiveDone := r.receiveStreamDone
+	r.receiveStreamCancel = nil
+	r.receiveStreamDone = nil
+	r.receiveStreamMu.Unlock()
+	if receiveCancel != nil {
+		receiveCancel()
+		<-receiveDone
 	}
-	r.messageStreamMu.Unlock()
 
 	r.snapshotStreamMu.Lock()
 	if r.snapshotStream != nil {
