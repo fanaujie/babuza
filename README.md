@@ -4,6 +4,12 @@
 
 Babuza turns [etcd Raft](https://github.com/etcd-io/raft) into an embeddable Go framework for production services. It provides the Raft runtime, WAL, snapshots, transport, sessions, cluster operations, and integration test harness you otherwise have to build around etcd/raft yourself.
 
+### Is Babuza a fit?
+
+Use Babuza when you are building a Go service that embeds Raft and want its surrounding infrastructure—storage, peer transport, snapshots, membership operations, and failure testing—to be supplied as one framework. You implement the state machine and application API; Babuza manages the Raft plumbing.
+
+Babuza is not an etcd KV-compatible server or a cross-language consensus service. If you need either of those, use a dedicated service rather than embedding Babuza.
+
 ## Why Babuza?
 
 Building distributed systems with Raft is hard. While etcd provides a battle-tested Raft implementation, using it directly requires significant effort:
@@ -14,12 +20,12 @@ Building distributed systems with Raft is hard. While etcd provides a battle-tes
 - **State Machine Lifecycle**: Manage snapshot creation, restoration, and log compaction while ensuring consistency
 - **Cluster Membership**: Implement protocol for adding/removing nodes, handling joint consensus, and learner promotion
 
-| Challenge | etcd Raft | Babuza |
+| Concern | etcd/raft alone | Babuza |
 |-----------|-----------|--------|
-| **Memory Management** | Keeps all log entries in memory | Index-based caching saves 94-99% memory |
-| **Network Transport** | Basic HTTP transport provided | Pluggable TCP/HTTP/gRPC transports |
-| **WAL** | etcd WAL provided | Multiple backends: native, Badger, Pebble |
-| **Snapshot Transfer** | Full transfer via HTTP | Compressed & chunked transfer with rate limiting |
+| **Memory Storage** | `MemoryStorage` retains all entry payloads in memory | Index-based caching saves 94-99% memory |
+| **Network Transport** | Application-provided | Pluggable TCP/HTTP/gRPC transports |
+| **WAL** | Application-provided | Multiple backends: native, Badger, Pebble |
+| **Snapshot Transfer** | Application-provided | Chunked, rate-limited transfer over HTTP |
 | **Cluster Operations** | Manual peer management | Built-in add/remove/transfer APIs |
 | **Idempotency** | Application handles dedup | Session-based exactly-once semantics |
 | **Observability** | Roll your own | Prometheus & OpenTelemetry built-in |
@@ -34,7 +40,7 @@ Building distributed systems with Raft is hard. While etcd provides a battle-tes
 |---------|----------------------|
 | **Raft Runtime** | Ready-loop processing, proposal handling, linearizable reads, and lifecycle management |
 | **WAL Backends** | Native Babuza WAL, etcd WAL, Badger, and Pebble options |
-| **Snapshot Management** | Durable, volatile, and S3-compatible snapshot storage with chunked transfer |
+| **Snapshot Management** | Durable, volatile, and S3-compatible snapshot storage with chunked HTTP transfer |
 | **Transport Layer** | Pluggable TCP, HTTP, and gRPC transports, including HTTP stream mode |
 | **Client Sessions** | Optional exactly-once semantics through no-op, expiring, or LRU session managers |
 | **Cluster Operations** | Add/remove/update peers, promote learners, transfer leadership, and disaster recovery |
@@ -54,7 +60,9 @@ Babuza stores log entry metadata in memory and reads entry payloads from WAL on 
 
 ### HTTP Stream Transport
 
-HTTP transport supports an opt-in message stream mode for Raft batch messages. Peers open receiver-initiated `GET /raft/messages/stream` response streams, and senders write framed Raft batches into those active streams to reduce per-message HTTP request overhead. Snapshot transfer remains on the regular `/raft/snapshot` request-response path.
+HTTP transport supports an opt-in message stream mode for Raft batch messages. Peers open receiver-initiated `GET /raft/messages/stream` response streams, and senders write framed Raft batches into those active streams to reduce per-message HTTP request overhead.
+
+Snapshots use a separate, chunked transfer: Babuza splits a snapshot into application-level chunks, rate-limits them, and sends each chunk synchronously with `POST /raft/snapshot`. This is not HTTP `Transfer-Encoding: chunked`; the message stream mode does not change snapshot transfer semantics.
 
 Latest local benchmark on Apple M4:
 
@@ -71,6 +79,22 @@ See the [HTTP Stream Benchmark Comparison](./docs/benchmarks/http-stream-benchma
 ![architecture](images/babuza_architecture.svg)
 
 ## Quick Start
+
+Requires Go 1.24 or later. The quickest way to run a working single-node cluster is:
+
+```bash
+git clone https://github.com/fanaujie/babuza.git
+cd babuza/examples/simple
+go run .
+```
+
+The example starts a single-node cluster, proposes two key-value updates, reads them back, and shuts down. See the [simple example](./examples/simple/README.md) for a walkthrough.
+
+To embed Babuza in your own Go module:
+
+```bash
+go get github.com/fanaujie/babuza
+```
 
 ```go
 package main
@@ -136,10 +160,6 @@ func main() {
 | [KV Store](./examples/kvstore/README.md) | Single-raft distributed key-value store with REST API |
 | [Distributed Lock](./examples/distlock/README.md) | Lease-based distributed lock with fencing tokens and wait queue |
 | [Redis Cluster](./examples/redis-cluster/README.md) | Multi-raft Redis-compatible distributed cache |
-
-## AI-Assisted Development
-
-Use [babuza-skills](https://github.com/fanaujie/babuza-skills) to enhance AI coding assistants (Claude Code, Cursor, Aider) with Babuza-specific knowledge for code generation and explanations.
 
 ## Documentation
 
