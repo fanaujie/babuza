@@ -28,8 +28,9 @@ import (
 )
 
 type handler struct {
-	raft   ibabuza.RaftMessageHandler
-	config ServerConfig
+	raft             ibabuza.RaftMessageHandler
+	config           ServerConfig
+	messageStreamHub *MessageStreamHub
 }
 
 func (h *handler) batchMessageFunc(w http.ResponseWriter, req *http.Request) {
@@ -49,8 +50,8 @@ func (h *handler) batchMessageFunc(w http.ResponseWriter, req *http.Request) {
 }
 
 func (h *handler) batchMessageStreamFunc(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
+	if req.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -58,35 +59,47 @@ func (h *handler) batchMessageStreamFunc(w http.ResponseWriter, req *http.Reques
 		http.NotFound(w, req)
 		return
 	}
-	defer h.withRequestReadTimeout(req, h.config.StreamIdleTimeout)()
-	defer req.Body.Close()
+	if h.messageStreamHub == nil {
+		http.Error(w, "message stream hub is not configured", http.StatusInternalServerError)
+		return
+	}
+	from := req.URL.Query().Get("from")
+	if from == "" {
+		http.Error(w, "missing from", http.StatusBadRequest)
+		return
+	}
+	fromID, err := strconv.ParseUint(from, 10, 64)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	reader := frame.NewReader(req.Body)
+	stream := h.messageStreamHub.register(fromID)
+	defer h.messageStreamHub.unregister(fromID, stream)
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(http.StatusOK)
+	controller := http.NewResponseController(w)
+	if err := controller.Flush(); err != nil {
+		return
+	}
+
 	for {
-		eof, err := reader.ReadFrameOrEOF(func(msgType frame.MessageType, msgBuf []byte) error {
-			if msgType != frame.BatchMsgType {
-				return fmt.Errorf("unsupported message type: %d", msgType)
-			}
-			if len(msgBuf) == 0 {
-				return fmt.Errorf("batch message is empty")
-			}
-			batchMsg := babuzapb.BatchMessage{}
-			if err := batchMsg.Unmarshal(msgBuf); err != nil {
-				return err
-			}
-			if len(batchMsg.Messages) == 0 {
-				return fmt.Errorf("batch message is empty")
-			}
-			h.raft.ProcessBatchMessage(batchMsg)
-			return nil
-		})
-		if eof {
-			w.WriteHeader(http.StatusOK)
+		select {
+		case <-req.Context().Done():
 			return
-		}
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		case <-stream.done:
 			return
+		case frameBytes := <-stream.frames:
+			if len(frameBytes) == 0 {
+				continue
+			}
+			if _, err := w.Write(frameBytes); err != nil {
+				return
+			}
+			if err := controller.Flush(); err != nil {
+				return
+			}
 		}
 	}
 }

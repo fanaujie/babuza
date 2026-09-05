@@ -25,6 +25,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/connpool"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/internal/testutil"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/grpc/networkio"
 	"github.com/stretchr/testify/assert"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -225,6 +226,7 @@ func TestNewServerClient(t *testing.T) {
 
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		srv := NewRaftMsgServer(c.TransportConfig, c.NetworkIO, nil, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
 
@@ -239,7 +241,7 @@ func TestNewServerClient(t *testing.T) {
 }
 
 func TestServer_StartAndStop(t *testing.T) {
-	local := "localhost:14200"
+	local := testutil.FreeTCPAddr(t, "localhost")
 	n := networkio.NewGrpcNetworkIO()
 	srv := NewRaftMsgServer(ibabuza.TransportConfig{
 		PeerAddress: local}, n, nil, &logger.Mock{})
@@ -313,6 +315,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		mockTransport := newMockTransportRaft(1)
 		srv := NewRaftMsgServer(c.TransportConfig, c.NetworkIO, mockTransport, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
@@ -434,6 +437,7 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		mockTransport := newMockTransportRaft(c.clients)
 		srv := NewRaftMsgServer(c.TransportConfig, c.NetworkIO, mockTransport, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)

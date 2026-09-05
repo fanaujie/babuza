@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package transport
 
 import (
@@ -22,6 +21,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/internal/testutil"
 	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/networkio"
@@ -297,13 +297,15 @@ func TestTransport_Send(t *testing.T) {
 		}
 
 		t.Run(transportName, func(t *testing.T) {
-			trans1, mockRaft1 := newTestTransport(t, transportType, 1, "localhost:14200")
+			addr1 := testutil.FreeTCPAddr(t, "localhost")
+			addr2 := testutil.FreeTCPAddr(t, "localhost")
+			trans1, mockRaft1 := newTestTransport(t, transportType, 1, addr1)
 			defer trans1.Stop()
-			trans2, mockRaft2 := newTestTransport(t, transportType, 2, "localhost:14201")
+			trans2, mockRaft2 := newTestTransport(t, transportType, 2, addr2)
 			defer trans2.Stop()
 
 			// Test sending from node 1 to node 2
-			trans1.AddPeer(2, "localhost:14201")
+			trans1.AddPeer(2, addr2)
 			msg1To2 := raftpb.Message{
 				Type:  raftpb.MsgApp,
 				To:    2,
@@ -322,7 +324,7 @@ func TestTransport_Send(t *testing.T) {
 			assert.Equal(t, msg1To2, trans2RecMsg)
 
 			// Test sending from node 2 to node 1
-			trans2.AddPeer(1, "localhost:14200")
+			trans2.AddPeer(1, addr1)
 			msg2To1 := raftpb.Message{
 				Type:  raftpb.MsgApp,
 				To:    1,
@@ -353,14 +355,16 @@ func TestTransport_SendSnapshot(t *testing.T) {
 			transportName = "GRPC"
 		}
 		t.Run(transportName, func(t *testing.T) {
-			trans1, mockRaft1 := newTestTransport(t, transportType, 1, "localhost:14200")
+			addr1 := testutil.FreeTCPAddr(t, "localhost")
+			addr2 := testutil.FreeTCPAddr(t, "localhost")
+			trans1, mockRaft1 := newTestTransport(t, transportType, 1, addr1)
 			defer trans1.Stop()
 
-			trans2, mockRaft2 := newTestTransport(t, transportType, 2, "localhost:14201")
+			trans2, mockRaft2 := newTestTransport(t, transportType, 2, addr2)
 			defer trans2.Stop()
 
 			// Add peer and prepare for snapshot
-			trans1.AddPeer(2, "localhost:14201")
+			trans1.AddPeer(2, addr2)
 
 			// Create and send a snapshot message
 			snapMsg := raftpb.Message{
@@ -400,25 +404,29 @@ func TestTransport_PeerManagement(t *testing.T) {
 		}
 
 		t.Run(transportName, func(t *testing.T) {
-			trans, _ := newTestTransport(t, transportType, 1, "localhost:14200")
+			addr1 := testutil.FreeTCPAddr(t, "localhost")
+			addr2 := testutil.FreeTCPAddr(t, "localhost")
+			addr3 := testutil.FreeTCPAddr(t, "localhost")
+			addr4 := testutil.FreeTCPAddr(t, "localhost")
+			trans, _ := newTestTransport(t, transportType, 1, addr1)
 			defer trans.Stop()
 
 			// Test adding peers
-			trans.AddPeer(2, "localhost:14201")
-			trans.AddPeer(3, "localhost:14202")
+			trans.AddPeer(2, addr2)
+			trans.AddPeer(3, addr3)
 
 			// Verify peer was added correctly
 			addr, err := trans.peerMgr.ResolvePeerAddress(0, 2)
 			assert.Nil(t, err, "Should be able to get peer address")
-			assert.Equal(t, "localhost:14201", addr)
+			assert.Equal(t, addr2, addr)
 
 			// Test updating peer
-			trans.UpdatePeer(2, "localhost:14203")
+			trans.UpdatePeer(2, addr4)
 
 			// Verify peer was updated
 			addr, err = trans.peerMgr.ResolvePeerAddress(0, 2)
 			assert.Nil(t, err)
-			assert.Equal(t, "localhost:14203", addr)
+			assert.Equal(t, addr4, addr)
 
 			// Test removing a specific peer
 			trans.RemovePeer(3)
@@ -448,11 +456,13 @@ func TestTransport_UnreachablePeer(t *testing.T) {
 		}
 
 		t.Run(transportName, func(t *testing.T) {
-			trans1, mockRaft1 := newTestTransport(t, transportType, 1, "localhost:14200")
+			addr1 := testutil.FreeTCPAddr(t, "localhost")
+			unreachableAddr := testutil.FreeTCPAddr(t, "localhost")
+			trans1, mockRaft1 := newTestTransport(t, transportType, 1, addr1)
 			defer trans1.Stop()
 
 			// Add a non-existent peer to test unreachable reporting
-			trans1.AddPeer(99, "localhost:99999")
+			trans1.AddPeer(99, unreachableAddr)
 
 			// Send a message to the unreachable peer
 			msg := raftpb.Message{
@@ -487,18 +497,21 @@ func TestTransport_UpdatePeerAndCommunicate(t *testing.T) {
 		}
 
 		t.Run(transportName, func(t *testing.T) {
-			trans1, _ := newTestTransport(t, transportType, 1, "localhost:14200")
+			addr1 := testutil.FreeTCPAddr(t, "localhost")
+			addr2 := testutil.FreeTCPAddr(t, "localhost")
+			wrongAddr := testutil.FreeTCPAddr(t, "localhost")
+			trans1, _ := newTestTransport(t, transportType, 1, addr1)
 			defer trans1.Stop()
 
 			// Start the second transport at a different address
-			trans2, mockRaft2 := newTestTransport(t, transportType, 2, "localhost:14201")
+			trans2, mockRaft2 := newTestTransport(t, transportType, 2, addr2)
 			defer trans2.Stop()
 
 			// First add the peer with a wrong address
-			trans1.AddPeer(2, "localhost:12345")
+			trans1.AddPeer(2, wrongAddr)
 
 			// Update the peer with the correct address
-			trans1.UpdatePeer(2, "localhost:14201")
+			trans1.UpdatePeer(2, addr2)
 			time.Sleep(time.Second) // Allow update to take effect
 
 			// Send a message to the updated peer

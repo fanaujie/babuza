@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package proxynetwork
 
 import (
 	"github.com/fanaujie/babuza/ibabuza"
+	"github.com/fanaujie/babuza/pkg/transport/internal/testutil"
 	"github.com/fanaujie/babuza/pkg/utility/netutil"
 	"github.com/stretchr/testify/assert"
 	"net"
@@ -67,15 +67,14 @@ var testTLSConfig = []testCase{
 }
 
 func TestProxy_Enable(t *testing.T) {
-	pc := ibabuza.ProxyConfig{
-		InAddr:  "localhost:14200",
-		OutAddr: "localhost:24200",
-	}
-
 	for _, tc := range testTLSConfig {
 		func() {
-			pc.InListenTLSConfig = tc.serverTLS
-			pc.OutDialTLSConfig = tc.clientTls
+			pc := ibabuza.ProxyConfig{
+				InAddr:            testutil.FreeTCPAddr(t, "localhost"),
+				OutAddr:           testutil.FreeTCPAddr(t, "localhost"),
+				InListenTLSConfig: tc.serverTLS,
+				OutDialTLSConfig:  tc.clientTls,
+			}
 			p := NewProxy(pc)
 			assert.Nil(t, p.Enable())
 			defer func() {
@@ -157,19 +156,21 @@ func (p *peerEchoServer) start() error {
 }
 
 func (p *peerEchoServer) stop() {
-	p.listener.Close()
+	if p.listener != nil {
+		_ = p.listener.Close()
+	}
 	p.wg.Wait()
 }
 
 func TestProxy_Dial(t *testing.T) {
-	pc := ibabuza.ProxyConfig{
-		InAddr:  "127.0.0.1:14200",
-		OutAddr: "127.0.0.1:24200",
-	}
 	t.Run("failure: proxy is disable", func(t *testing.T) {
 		for _, tc := range testTLSConfig {
-			pc.InListenTLSConfig = tc.serverTLS
-			pc.OutDialTLSConfig = tc.clientTls
+			pc := ibabuza.ProxyConfig{
+				InAddr:            testutil.FreeTCPAddr(t, "127.0.0.1"),
+				OutAddr:           testutil.FreeTCPAddr(t, "127.0.0.1"),
+				InListenTLSConfig: tc.serverTLS,
+				OutDialTLSConfig:  tc.clientTls,
+			}
 			p := NewProxy(pc)
 			assert.NotNil(t, p)
 			_, err := netutil.TcpDial(tc.clientTls, pc.InAddr)
@@ -179,8 +180,12 @@ func TestProxy_Dial(t *testing.T) {
 	t.Run("failure: downstream raft peer does not start to listen", func(t *testing.T) {
 		for index, tc := range testTLSConfig {
 			func(tlsCase testCase) {
-				pc.InListenTLSConfig = tlsCase.serverTLS
-				pc.OutDialTLSConfig = tlsCase.clientTls
+				pc := ibabuza.ProxyConfig{
+					InAddr:            testutil.FreeTCPAddr(t, "127.0.0.1"),
+					OutAddr:           testutil.FreeTCPAddr(t, "127.0.0.1"),
+					InListenTLSConfig: tlsCase.serverTLS,
+					OutDialTLSConfig:  tlsCase.clientTls,
+				}
 				p := NewProxy(pc)
 				assert.Nil(t, p.Enable())
 				defer p.Disable()
@@ -191,6 +196,7 @@ func TestProxy_Dial(t *testing.T) {
 					buf := make([]byte, 8)
 					_, err = conn.Read(buf)
 					assert.Error(t, err)
+					assert.Nil(t, conn.Close())
 				} else {
 					assert.Error(t, err)
 				}
@@ -200,8 +206,12 @@ func TestProxy_Dial(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		for _, tc := range testTLSConfig {
 			func(tlsCase testCase) {
-				pc.InListenTLSConfig = tlsCase.serverTLS
-				pc.OutDialTLSConfig = tlsCase.clientTls
+				pc := ibabuza.ProxyConfig{
+					InAddr:            testutil.FreeTCPAddr(t, "127.0.0.1"),
+					OutAddr:           testutil.FreeTCPAddr(t, "127.0.0.1"),
+					InListenTLSConfig: tlsCase.serverTLS,
+					OutDialTLSConfig:  tlsCase.clientTls,
+				}
 				p := NewProxy(pc)
 				assert.Nil(t, p.Enable())
 				defer p.Disable()
@@ -210,6 +220,7 @@ func TestProxy_Dial(t *testing.T) {
 				defer server.stop()
 				conn, err := netutil.TcpDial(tlsCase.clientTls, pc.InAddr)
 				assert.Nil(t, err)
+				defer conn.Close()
 				wData := []byte{1, 2, 3, 4}
 				rData := make([]byte, len(wData))
 				_, err = conn.Write(wData)
@@ -224,14 +235,15 @@ func TestProxy_Dial(t *testing.T) {
 	t.Run("concurrency", func(t *testing.T) {
 		for _, tc := range testTLSConfig {
 			func(tlsCase testCase) {
-				pc.InListenTLSConfig = tlsCase.serverTLS
-				pc.OutDialTLSConfig = tlsCase.clientTls
+				pc := ibabuza.ProxyConfig{
+					InAddr:            testutil.FreeTCPAddr(t, "127.0.0.1"),
+					OutAddr:           testutil.FreeTCPAddr(t, "127.0.0.1"),
+					InListenTLSConfig: tlsCase.serverTLS,
+					OutDialTLSConfig:  tlsCase.clientTls,
+				}
 				p := NewProxy(pc)
 				assert.Nil(t, p.Enable())
-				defer func() {
-					p.listener.Close()
-					p.wg.Wait()
-				}()
+				defer p.Disable()
 				server := newPeerEchoServer(tlsCase.serverTLS, pc.OutAddr)
 				assert.Nil(t, server.start())
 				defer server.stop()
@@ -263,14 +275,14 @@ func TestProxy_Dial(t *testing.T) {
 }
 
 func TestProxy_Disable(t *testing.T) {
-	pc := ibabuza.ProxyConfig{
-		InAddr:  "127.0.0.1:14200",
-		OutAddr: "127.0.0.1:24200",
-	}
 	for _, tc := range testTLSConfig {
 		func(tlsCase testCase) {
-			pc.InListenTLSConfig = tlsCase.serverTLS
-			pc.OutDialTLSConfig = tlsCase.clientTls
+			pc := ibabuza.ProxyConfig{
+				InAddr:            testutil.FreeTCPAddr(t, "127.0.0.1"),
+				OutAddr:           testutil.FreeTCPAddr(t, "127.0.0.1"),
+				InListenTLSConfig: tlsCase.serverTLS,
+				OutDialTLSConfig:  tlsCase.clientTls,
+			}
 			p := NewProxy(pc)
 			assert.Nil(t, p.Enable())
 			defer p.Disable()
@@ -308,13 +320,8 @@ func TestProxy_Disable(t *testing.T) {
 }
 
 func TestProxy_FaultInjection(t *testing.T) {
-	pc := ibabuza.ProxyConfig{
-		InAddr:  "127.0.0.1:14201",
-		OutAddr: "127.0.0.1:24201",
-	}
-
 	t.Run("SetFault and ClearFault", func(t *testing.T) {
-		p := NewProxy(pc)
+		p := NewProxy(ibabuza.ProxyConfig{})
 		assert.False(t, p.IsFaultEnabled())
 
 		p.SetFault(FaultConfig{
@@ -329,6 +336,10 @@ func TestProxy_FaultInjection(t *testing.T) {
 	})
 
 	t.Run("FaultInjection with delay", func(t *testing.T) {
+		pc := ibabuza.ProxyConfig{
+			InAddr:  testutil.FreeTCPAddr(t, "127.0.0.1"),
+			OutAddr: testutil.FreeTCPAddr(t, "127.0.0.1"),
+		}
 		p := NewProxy(pc)
 		// Set fault before enabling
 		p.SetFault(FaultConfig{
@@ -362,10 +373,11 @@ func TestProxy_FaultInjection(t *testing.T) {
 	})
 
 	t.Run("ClearFault restores normal operation", func(t *testing.T) {
-		p := NewProxy(ibabuza.ProxyConfig{
-			InAddr:  "127.0.0.1:14202",
-			OutAddr: "127.0.0.1:24202",
-		})
+		pc := ibabuza.ProxyConfig{
+			InAddr:  testutil.FreeTCPAddr(t, "127.0.0.1"),
+			OutAddr: testutil.FreeTCPAddr(t, "127.0.0.1"),
+		}
+		p := NewProxy(pc)
 		// First set a long delay
 		p.SetFault(FaultConfig{
 			DelayMin: 500 * time.Millisecond,
@@ -376,11 +388,11 @@ func TestProxy_FaultInjection(t *testing.T) {
 		assert.Nil(t, p.Enable())
 		defer p.Disable()
 
-		server := newPeerEchoServer(ibabuza.TLSConfig{}, "127.0.0.1:24202")
+		server := newPeerEchoServer(ibabuza.TLSConfig{}, pc.OutAddr)
 		assert.Nil(t, server.start())
 		defer server.stop()
 
-		conn, err := netutil.TcpDial(ibabuza.TLSConfig{}, "127.0.0.1:14202")
+		conn, err := netutil.TcpDial(ibabuza.TLSConfig{}, pc.InAddr)
 		assert.Nil(t, err)
 		defer conn.Close()
 

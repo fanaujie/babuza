@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package transport
 
 import (
@@ -34,7 +33,8 @@ func (t *transportResolverAdaptor) ResolvePeerAddress(peerID uint64) (string, er
 }
 
 type peerFactory struct {
-	t *Transport
+	t      *Transport
+	peerID uint64
 }
 
 func (p *peerFactory) CreatePeer(peerRaftAddr string) peer.Peer {
@@ -42,6 +42,9 @@ func (p *peerFactory) CreatePeer(peerRaftAddr string) peer.Peer {
 	if err != nil {
 		p.t.logger.Panicf("transport[local id=%d] failed to create client for peer address=%s err=%s",
 			p.t.localNodeID, peerRaftAddr, err.Error())
+	}
+	if starter, ok := c.(interface{ StartMessageStream(uint64) }); ok {
+		starter.StartMessageStream(p.peerID)
 	}
 	return peer.New(p.t.clusterID, p.t.localNodeID, peerRaftAddr, peer.RaftPeerConfig{
 		LimiterMaxBatchMessageSize: p.t.options.PeerLimiterMaxBatchMessageSize,
@@ -144,14 +147,14 @@ func (t *Transport) CreateTransportClient() (ibabuza.TransportClient, error) {
 }
 
 func (t *Transport) AddPeer(peerID uint64, peerAddress string) {
-	err := t.peerMgr.AddPeer(0, peerID, peerAddress, &peerFactory{t})
+	err := t.peerMgr.AddPeer(0, peerID, peerAddress, &peerFactory{t: t, peerID: peerID})
 	if err != nil {
 		t.logger.Warningf("transport[local id=%d] failed to add peerID=%d err=%s", t.localNodeID, peerID, err.Error())
 	}
 }
 
 func (t *Transport) UpdatePeer(peerID uint64, peerAddress string) {
-	err := t.peerMgr.UpdatePeer(0, peerID, peerAddress, &peerFactory{t})
+	err := t.peerMgr.UpdatePeer(0, peerID, peerAddress, &peerFactory{t: t, peerID: peerID})
 	if err != nil {
 		t.logger.Warningf("transport[local id=%d] failed to update peerID=%d err=%s", t.localNodeID, peerID, err.Error())
 	}

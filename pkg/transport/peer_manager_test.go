@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package transport
 
 import (
@@ -154,6 +153,7 @@ func TestManagerImpl_UpdatePeer(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Setup for address change
+	mockPeer.On("Stop").Return()
 	newAddress := "localhost:10002"
 	newMockPeer := new(MockPeer)
 	factory.On("CreatePeer", newAddress).Return(newMockPeer)
@@ -185,6 +185,7 @@ func TestManagerImpl_RemovePeer(t *testing.T) {
 	// Add peer
 	err := manager.AddPeer(groupID, peerID, peerAddress, factory)
 	assert.NoError(t, err)
+	mockPeer.On("Stop").Return()
 
 	// Test removing peer
 	err = manager.RemovePeer(groupID, peerID)
@@ -203,6 +204,33 @@ func TestManagerImpl_RemovePeer(t *testing.T) {
 	assert.Contains(t, err.Error(), "peer not found")
 }
 
+func TestManagerImpl_RemovePeerStopsSharedAddressOnlyAfterLastReference(t *testing.T) {
+	factory := new(MockPeerFactory)
+	manager := NewPeerManager[*MockPeer, ibabuza.RaftStatusReporter]()
+
+	mockPeer := new(MockPeer)
+	peerAddress := "localhost:10001"
+	factory.On("CreatePeer", peerAddress).Return(mockPeer).Once()
+	mockPeer.On("Stop").Return()
+
+	err := manager.AddPeer(ibabuza.RaftGroupID(1), 1, peerAddress, factory)
+	assert.NoError(t, err)
+	err = manager.AddPeer(ibabuza.RaftGroupID(2), 1, peerAddress, factory)
+	assert.NoError(t, err)
+
+	err = manager.RemovePeer(ibabuza.RaftGroupID(1), 1)
+	assert.NoError(t, err)
+	assert.Equal(t, mockPeer, manager.peers[peerAddress])
+	mockPeer.AssertNotCalled(t, "Stop")
+
+	err = manager.RemovePeer(ibabuza.RaftGroupID(2), 1)
+	assert.NoError(t, err)
+	_, peerExists := manager.peers[peerAddress]
+	assert.False(t, peerExists)
+	mockPeer.AssertNumberOfCalls(t, "Stop", 1)
+	factory.AssertExpectations(t)
+}
+
 func TestManagerImpl_RemoveAllPeers(t *testing.T) {
 	factory := new(MockPeerFactory)
 	manager := NewPeerManager[*MockPeer, ibabuza.RaftStatusReporter]()
@@ -213,6 +241,7 @@ func TestManagerImpl_RemoveAllPeers(t *testing.T) {
 
 	for i, id := range peerIDs {
 		mockPeer := new(MockPeer)
+		mockPeer.On("Stop").Return()
 		peerAddress := "localhost:1000" + string('0'+rune(i))
 		factory.On("CreatePeer", peerAddress).Return(mockPeer)
 

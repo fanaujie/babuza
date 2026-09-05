@@ -4,6 +4,12 @@
 
 Babuza 把 [etcd Raft](https://github.com/etcd-io/raft) 包成可以直接嵌進 Go 服務的 framework。你不用從 Ready loop、WAL、snapshot、transport、session 和測試框架開始重造一套，只要專注在自己的 state machine 和產品邏輯。
 
+### 適合使用 Babuza 嗎？
+
+如果你要建立一個嵌入 Raft 的 Go 服務，並希望 storage、peer transport、snapshot、membership operation 和 failure test 都由同一個 framework 提供，Babuza 很適合。你負責實作 state machine 和 application API；Babuza 負責處理 Raft 周邊工程。
+
+Babuza 不是 etcd KV 相容 server，也不是跨語言的 consensus service；有這些需求時，應使用對應的獨立服務，而不是嵌入 Babuza。
+
 ## 為什麼用 Babuza？
 
 etcd/raft 很穩，但直接拿來做產品服務時，你還是要補很多周邊工程：
@@ -14,12 +20,12 @@ etcd/raft 很穩，但直接拿來做產品服務時，你還是要補很多周�
 - **State machine 生命週期**：snapshot 建立、還原、log compaction 都要跟 state machine 一起協調
 - **Cluster membership**：新增／移除 peer、joint consensus、learner promotion 都要自己接起來
 
-| 挑戰 | etcd Raft | Babuza |
+| 面向 | 單獨使用 etcd/raft | Babuza |
 |------|-----------|--------|
-| **Memory** | log entry 全部放在記憶體 | index-based cache，節省 94-99% 記憶體 |
-| **Transport** | 只有基礎 HTTP transport | 可插拔 TCP / HTTP / gRPC transport |
-| **WAL** | etcd WAL | 多種後端：native、Badger、Pebble |
-| **Snapshot transfer** | HTTP 全量傳輸 | 壓縮、分塊、可限速的 snapshot transfer |
+| **Memory storage** | `MemoryStorage` 將所有 entry payload 留在記憶體 | index-based cache，節省 94-99% 記憶體 |
+| **Transport** | application 自行提供 | 可插拔 TCP / HTTP / gRPC transport |
+| **WAL** | application 自行提供 | 多種後端：native、Badger、Pebble |
+| **Snapshot transfer** | application 自行提供 | 經 HTTP 分塊、可限速的 snapshot transfer |
 | **Cluster operation** | 你要自己管理 peer | 內建 add/remove/update/transfer API |
 | **Idempotency** | application 自己去重 | session-based exactly-once 語意 |
 | **Observability** | 你要自己接 | 內建 Prometheus / OpenTelemetry 整合點 |
@@ -34,7 +40,7 @@ etcd/raft 很穩，但直接拿來做產品服務時，你還是要補很多周�
 |------|-------------|
 | **Raft runtime** | Ready loop、proposal、linearizable read 和生命週期管理 |
 | **WAL backend** | Native Babuza WAL、etcd WAL、Badger、Pebble |
-| **Snapshot 管理** | Durable、volatile、S3-compatible snapshot storage，支援 chunked transfer |
+| **Snapshot 管理** | Durable、volatile、S3-compatible snapshot storage，支援經 HTTP 的 chunked transfer |
 | **Transport 層** | 可插拔 TCP、HTTP、gRPC transport，包含 HTTP stream mode |
 | **Client session** | no-op、expire、LRU session manager，可選 exactly-once 語意 |
 | **Cluster operation** | add/remove/update peer、promote learner、transfer leadership、disaster recovery |
@@ -54,21 +60,41 @@ Babuza 只把 log entry metadata 留在記憶體，entry payload 需要時才從
 
 ### HTTP Stream Transport
 
-HTTP transport 支援 opt-in 的 stream mode，會重用長連線 HTTP request body 來傳送 framed Raft message 和 snapshot chunks。本機 benchmark 顯示，stream mode 可以明顯降低每筆訊息的 HTTP request 開銷：
+HTTP transport 支援 opt-in 的 Raft message stream mode。Peer 會先建立 receiver-initiated 的 `GET /raft/messages/stream` response stream；sender 會把 framed Raft batch 寫入已建立的 stream，以降低每筆訊息的 HTTP request 開銷。
 
-| 工作負載 | Short Request | HTTP Stream | 改善幅度 |
-|----------|---------------|-------------|----------|
-| Batch message | 26.806 us/op | 2.349 us/op | 快 11.4x |
-| Snapshot，32 x 256 B chunks | 990.327 us/op | 148.066 us/op | 快 6.7x |
-| Snapshot，4 x 8 KiB chunks | 175.458 us/op | 90.616 us/op | 快 1.9x |
+Snapshot 使用另一條分塊傳輸路徑：Babuza 會先在應用層把 snapshot 切成 chunk、套用限速，再以同步 `POST /raft/snapshot` 逐塊傳送。這不是 HTTP 的 `Transfer-Encoding: chunked`；啟用 message stream mode 不會改變 snapshot 的傳輸語意。
 
-完整數據請看 [HTTP Stream Benchmark Comparison](./docs/benchmarks/http-stream-benchmark-comparison.md)，裡面有 benchmark 細節和 allocation 結果。
+Apple M4 本機最新 benchmark：
+
+| 工作負載 | Short Request | Message Stream Enabled | 結果 |
+|----------|---------------|------------------------|------|
+| Batch message | 26.918 us/op | 1.625 us/op | 快 16.6x |
+| Snapshot，32 x 256 B chunks | 940.638 us/op | 938.864 us/op | 幾乎不變；仍是 short request |
+| Snapshot，4 x 8 KiB chunks | 177.084 us/op | 176.838 us/op | 幾乎不變；仍是 short request |
+
+完整資訊與 allocation 結果請看 [HTTP Stream Benchmark Comparison](./docs/benchmarks/http-stream-benchmark-comparison.md)。
 
 ## 架構
 
 ![architecture](images/babuza_architecture.svg)
 
 ## 快速開始
+
+需要 Go 1.24 或更新版本。最快能跑起可運作的單節點 cluster 的方式：
+
+```bash
+git clone https://github.com/fanaujie/babuza.git
+cd babuza/examples/simple
+go run .
+```
+
+這個範例會啟動單節點 cluster、proposal 兩筆 key-value 更新、讀回資料後正常關閉。完整說明請看 [simple example](./examples/simple/README.md)。
+
+要在自己的 Go module 中嵌入 Babuza：
+
+```bash
+go get github.com/fanaujie/babuza
+```
 
 ```go
 package main
@@ -134,10 +160,6 @@ func main() {
 | [KV Store](./examples/kvstore/README.md) | 有 REST API 的單 Raft 分散式 key-value store |
 | [Distributed Lock](./examples/distlock/README.md) | lease-based distributed lock，支援 fencing token 和 wait queue |
 | [Redis Cluster](./examples/redis-cluster/README.md) | Multi-raft Redis 相容分散式快取 |
-
-## AI 輔助開發
-
-使用 [babuza-skills](https://github.com/fanaujie/babuza-skills) 幫 AI coding assistant（Claude Code、Cursor、Aider）加入 Babuza 專屬知識，讓它更懂這個 codebase 的架構和用法。
 
 ## 文件
 

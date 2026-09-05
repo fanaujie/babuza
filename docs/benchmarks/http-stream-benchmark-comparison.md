@@ -1,89 +1,66 @@
 # HTTP Stream Benchmark Comparison
 
-This report compares the HTTP transport's default short-request mode with the HTTP stream mode enabled by `protocol.SetHttpOptsWithMessageStreamEnabled(true)`.
+This report compares the HTTP transport's default short-request mode with the opt-in Raft message stream mode enabled by `protocol.SetHttpOptsWithMessageStreamEnabled(true)`.
 
-## Test Environment
+## Current stream model
 
-| Component | Specification |
-|-----------|---------------|
-| OS | darwin |
-| Architecture | arm64 |
-| CPU | Apple M4 |
-| Date | 2026-05-17 |
-| Package | `github.com/fanaujie/babuza/pkg/transport/protocol/http` |
+HTTP message streaming uses receiver-initiated response streams:
 
-## Benchmark Command
+```text
+receiver -- GET /raft/messages/stream?from=<receiverID> --> sender
+receiver <-- framed BatchMessage response stream -------- sender
+```
+
+Regular Raft batch messages use the stream when the receiver has an active GET stream registered with the sender. If no stream is active, the sender falls back to `POST /raft/messages`.
+
+Snapshot transfer is intentionally not part of `MessageStreamEnabled`; it remains on the regular `POST /raft/snapshot` request-response path so metadata, chunk, and finish messages keep synchronous `SnapshotMessageResponse` semantics.
+
+## Latest results
+
+Run on 2026-05-19:
+
+```text
+goos: darwin
+goarch: arm64
+cpu: Apple M4
+```
+
+Command:
 
 ```bash
-env GOCACHE=/private/tmp/babuza-gocache go test ./pkg/transport/protocol/http \
+go test ./pkg/transport/protocol/http \
   -run '^$' \
   -bench 'BenchmarkHTTP(BatchMessage|Snapshot)' \
   -benchmem \
-  -count=5
+  -count=1
 ```
 
-The numbers below use the median value from 5 runs.
+| Workload | Short request | Message stream enabled | Result |
+|----------|---------------|------------------------|--------|
+| Batch message | 26.918 us/op, 5,828 B/op, 69 allocs/op | 1.625 us/op, 685 B/op, 7 allocs/op | 16.6x faster, 8.5x fewer bytes, 9.9x fewer allocs |
+| Snapshot, 32 x 256 B chunks | 940.638 us/op, 219,549 B/op, 2,486 allocs/op | 938.864 us/op, 219,235 B/op, 2,486 allocs/op | effectively unchanged; snapshot stays short-request |
+| Snapshot, 4 x 8 KiB chunks | 177.084 us/op, 94,057 B/op, 455 allocs/op | 176.838 us/op, 93,382 B/op, 454 allocs/op | effectively unchanged; snapshot stays short-request |
 
-## Summary
+Raw output:
 
-HTTP stream mode reduces per-message HTTP request overhead by reusing a long-lived request body for framed messages. The effect is largest for small, frequent Raft messages and snapshots split into many small chunks.
+```text
+BenchmarkHTTPBatchMessageShortRequest-10                                42934    26918 ns/op    5828 B/op      69 allocs/op
+BenchmarkHTTPBatchMessageStream-10                                     737863     1625 ns/op     685 B/op       7 allocs/op
+BenchmarkHTTPSnapshotShortRequestSmallChunks-10                          1270   940638 ns/op  219549 B/op    2486 allocs/op
+BenchmarkHTTPSnapshotShortRequestSmallChunksMessageStreamEnabled-10       1275   938864 ns/op  219235 B/op    2486 allocs/op
+BenchmarkHTTPSnapshotShortRequestLargeChunks-10                          6716   177084 ns/op   94057 B/op     455 allocs/op
+BenchmarkHTTPSnapshotShortRequestLargeChunksMessageStreamEnabled-10       6699   176838 ns/op   93382 B/op     454 allocs/op
+```
 
-| Workload | Short Request | HTTP Stream | Improvement |
-|----------|---------------|-------------|-------------|
-| Batch message | 26.806 us/op | 2.349 us/op | 11.4x faster |
-| Snapshot, 32 x 256 B chunks | 990.327 us/op | 148.066 us/op | 6.7x faster |
-| Snapshot, 4 x 8 KiB chunks | 175.458 us/op | 90.616 us/op | 1.9x faster |
+## Benchmark coverage
 
-## Detailed Results
-
-### Batch Messages
-
-| Mode | ns/op | B/op | allocs/op |
-|------|------:|-----:|----------:|
-| Short request | 26,806 | 5,827 | 69 |
-| HTTP stream | 2,349 | 320 | 2 |
-
-HTTP stream mode improves batch-message latency by 11.4x, reduces allocated bytes by 94.5%, and reduces allocation count by 97.1%.
-
-### Snapshot Transfer: Small Chunks
-
-This benchmark transfers one snapshot as metadata, 32 chunk messages of 256 B each, and a finish message.
-
-| Mode | ns/op | B/op | allocs/op |
-|------|------:|-----:|----------:|
-| Short request | 990,327 | 218,790 | 2,486 |
-| HTTP stream | 148,066 | 40,943 | 292 |
-
-HTTP stream mode improves small-chunk snapshot latency by 6.7x, reduces allocated bytes by 81.3%, and reduces allocation count by 88.3%.
-
-### Snapshot Transfer: Large Chunks
-
-This benchmark transfers one snapshot as metadata, 4 chunk messages of 8 KiB each, and a finish message.
-
-| Mode | ns/op | B/op | allocs/op |
-|------|------:|-----:|----------:|
-| Short request | 175,458 | 93,869 | 455 |
-| HTTP stream | 90,616 | 48,426 | 124 |
-
-HTTP stream mode improves large-chunk snapshot latency by 1.9x, reduces allocated bytes by 48.4%, and reduces allocation count by 72.7%.
-
-## Interpretation
-
-HTTP stream mode is most valuable when many small transport messages are sent to the same peer:
-
-- Regular Raft batch messages avoid creating one HTTP request per batch.
-- Snapshot transfer avoids one HTTP request per metadata, chunk, and finish message.
-- Allocation pressure drops because frame writes reuse the active stream instead of rebuilding request state each send.
-
-For larger snapshot chunks, the payload transfer cost becomes a bigger part of total time, so the relative latency gain is smaller, but HTTP stream still cuts allocations substantially.
-
-## Related Benchmarks
-
-The benchmark implementations live in [`pkg/transport/protocol/http/http_test.go`](../../pkg/transport/protocol/http/http_test.go):
+Benchmark implementations live in `pkg/transport/protocol/http/http_test.go`:
 
 - `BenchmarkHTTPBatchMessageShortRequest`
 - `BenchmarkHTTPBatchMessageStream`
 - `BenchmarkHTTPSnapshotShortRequestSmallChunks`
-- `BenchmarkHTTPSnapshotStreamSmallChunks`
+- `BenchmarkHTTPSnapshotShortRequestSmallChunksMessageStreamEnabled`
 - `BenchmarkHTTPSnapshotShortRequestLargeChunks`
-- `BenchmarkHTTPSnapshotStreamLargeChunks`
+- `BenchmarkHTTPSnapshotShortRequestLargeChunksMessageStreamEnabled`
+
+The snapshot benchmarks with message streaming enabled are expected to remain short-request snapshot transfers; they guard that enabling Raft message streaming does not silently switch snapshot transport semantics.

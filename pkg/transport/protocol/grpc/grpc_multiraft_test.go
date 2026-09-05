@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package grpc
 
 import (
@@ -21,6 +20,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/connpool"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/internal/testutil"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/grpc/networkio"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/grpc/pb"
 	"github.com/stretchr/testify/assert"
@@ -172,6 +172,7 @@ func TestMultiRaftNewServerClient(t *testing.T) {
 
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		srv := NewMultiRaftMsgServer(c.TransportConfig, c.NetworkIO, nil, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
 
@@ -186,7 +187,7 @@ func TestMultiRaftNewServerClient(t *testing.T) {
 }
 
 func TestMultiRaftServer_StartAndStop(t *testing.T) {
-	local := "localhost:15200"
+	local := testutil.FreeTCPAddr(t, "localhost")
 	n := networkio.NewGrpcNetworkIO()
 	srv := NewMultiRaftMsgServer(ibabuza.TransportConfig{
 		PeerAddress: local}, n, nil, &logger.Mock{})
@@ -260,6 +261,7 @@ func TestMultiRaftSingleServerClient_SendAndReceive(t *testing.T) {
 
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		mockTransport := newMockMultiRaftNodeHandler(1)
 		srv := NewMultiRaftMsgServer(c.TransportConfig, c.NetworkIO, mockTransport, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
@@ -381,6 +383,7 @@ func TestMultiRaftSingleServerMultiClient_SendAndReceive(t *testing.T) {
 
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		mockTransport := newMockMultiRaftNodeHandler(c.clients)
 		srv := NewMultiRaftMsgServer(c.TransportConfig, c.NetworkIO, mockTransport, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
@@ -425,7 +428,7 @@ func TestMultiRaftSingleServerMultiClient_SendAndReceive(t *testing.T) {
 }
 
 func TestMultiRaftMessageStream(t *testing.T) {
-	local := "localhost:15203"
+	local := testutil.FreeTCPAddr(t, "localhost")
 	n := networkio.NewGrpcNetworkIO()
 	mockTransport := newMockMultiRaftNodeHandler(1)
 
@@ -508,7 +511,7 @@ func (m *mockServerBehavior) SendMultiRaftMessage(stream pb.MultiRaftTransport_S
 }
 
 func TestMultiRaftClient_ErrorHandling(t *testing.T) {
-	local := "localhost:15204"
+	local := testutil.FreeTCPAddr(t, "localhost")
 	networkIO := networkio.NewGrpcNetworkIO()
 
 	t.Run("ServerDisconnection", func(t *testing.T) {

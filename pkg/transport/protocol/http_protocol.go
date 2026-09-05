@@ -22,11 +22,12 @@ import (
 )
 
 type Http struct {
-	config               ibabuza.TransportConfig
-	options              raftHttp.ServerConfig
-	logger               ibabuza.Logger
-	client               *http.Client
-	snapshotStreamClient *http.Client
+	config           ibabuza.TransportConfig
+	options          raftHttp.ServerConfig
+	logger           ibabuza.Logger
+	client           *http.Client
+	messageStreamHub *raftHttp.MessageStreamHub
+	streamHandler    ibabuza.RaftMessageHandler
 }
 
 func DefaultHttpOptions() raftHttp.ServerConfig {
@@ -84,8 +85,9 @@ func NewHttp(logger ibabuza.Logger, setOpts ...SetHttpOptions) *Http {
 	}
 	logger.Infof("http protocol: creating http protocol")
 	return &Http{
-		options: opts,
-		logger:  logger,
+		options:          opts,
+		logger:           logger,
+		messageStreamHub: raftHttp.NewMessageStreamHub(),
 	}
 }
 
@@ -96,22 +98,17 @@ func (h *Http) Setup(cfg ibabuza.TransportConfig) error {
 		return err
 	}
 	h.client = client
-	if h.options.MessageStreamEnabled {
-		snapshotStreamClient, err := raftHttp.NewSnapshotStreamClient(h.config.TLSConfig, h.options)
-		if err != nil {
-			return err
-		}
-		h.snapshotStreamClient = snapshotStreamClient
-	}
 	return nil
 }
 
 func (h *Http) CreateServer(handler ibabuza.RaftMessageHandler) (ibabuza.TransportServer, error) {
-	return raftHttp.NewRaftMsgServer(h.config, h.options, handler, h.logger), nil
+	h.streamHandler = handler
+	return raftHttp.NewRaftMsgServer(h.config, h.options, handler, h.logger, h.messageStreamHub), nil
 }
 
 func (h *Http) CreateClient(resolver ibabuza.TransportResolver) (ibabuza.TransportClient, error) {
-	return raftHttp.NewRaftMsgClientWithSnapshotStreamClient(h.client, h.snapshotStreamClient, resolver, h.config.TLSConfig.EnableTLS, h.options), nil
+	return raftHttp.NewRaftMsgClientWithMessageStreamHub(h.client, resolver, h.config.TLSConfig.EnableTLS,
+		h.options, h.messageStreamHub, h.config.LocalNodeID, h.streamHandler), nil
 }
 
 func (h *Http) Close() error {

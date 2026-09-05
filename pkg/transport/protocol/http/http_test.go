@@ -23,6 +23,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/internal/testutil"
 	"github.com/fanaujie/babuza/pkg/transport/protocol/tcp/conn/frame"
 	"github.com/fanaujie/babuza/pkg/utility/allocator"
 	"github.com/fanaujie/babuza/pkg/utility/netutil"
@@ -337,16 +338,54 @@ func testSnapshotMessage(from, to, index uint64, typ babuzapb.SnapshotMessageTyp
 	}
 }
 
-func startHTTPMessageTestServer(t testing.TB, streamEnabled bool, tlsEnabled bool, raft ibabuza.RaftMessageHandler) (*httptest.Server, *atomic.Int64, *atomic.Int64) {
+func openBatchGETStreamForTest(t testing.TB, client *stdhttp.Client, baseURL string, from uint64) (<-chan babuzapb.BatchMessage, func()) {
+	t.Helper()
+	req, err := stdhttp.NewRequest(stdhttp.MethodGet, fmt.Sprintf("%s%s?from=%d", baseURL, raftBatchMsgStreamPrefix, from), nil)
+	assert.NoError(t, err)
+	res, err := client.Do(req)
+	assert.NoError(t, err)
+	assert.Equal(t, stdhttp.StatusOK, res.StatusCode)
+	msgs := make(chan babuzapb.BatchMessage, 16)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer close(msgs)
+		reader := frame.NewReader(res.Body)
+		for {
+			eof, err := reader.ReadFrameOrEOF(func(msgType frame.MessageType, msgBuf []byte) error {
+				if msgType != frame.BatchMsgType {
+					return fmt.Errorf("unexpected message type: %d", msgType)
+				}
+				var msg babuzapb.BatchMessage
+				if err := msg.Unmarshal(msgBuf); err != nil {
+					return err
+				}
+				msgs <- msg
+				return nil
+			})
+			if eof || err != nil {
+				return
+			}
+		}
+	}()
+	return msgs, func() {
+		_ = res.Body.Close()
+		<-done
+	}
+}
+
+func startHTTPMessageTestServer(t testing.TB, streamEnabled bool, tlsEnabled bool, raft ibabuza.RaftMessageHandler) (*httptest.Server, *atomic.Int64, *atomic.Int64, *MessageStreamHub) {
 	t.Helper()
 	shortCount := &atomic.Int64{}
 	streamCount := &atomic.Int64{}
+	hub := NewMessageStreamHub()
 	h := &handler{
 		raft: raft,
 		config: ServerConfig{
 			MessageStreamEnabled: streamEnabled,
 			StreamIdleTimeout:    time.Second,
 		},
+		messageStreamHub: hub,
 	}
 	mux := stdhttp.NewServeMux()
 	mux.HandleFunc(raftBatchMsgPrefix, func(w stdhttp.ResponseWriter, req *stdhttp.Request) {
@@ -364,7 +403,7 @@ func startHTTPMessageTestServer(t testing.TB, streamEnabled bool, tlsEnabled boo
 		srv.Start()
 	}
 	t.Cleanup(srv.Close)
-	return srv, shortCount, streamCount
+	return srv, shortCount, streamCount, hub
 }
 
 func startHTTPSnapshotTestServer(t testing.TB, streamEnabled bool, raft ibabuza.RaftMessageHandler) (*httptest.Server, *atomic.Int64, *atomic.Int64) {
@@ -402,6 +441,7 @@ func startHTTPStreamTestServer(t testing.TB, raft ibabuza.RaftMessageHandler) *h
 			StreamIdleTimeout:         time.Second,
 			SnapshotStreamIdleTimeout: time.Second,
 		},
+		messageStreamHub: NewMessageStreamHub(),
 	}
 	mux := stdhttp.NewServeMux()
 	mux.HandleFunc(raftBatchMsgStreamPrefix, h.batchMessageStreamFunc)
@@ -413,7 +453,7 @@ func startHTTPStreamTestServer(t testing.TB, raft ibabuza.RaftMessageHandler) *h
 
 func TestHTTPBatchMessageStreamDisabledUsesShortRequest(t *testing.T) {
 	raft := newStreamTestRaft(1)
-	srv, shortCount, streamCount := startHTTPMessageTestServer(t, false, false, raft)
+	srv, shortCount, streamCount, _ := startHTTPMessageTestServer(t, false, false, raft)
 
 	resolver := NewMockTransportResolver()
 	resolver.addressMap[2] = srv.Listener.Addr().String()
@@ -433,21 +473,24 @@ func TestHTTPBatchMessageStreamDisabledUsesShortRequest(t *testing.T) {
 }
 
 func TestHTTPBatchMessageStreamEnabledSendsMultipleFrames(t *testing.T) {
-	raft := newStreamTestRaft(2)
-	srv, shortCount, streamCount := startHTTPMessageTestServer(t, true, false, raft)
+	raft := newStreamTestRaft(1)
+	srv, shortCount, streamCount, hub := startHTTPMessageTestServer(t, true, false, raft)
+	streamMsgs, closeStream := openBatchGETStreamForTest(t, srv.Client(), srv.URL, 2)
+	defer closeStream()
 
 	resolver := NewMockTransportResolver()
 	resolver.addressMap[2] = srv.Listener.Addr().String()
-	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+	client := NewRaftMsgClientWithMessageStreamHub(srv.Client(), resolver, false,
+		ServerConfig{MessageStreamEnabled: true}, hub, 1, raft)
+	defer client.Close()
 
 	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 10)))
 	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 11)))
-	assert.NoError(t, client.Close())
 
 	got := make(map[uint64]bool)
 	for i := 0; i < 2; i++ {
 		select {
-		case msg := <-raft.processed:
+		case msg := <-streamMsgs:
 			got[msg.Messages[0].Index] = true
 		case <-time.After(time.Second):
 			t.Fatal("timed out waiting for streamed batch")
@@ -460,140 +503,103 @@ func TestHTTPBatchMessageStreamEnabledSendsMultipleFrames(t *testing.T) {
 }
 
 func TestHTTPBatchMessageStreamSwitchesPeer(t *testing.T) {
-	raft2 := newStreamTestRaft(1)
-	srv2, _, streamCount2 := startHTTPMessageTestServer(t, true, false, raft2)
-	raft3 := newStreamTestRaft(1)
-	srv3, _, streamCount3 := startHTTPMessageTestServer(t, true, false, raft3)
+	raft := newStreamTestRaft(1)
+	srv, shortCount, streamCount, hub := startHTTPMessageTestServer(t, true, false, raft)
+	peer2Msgs, closePeer2 := openBatchGETStreamForTest(t, srv.Client(), srv.URL, 2)
+	defer closePeer2()
+	peer3Msgs, closePeer3 := openBatchGETStreamForTest(t, srv.Client(), srv.URL, 3)
+	defer closePeer3()
 
 	resolver := NewMockTransportResolver()
-	resolver.addressMap[2] = srv2.Listener.Addr().String()
-	resolver.addressMap[3] = srv3.Listener.Addr().String()
-	client := NewRaftMsgClient(srv2.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+	resolver.addressMap[2] = srv.Listener.Addr().String()
+	resolver.addressMap[3] = srv.Listener.Addr().String()
+	client := NewRaftMsgClientWithMessageStreamHub(srv.Client(), resolver, false,
+		ServerConfig{MessageStreamEnabled: true}, hub, 1, raft)
+	defer client.Close()
 
 	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 10)))
 	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 3, 20)))
-	assert.NoError(t, client.Close())
 
 	select {
-	case msg := <-raft2.processed:
+	case msg := <-peer2Msgs:
 		assert.EqualValues(t, 2, msg.Messages[0].To)
 		assert.EqualValues(t, 10, msg.Messages[0].Index)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for peer 2 streamed batch")
 	}
 	select {
-	case msg := <-raft3.processed:
+	case msg := <-peer3Msgs:
 		assert.EqualValues(t, 3, msg.Messages[0].To)
 		assert.EqualValues(t, 20, msg.Messages[0].Index)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for peer 3 streamed batch")
 	}
-	assert.EqualValues(t, 1, streamCount2.Load())
-	assert.EqualValues(t, 1, streamCount3.Load())
+	assert.EqualValues(t, 0, shortCount.Load())
+	assert.EqualValues(t, 2, streamCount.Load())
 }
 
 func TestHTTPBatchMessageStreamTLS(t *testing.T) {
 	raft := newStreamTestRaft(1)
-	srv, _, streamCount := startHTTPMessageTestServer(t, true, true, raft)
+	srv, _, streamCount, hub := startHTTPMessageTestServer(t, true, true, raft)
+	streamMsgs, closeStream := openBatchGETStreamForTest(t, srv.Client(), srv.URL, 2)
+	defer closeStream()
 
 	resolver := NewMockTransportResolver()
 	resolver.addressMap[2] = srv.Listener.Addr().String()
-	client := NewRaftMsgClient(srv.Client(), resolver, true, ServerConfig{MessageStreamEnabled: true})
+	client := NewRaftMsgClientWithMessageStreamHub(srv.Client(), resolver, true,
+		ServerConfig{MessageStreamEnabled: true}, hub, 1, raft)
+	defer client.Close()
 
 	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 10)))
-	assert.NoError(t, client.Close())
 	select {
-	case <-raft.processed:
+	case msg := <-streamMsgs:
+		assert.EqualValues(t, 10, msg.Messages[0].Index)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for TLS streamed batch")
 	}
 	assert.EqualValues(t, 1, streamCount.Load())
 }
 
-func TestHTTPBatchMessageStreamRecreatesAfterResponseFailure(t *testing.T) {
+func TestHTTPBatchMessageStreamFallsBackToShortRequestWhenNoGETStream(t *testing.T) {
 	raft := newStreamTestRaft(1)
-	srv, _, streamCount := startHTTPMessageTestServer(t, true, false, raft)
+	srv, shortCount, streamCount, hub := startHTTPMessageTestServer(t, true, false, raft)
 
 	resolver := NewMockTransportResolver()
 	resolver.addressMap[2] = srv.Listener.Addr().String()
-	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+	client := NewRaftMsgClientWithMessageStreamHub(srv.Client(), resolver, false,
+		ServerConfig{MessageStreamEnabled: true}, hub, 1, raft)
 	defer client.Close()
 
-	_, staleBody := io.Pipe()
-	defer staleBody.Close()
-	staleStream := &messageStream{
-		peerID: 2,
-		body:   staleBody,
-		doneCh: make(chan error, 1),
-	}
-	staleStream.doneCh <- fmt.Errorf("previous stream failed")
-	client.stream = staleStream
-
-	assert.EqualError(t, client.SendBatchMessage(testBatchMessage(1, 2, 11)), "previous stream failed")
 	assert.NoError(t, client.SendBatchMessage(testBatchMessage(1, 2, 11)))
-	assert.NoError(t, client.Close())
 	select {
 	case msg := <-raft.processed:
 		assert.EqualValues(t, 11, msg.Messages[0].Index)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for recreated stream batch")
+		t.Fatal("timed out waiting for fallback batch")
 	}
-	assert.EqualValues(t, 1, streamCount.Load())
+	assert.EqualValues(t, 1, shortCount.Load())
+	assert.EqualValues(t, 0, streamCount.Load())
 }
 
-func TestHTTPBatchMessageStreamRejectsMalformedFrames(t *testing.T) {
-	tests := []struct {
-		name string
-		body func(t *testing.T) io.Reader
-	}{
-		{
-			name: "unsupported type",
-			body: func(t *testing.T) io.Reader {
-				return bytes.NewReader(encodeFrameForTest(t, frame.SnapshotMsgReqType, &babuzapb.SnapshotMessage{}))
-			},
-		},
-		{
-			name: "crc mismatch",
-			body: func(t *testing.T) io.Reader {
-				msg := testBatchMessage(1, 2, 10)
-				buf := encodeFrameForTest(t, frame.BatchMsgType, &msg)
-				buf[len(buf)-1] ^= 0xff
-				return bytes.NewReader(buf)
-			},
-		},
-		{
-			name: "empty batch",
-			body: func(t *testing.T) io.Reader {
-				return bytes.NewReader(encodeFrameForTest(t, frame.BatchMsgType, &babuzapb.BatchMessage{}))
-			},
-		},
-		{
-			name: "partial header",
-			body: func(t *testing.T) io.Reader {
-				return bytes.NewReader([]byte{1, 2, 3})
-			},
-		},
-		{
-			name: "partial body",
-			body: func(t *testing.T) io.Reader {
-				msg := testBatchMessage(1, 2, 10)
-				buf := encodeFrameForTest(t, frame.BatchMsgType, &msg)
-				return bytes.NewReader(buf[:len(buf)-1])
-			},
-		},
-	}
+func TestHTTPBatchMessageStreamRejectsInvalidRequests(t *testing.T) {
+	raft := newStreamTestRaft(1)
+	srv, _, _, _ := startHTTPMessageTestServer(t, true, false, raft)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			raft := newStreamTestRaft(1)
-			srv, _, _ := startHTTPMessageTestServer(t, true, false, raft)
-			res, err := srv.Client().Post(srv.URL+raftBatchMsgStreamPrefix, "application/octet-stream", tt.body(t))
-			assert.NoError(t, err)
-			defer res.Body.Close()
-			assert.Equal(t, stdhttp.StatusBadRequest, res.StatusCode)
-			assert.EqualValues(t, 0, raft.count.Load())
-		})
-	}
+	res, err := srv.Client().Post(srv.URL+raftBatchMsgStreamPrefix, "application/octet-stream", nil)
+	assert.NoError(t, err)
+	assert.Equal(t, stdhttp.StatusMethodNotAllowed, res.StatusCode)
+	_ = res.Body.Close()
+
+	res, err = srv.Client().Get(srv.URL + raftBatchMsgStreamPrefix)
+	assert.NoError(t, err)
+	assert.Equal(t, stdhttp.StatusBadRequest, res.StatusCode)
+	_ = res.Body.Close()
+
+	disabledSrv, _, _, _ := startHTTPMessageTestServer(t, false, false, raft)
+	res, err = disabledSrv.Client().Get(disabledSrv.URL + raftBatchMsgStreamPrefix + "?from=2")
+	assert.NoError(t, err)
+	assert.Equal(t, stdhttp.StatusNotFound, res.StatusCode)
+	_ = res.Body.Close()
 }
 
 func TestHTTPSnapshotStreamDisabledUsesShortRequest(t *testing.T) {
@@ -620,7 +626,7 @@ func TestHTTPSnapshotStreamDisabledUsesShortRequest(t *testing.T) {
 	assert.EqualValues(t, 3, raft.count.Load())
 }
 
-func TestHTTPSnapshotStreamEnabledSendsTransferOnOneStream(t *testing.T) {
+func TestHTTPSnapshotStreamEnabledUsesShortRequests(t *testing.T) {
 	raft := newSnapshotStreamTestRaft(3)
 	srv, shortCount, streamCount := startHTTPSnapshotTestServer(t, true, raft)
 
@@ -629,18 +635,17 @@ func TestHTTPSnapshotStreamEnabledSendsTransferOnOneStream(t *testing.T) {
 	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
 	defer client.Close()
 
-	res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 11, babuzapb.SnapshotMessageType_Metadata))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-
-	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 11, babuzapb.SnapshotMessageType_Chunk))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-
-	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 11, babuzapb.SnapshotMessageType_Finish))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-	assert.Equal(t, babuzapb.SnapshotMessageType_Finish.String(), res.Message)
+	msgs := []babuzapb.SnapshotMessage{
+		testSnapshotMessage(1, 2, 11, babuzapb.SnapshotMessageType_Metadata),
+		testSnapshotMessage(1, 2, 11, babuzapb.SnapshotMessageType_Chunk),
+		testSnapshotMessage(1, 2, 11, babuzapb.SnapshotMessageType_Finish),
+	}
+	for _, msg := range msgs {
+		res, err := client.SendSnapshotMessage(msg)
+		assert.NoError(t, err)
+		assert.Equal(t, babuzapb.SUCCESS, res.Status)
+		assert.Equal(t, msg.Type.String(), res.Message)
+	}
 
 	got := make(map[babuzapb.SnapshotMessageType]bool)
 	for i := 0; i < 3; i++ {
@@ -648,36 +653,29 @@ func TestHTTPSnapshotStreamEnabledSendsTransferOnOneStream(t *testing.T) {
 		case msg := <-raft.processed:
 			got[msg.Type] = true
 		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for streamed snapshot")
+			t.Fatal("timed out waiting for snapshot short request")
 		}
 	}
 	assert.True(t, got[babuzapb.SnapshotMessageType_Metadata])
 	assert.True(t, got[babuzapb.SnapshotMessageType_Chunk])
 	assert.True(t, got[babuzapb.SnapshotMessageType_Finish])
-	assert.EqualValues(t, 0, shortCount.Load())
-	assert.EqualValues(t, 1, streamCount.Load())
+	assert.EqualValues(t, 3, shortCount.Load())
+	assert.EqualValues(t, 0, streamCount.Load())
 }
 
-func TestHTTPSnapshotStreamMetadataAndChunkReturnAfterLocalWrite(t *testing.T) {
-	raft := newSnapshotStreamTestRaft(3)
+func TestHTTPSnapshotShortRequestsWaitForProcessorResponse(t *testing.T) {
+	raft := newSnapshotStreamTestRaft(1)
 	releaseMetadata := make(chan struct{})
-	releaseChunk := make(chan struct{})
 	var metadataOnce sync.Once
-	var chunkOnce sync.Once
 	raft.responseFn = func(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
-		switch message.Type {
-		case babuzapb.SnapshotMessageType_Metadata:
+		if message.Type == babuzapb.SnapshotMessageType_Metadata {
 			metadataOnce.Do(func() {
 				<-releaseMetadata
-			})
-		case babuzapb.SnapshotMessageType_Chunk:
-			chunkOnce.Do(func() {
-				<-releaseChunk
 			})
 		}
 		return babuzapb.SnapshotMessageResponse{Status: babuzapb.SUCCESS, Message: message.Type.String()}
 	}
-	srv, _, _ := startHTTPSnapshotTestServer(t, true, raft)
+	srv, shortCount, streamCount := startHTTPSnapshotTestServer(t, true, raft)
 
 	resolver := NewMockTransportResolver()
 	resolver.addressMap[2] = srv.Listener.Addr().String()
@@ -690,212 +688,62 @@ func TestHTTPSnapshotStreamMetadataAndChunkReturnAfterLocalWrite(t *testing.T) {
 		metadataDone <- snapshotStreamResult{resp: res, err: err}
 	}()
 	select {
+	case <-metadataDone:
+		t.Fatal("snapshot short request returned before processor response")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseMetadata)
+	select {
 	case result := <-metadataDone:
 		assert.NoError(t, result.err)
 		assert.Equal(t, babuzapb.SUCCESS, result.resp.Status)
-	case <-time.After(200 * time.Millisecond):
-		close(releaseMetadata)
-		t.Fatal("metadata send waited for receiver ACK")
+		assert.Equal(t, babuzapb.SnapshotMessageType_Metadata.String(), result.resp.Message)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for metadata response")
 	}
-	close(releaseMetadata)
-
-	chunkDone := make(chan snapshotStreamResult, 1)
-	go func() {
-		res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 19, babuzapb.SnapshotMessageType_Chunk))
-		chunkDone <- snapshotStreamResult{resp: res, err: err}
-	}()
-	select {
-	case result := <-chunkDone:
-		assert.NoError(t, result.err)
-		assert.Equal(t, babuzapb.SUCCESS, result.resp.Status)
-	case <-time.After(200 * time.Millisecond):
-		close(releaseChunk)
-		t.Fatal("chunk send waited for receiver ACK")
-	}
-	close(releaseChunk)
-
-	res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 19, babuzapb.SnapshotMessageType_Finish))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-	assert.Equal(t, babuzapb.SnapshotMessageType_Finish.String(), res.Message)
+	assert.EqualValues(t, 1, shortCount.Load())
+	assert.EqualValues(t, 0, streamCount.Load())
 }
 
-func TestHTTPSnapshotStreamReturnsProcessorFailureOnFinish(t *testing.T) {
-	raft := newSnapshotStreamTestRaft(3)
-	raft.responseFn = func(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
-		if message.Type == babuzapb.SnapshotMessageType_Finish {
-			return babuzapb.SnapshotMessageResponse{Status: babuzapb.FAILED, Message: "finish failed"}
-		}
-		return babuzapb.SnapshotMessageResponse{Status: babuzapb.SUCCESS}
-	}
-	srv, _, streamCount := startHTTPSnapshotTestServer(t, true, raft)
-
-	resolver := NewMockTransportResolver()
-	resolver.addressMap[2] = srv.Listener.Addr().String()
-	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
-	defer client.Close()
-
-	res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 12, babuzapb.SnapshotMessageType_Metadata))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 12, babuzapb.SnapshotMessageType_Chunk))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 12, babuzapb.SnapshotMessageType_Finish))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.FAILED, res.Status)
-	assert.Equal(t, "finish failed", res.Message)
-	assert.EqualValues(t, 1, streamCount.Load())
-}
-
-func TestHTTPSnapshotStreamEarlyFailureAckInterruptsStream(t *testing.T) {
+func TestHTTPSnapshotShortRequestsReturnProcessorFailure(t *testing.T) {
 	tests := []struct {
 		name        string
 		failureType babuzapb.SnapshotMessageType
 		message     string
 	}{
-		{
-			name:        "metadata",
-			failureType: babuzapb.SnapshotMessageType_Metadata,
-			message:     "metadata failed",
-		},
-		{
-			name:        "chunk",
-			failureType: babuzapb.SnapshotMessageType_Chunk,
-			message:     "chunk failed",
-		},
+		{name: "metadata", failureType: babuzapb.SnapshotMessageType_Metadata, message: "metadata failed"},
+		{name: "chunk", failureType: babuzapb.SnapshotMessageType_Chunk, message: "chunk failed"},
+		{name: "finish", failureType: babuzapb.SnapshotMessageType_Finish, message: "finish failed"},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raft := newSnapshotStreamTestRaft(6)
+			raft := newSnapshotStreamTestRaft(3)
 			raft.responseFn = func(message babuzapb.SnapshotMessage) babuzapb.SnapshotMessageResponse {
-				if message.Type == tt.failureType && message.Index == 15 {
+				if message.Type == tt.failureType {
 					return babuzapb.SnapshotMessageResponse{Status: babuzapb.FAILED, Message: tt.message}
 				}
 				return babuzapb.SnapshotMessageResponse{Status: babuzapb.SUCCESS, Message: message.Type.String()}
 			}
-			srv, _, streamCount := startHTTPSnapshotTestServer(t, true, raft)
+			srv, shortCount, streamCount := startHTTPSnapshotTestServer(t, true, raft)
 
 			resolver := NewMockTransportResolver()
 			resolver.addressMap[2] = srv.Listener.Addr().String()
 			client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
 			defer client.Close()
 
-			res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 15, babuzapb.SnapshotMessageType_Metadata))
-			assert.NoError(t, err)
-			assert.Equal(t, babuzapb.SUCCESS, res.Status)
-			if tt.failureType == babuzapb.SnapshotMessageType_Chunk {
-				res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 15, babuzapb.SnapshotMessageType_Chunk))
-				assert.NoError(t, err)
-				assert.Equal(t, babuzapb.SUCCESS, res.Status)
-			}
-
-			waitSnapshotStreamDone(t, client)
-			res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 15, babuzapb.SnapshotMessageType_Chunk))
+			res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 12, tt.failureType))
 			assert.NoError(t, err)
 			assert.Equal(t, babuzapb.FAILED, res.Status)
 			assert.Equal(t, tt.message, res.Message)
-
-			res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 17, babuzapb.SnapshotMessageType_Metadata))
-			assert.NoError(t, err)
-			assert.Equal(t, babuzapb.SUCCESS, res.Status)
-			res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 17, babuzapb.SnapshotMessageType_Chunk))
-			assert.NoError(t, err)
-			assert.Equal(t, babuzapb.SUCCESS, res.Status)
-			res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 17, babuzapb.SnapshotMessageType_Finish))
-			assert.NoError(t, err)
-			assert.Equal(t, babuzapb.SUCCESS, res.Status)
-			assert.EqualValues(t, 2, streamCount.Load())
+			assert.EqualValues(t, 1, shortCount.Load())
+			assert.EqualValues(t, 0, streamCount.Load())
 		})
 	}
 }
 
-func TestHTTPSnapshotAckWaitDoesNotBlockBatchStream(t *testing.T) {
-	raft := newBlockingFinishStreamRaft()
-	srv := startHTTPStreamTestServer(t, raft)
-
-	resolver := NewMockTransportResolver()
-	resolver.addressMap[2] = srv.Listener.Addr().String()
-	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
-	defer client.Close()
-
-	res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 20, babuzapb.SnapshotMessageType_Metadata))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 20, babuzapb.SnapshotMessageType_Chunk))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-
-	finishDone := make(chan snapshotStreamResult, 1)
-	go func() {
-		res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 20, babuzapb.SnapshotMessageType_Finish))
-		finishDone <- snapshotStreamResult{resp: res, err: err}
-	}()
-	select {
-	case <-raft.finishStarted:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for snapshot finish processing")
-	}
-
-	batchDone := make(chan error, 1)
-	go func() {
-		batchDone <- client.SendBatchMessage(testBatchMessage(1, 2, 21))
-	}()
-	select {
-	case err := <-batchDone:
-		assert.NoError(t, err)
-	case <-time.After(200 * time.Millisecond):
-		t.Fatal("batch stream blocked behind snapshot ACK wait")
-	}
-	select {
-	case msg := <-raft.batchProcessed:
-		assert.EqualValues(t, 21, msg.Messages[0].Index)
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for batch message processing")
-	}
-	select {
-	case <-finishDone:
-		t.Fatal("snapshot finish returned before final ACK was released")
-	default:
-	}
-
-	close(raft.releaseFinish)
-	select {
-	case result := <-finishDone:
-		assert.NoError(t, result.err)
-		assert.Equal(t, babuzapb.SUCCESS, result.resp.Status)
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for snapshot finish ACK")
-	}
-}
-
-func TestHTTPSnapshotStreamRejectsPeerMismatch(t *testing.T) {
-	raft := newSnapshotStreamTestRaft(2)
-	srv, _, streamCount := startHTTPSnapshotTestServer(t, true, raft)
-
-	resolver := NewMockTransportResolver()
-	resolver.addressMap[2] = srv.Listener.Addr().String()
-	resolver.addressMap[3] = srv.Listener.Addr().String()
-	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
-	defer client.Close()
-
-	res, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 18, babuzapb.SnapshotMessageType_Metadata))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-
-	_, err = client.SendSnapshotMessage(testSnapshotMessage(1, 3, 18, babuzapb.SnapshotMessageType_Chunk))
-	assert.Error(t, err)
-
-	res, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 18, babuzapb.SnapshotMessageType_Finish))
-	assert.NoError(t, err)
-	assert.Equal(t, babuzapb.SUCCESS, res.Status)
-	assert.EqualValues(t, 1, streamCount.Load())
-}
-
-func TestHTTPSnapshotStreamRejectsConcurrentMetadata(t *testing.T) {
-	raft := newSnapshotStreamTestRaft(2)
-	srv, _, streamCount := startHTTPSnapshotTestServer(t, true, raft)
+func TestHTTPSnapshotShortRequestsDoNotKeepActiveStreamState(t *testing.T) {
+	raft := newSnapshotStreamTestRaft(3)
+	srv, shortCount, streamCount := startHTTPSnapshotTestServer(t, true, raft)
 
 	resolver := NewMockTransportResolver()
 	resolver.addressMap[2] = srv.Listener.Addr().String()
@@ -905,10 +753,11 @@ func TestHTTPSnapshotStreamRejectsConcurrentMetadata(t *testing.T) {
 	_, err := client.SendSnapshotMessage(testSnapshotMessage(1, 2, 13, babuzapb.SnapshotMessageType_Metadata))
 	assert.NoError(t, err)
 	_, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 14, babuzapb.SnapshotMessageType_Metadata))
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	_, err = client.SendSnapshotMessage(testSnapshotMessage(1, 2, 13, babuzapb.SnapshotMessageType_Finish))
 	assert.NoError(t, err)
-	assert.EqualValues(t, 1, streamCount.Load())
+	assert.EqualValues(t, 3, shortCount.Load())
+	assert.EqualValues(t, 0, streamCount.Load())
 }
 
 func TestHTTPSnapshotStreamRejectsMalformedFrames(t *testing.T) {
@@ -1052,7 +901,7 @@ func encodeRawFrameForTest(msgType frame.MessageType, payload []byte) []byte {
 
 func BenchmarkHTTPBatchMessageShortRequest(b *testing.B) {
 	raft := &benchmarkRaft{}
-	srv, _, _ := startHTTPMessageTestServer(b, false, false, raft)
+	srv, _, _, _ := startHTTPMessageTestServer(b, false, false, raft)
 	defer srv.Close()
 
 	resolver := NewMockTransportResolver()
@@ -1073,12 +922,21 @@ func BenchmarkHTTPBatchMessageShortRequest(b *testing.B) {
 
 func BenchmarkHTTPBatchMessageStream(b *testing.B) {
 	raft := &benchmarkRaft{}
-	srv, _, _ := startHTTPMessageTestServer(b, true, false, raft)
+	srv, _, _, hub := startHTTPMessageTestServer(b, true, false, raft)
 	defer srv.Close()
+
+	streamMsgs, closeStream := openBatchGETStreamForTest(b, srv.Client(), srv.URL, 2)
+	defer closeStream()
+	go func() {
+		for msg := range streamMsgs {
+			raft.ProcessBatchMessage(msg)
+		}
+	}()
 
 	resolver := NewMockTransportResolver()
 	resolver.addressMap[2] = srv.Listener.Addr().String()
-	client := NewRaftMsgClient(srv.Client(), resolver, false, ServerConfig{MessageStreamEnabled: true})
+	client := NewRaftMsgClientWithMessageStreamHub(srv.Client(), resolver, false,
+		ServerConfig{MessageStreamEnabled: true}, hub, 1, raft)
 	msg := testBatchMessage(1, 2, 1)
 
 	b.ReportAllocs()
@@ -1106,7 +964,7 @@ func BenchmarkHTTPSnapshotShortRequestSmallChunks(b *testing.B) {
 	benchmarkHTTPSnapshotTransfer(b, false, 32, 256)
 }
 
-func BenchmarkHTTPSnapshotStreamSmallChunks(b *testing.B) {
+func BenchmarkHTTPSnapshotShortRequestSmallChunksMessageStreamEnabled(b *testing.B) {
 	benchmarkHTTPSnapshotTransfer(b, true, 32, 256)
 }
 
@@ -1114,7 +972,7 @@ func BenchmarkHTTPSnapshotShortRequestLargeChunks(b *testing.B) {
 	benchmarkHTTPSnapshotTransfer(b, false, 4, 8192)
 }
 
-func BenchmarkHTTPSnapshotStreamLargeChunks(b *testing.B) {
+func BenchmarkHTTPSnapshotShortRequestLargeChunksMessageStreamEnabled(b *testing.B) {
 	benchmarkHTTPSnapshotTransfer(b, true, 4, 8192)
 }
 
@@ -1218,6 +1076,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 	}
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		mr := newMockTransportRaft(1)
 		srv := NewRaftMsgServer(c.TransportConfig, defaultServerCfg, mr, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
@@ -1225,6 +1084,7 @@ func TestSingleServerClient_SendAndReceive(t *testing.T) {
 		assert.Nil(t, err, identify)
 
 		resolver := NewMockTransportResolver()
+		resolver.addressMap[0] = c.PeerAddress
 		client := NewRaftMsgClient(httpClient, resolver, c.EnableTLS)
 
 		tms := genTestMsg(c.totalMsgCount, c.batchRaftMsgCount, 1)
@@ -1331,6 +1191,7 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 	}
 	for i, c := range tc {
 		identify := fmt.Sprintf("case(%d)", i)
+		c.PeerAddress = testutil.FreeTCPAddr(t, "localhost")
 		mr := newMockTransportRaft(c.clients)
 		srv := NewRaftMsgServer(c.TransportConfig, defaultServerCfg, mr, &logger.Mock{})
 		assert.Nil(t, srv.Start(), identify)
@@ -1348,6 +1209,7 @@ func TestSingleServerMultiClient_SendAndReceive(t *testing.T) {
 				httpClient, err := NewClient(c.clientTls, defaultServerCfg)
 				assert.Nil(t, err, identify)
 				resolver := NewMockTransportResolver()
+				resolver.addressMap[0] = c.PeerAddress
 				client := NewRaftMsgClient(httpClient, resolver, c.EnableTLS)
 				defer client.Close()
 				for _, tm := range tms {

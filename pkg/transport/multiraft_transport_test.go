@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package transport
 
 import (
@@ -22,6 +21,7 @@ import (
 	"github.com/fanaujie/babuza/ibabuza"
 	"github.com/fanaujie/babuza/ibabuza/babuzapb"
 	"github.com/fanaujie/babuza/pkg/logger"
+	"github.com/fanaujie/babuza/pkg/transport/internal/testutil"
 	"github.com/fanaujie/babuza/pkg/transport/peer"
 	"github.com/fanaujie/babuza/pkg/transport/protocol"
 	"github.com/fanaujie/babuza/pkg/utility/breaker"
@@ -250,8 +250,8 @@ func TestMultiRaftTransport_Create(t *testing.T) {
 
 // Test sending messages between MultiRaftTransports
 func TestMultiRaftTransport_Send(t *testing.T) {
-	node1ListenAddr := "localhost:24200"
-	node2ListenAddr := "localhost:24201"
+	node1ListenAddr := testutil.FreeTCPAddr(t, "localhost")
+	node2ListenAddr := testutil.FreeTCPAddr(t, "localhost")
 	trans1, mockRaft1 := newTestMultiRaftTransport(t, 1, node1ListenAddr)
 	defer trans1.Stop()
 	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, node2ListenAddr)
@@ -301,8 +301,8 @@ func TestMultiRaftTransport_Send(t *testing.T) {
 
 // Test sending a snapshot between MultiRaftTransports
 func TestMultiRaftTransport_SendSnapshot(t *testing.T) {
-	node1ListenAddr := "localhost:24200"
-	node2ListenAddr := "localhost:24201"
+	node1ListenAddr := testutil.FreeTCPAddr(t, "localhost")
+	node2ListenAddr := testutil.FreeTCPAddr(t, "localhost")
 	trans1, mockRaft1 := newTestMultiRaftTransport(t, 1, node1ListenAddr)
 	defer trans1.Stop()
 
@@ -341,9 +341,10 @@ func TestMultiRaftTransport_SendSnapshot(t *testing.T) {
 
 // Test peer management operations for MultiRaftTransport
 func TestMultiRaftTransport_PeerManagement(t *testing.T) {
-	node1ListenAddr := "localhost:24200"
-	node2ListenAddr := "localhost:24201"
-	node3ListenAddr := "localhost:24202"
+	node1ListenAddr := testutil.FreeTCPAddr(t, "localhost")
+	node2ListenAddr := testutil.FreeTCPAddr(t, "localhost")
+	node3ListenAddr := testutil.FreeTCPAddr(t, "localhost")
+	updatedAddr := testutil.FreeTCPAddr(t, "localhost")
 	trans, _ := newTestMultiRaftTransport(t, 1, node1ListenAddr)
 	defer trans.Stop()
 
@@ -357,12 +358,12 @@ func TestMultiRaftTransport_PeerManagement(t *testing.T) {
 	assert.Equal(t, node2ListenAddr, addr)
 
 	// Test updating peer
-	trans.UpdatePeer(1, 2, "localhost:14203")
+	trans.UpdatePeer(1, 2, updatedAddr)
 
 	// Verify peer was updated
 	addr, err = trans.peerMgr.ResolvePeerAddress(1, 2)
 	assert.Nil(t, err)
-	assert.Equal(t, "localhost:14203", addr)
+	assert.Equal(t, updatedAddr, addr)
 
 	// Test removing a specific peer
 	trans.RemovePeer(1, 3)
@@ -381,12 +382,14 @@ func TestMultiRaftTransport_PeerManagement(t *testing.T) {
 
 // Test unreachable peer reporting for MultiRaftTransport
 func TestMultiRaftTransport_UnreachablePeer(t *testing.T) {
-	trans1, mockRaft1 := newTestMultiRaftTransport(t, 1, "localhost:14200")
+	node1ListenAddr := testutil.FreeTCPAddr(t, "localhost")
+	unreachableAddr := testutil.FreeTCPAddr(t, "localhost")
+	trans1, mockRaft1 := newTestMultiRaftTransport(t, 1, node1ListenAddr)
 	defer trans1.Stop()
 	groupID := ibabuza.RaftGroupID(301)
 
 	// Add a non-existent peer to test unreachable reporting
-	trans1.AddPeer(groupID, 99, "localhost:99999")
+	trans1.AddPeer(groupID, 99, unreachableAddr)
 	// Send a message to the unreachable peer
 	msg := raftpb.Message{
 		Type:  raftpb.MsgApp,
@@ -409,19 +412,22 @@ func TestMultiRaftTransport_UnreachablePeer(t *testing.T) {
 
 // Test updating a peer's address and continuing to communicate for MultiRaftTransport
 func TestMultiRaftTransport_UpdatePeerAndCommunicate(t *testing.T) {
-	trans1, _ := newTestMultiRaftTransport(t, 1, "localhost:14200")
+	node1ListenAddr := testutil.FreeTCPAddr(t, "localhost")
+	node2ListenAddr := testutil.FreeTCPAddr(t, "localhost")
+	wrongAddr := testutil.FreeTCPAddr(t, "localhost")
+	trans1, _ := newTestMultiRaftTransport(t, 1, node1ListenAddr)
 	defer trans1.Stop()
 
 	// Start the second transport at a different address
-	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, "localhost:14201")
+	trans2, mockRaft2 := newTestMultiRaftTransport(t, 2, node2ListenAddr)
 	defer trans2.Stop()
 
 	groupID := ibabuza.RaftGroupID(401)
 	// First add the peer with a wrong address
-	trans1.AddPeer(groupID, 2, "localhost:12345")
+	trans1.AddPeer(groupID, 2, wrongAddr)
 
 	// Update the peer with the correct address
-	trans1.UpdatePeer(groupID, 2, "localhost:14201")
+	trans1.UpdatePeer(groupID, 2, node2ListenAddr)
 
 	// Send a message to the updated peer
 	msg := raftpb.Message{
